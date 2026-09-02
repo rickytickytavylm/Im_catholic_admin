@@ -18,6 +18,30 @@
     trash: 'yak_admin_trash',
   };
 
+  var POST_SECTIONS = [
+    { id: 'news', title: 'Новости' },
+    { id: 'articles', title: 'Статьи' },
+    { id: 'voices', title: 'Голоса' },
+  ];
+
+  var POST_RUBRICS = [
+    { id: 'church-rus', title: 'Россия', section: 'news' },
+    { id: 'santa-sede', title: 'Святой Престол', section: 'news' },
+    { id: 'world', title: 'Мир', section: 'news' },
+    { id: 'svidetelstva', title: 'Свидетельства', section: 'voices' },
+    { id: 'interview', title: 'Интервью', section: 'voices' },
+    { id: 'propovedi', title: 'Проповеди', section: 'voices' },
+    { id: 'columns', title: 'Статьи', section: 'articles' },
+    { id: 'spirituality', title: 'Духовность', section: 'articles' },
+    { id: 'obraz-zhizni', title: 'Образ жизни', section: 'articles' },
+    { id: 'kultura', title: 'Культура', section: 'articles' },
+    { id: 'history', title: 'История', section: 'articles' },
+    { id: 'biografii', title: 'Биографии', section: 'articles' },
+    { id: 'saints', title: 'Святые', section: 'articles' },
+    { id: 'bible', title: 'Библеистика', section: 'articles' },
+    { id: 'liturgy', title: 'Литургика', section: 'articles' },
+  ];
+
   var RUBRICS = [
     { id: 'columns', title: 'Статьи' },
     { id: 'pages', title: 'Страницы (архив WP)' },
@@ -182,6 +206,99 @@
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
       .slice(0, 80) || 'item';
+  }
+
+  var LEGACY_RUBRIC_MAP = {
+    news: { section: 'news', rubric: 'church-rus' },
+    announcement: { section: 'news', rubric: 'world' },
+    sng: { section: 'news', rubric: 'world' },
+    'church-rus': { section: 'news', rubric: 'church-rus' },
+    'santa-sede': { section: 'news', rubric: 'santa-sede' },
+    world: { section: 'news', rubric: 'world' },
+    interview: { section: 'voices', rubric: 'interview' },
+    svidetelstva: { section: 'voices', rubric: 'svidetelstva' },
+    propovedi: { section: 'voices', rubric: 'propovedi' },
+  };
+
+  function postSectionTitle(id) {
+    var s = POST_SECTIONS.filter(function (x) { return x.id === id; })[0];
+    return s ? s.title : (id || '—');
+  }
+
+  function postRubricById(id) {
+    return POST_RUBRICS.filter(function (x) { return x.id === id; })[0] || null;
+  }
+
+  function postRubricTitle(id) {
+    var r = postRubricById(id);
+    return r ? r.title : (id || '—');
+  }
+
+  function inferSection(rubric) {
+    var mapped = LEGACY_RUBRIC_MAP[rubric];
+    if (mapped) return mapped.section;
+    var r = postRubricById(rubric);
+    return r ? r.section : 'articles';
+  }
+
+  function normalizeRubricId(id) {
+    var mapped = LEGACY_RUBRIC_MAP[id];
+    if (mapped) return mapped.rubric;
+    return postRubricById(id) ? id : '';
+  }
+
+  function normalizePost(m) {
+    if (!m) return m;
+    var rubrics = (m.rubrics && m.rubrics.length ? m.rubrics : (m.rubric ? [m.rubric] : []))
+      .map(normalizeRubricId)
+      .filter(Boolean);
+    var section = m.section || (rubrics[0] && inferSection(rubrics[0])) || inferSection(m.rubric);
+    if (rubrics.length && !m.section) {
+      var first = postRubricById(rubrics[0]);
+      if (first) section = first.section;
+    }
+    return Object.assign({}, m, {
+      kind: m.kind || 'post',
+      section: section,
+      rubrics: rubrics,
+      rubric: rubrics[0] || m.rubric || '',
+      slug: m.slug || slugify(m.title),
+      seoTitle: m.seoTitle || '',
+      seoDescription: m.seoDescription || '',
+      seoManual: !!m.seoManual,
+      authorTag: m.authorTag || m.authorName || '',
+      cycleId: m.cycleId || '',
+      cycleTitle: m.cycleTitle || '',
+      cycleOrder: m.cycleOrder || '',
+      tags: Array.isArray(m.tags) ? m.tags : [],
+    });
+  }
+
+  function allowedPostRubrics(session) {
+    if (!session) return [];
+    var role = global.AdminAuth && global.AdminAuth.roleOf(session);
+    var raw = (session.rubrics && session.rubrics.length) ? session.rubrics : ((role && role.rubrics) || []);
+    if (session.role === 'chief' || session.role === 'super' || (role && role.canSeeAllMaterials) || raw.indexOf('*') !== -1) {
+      return POST_RUBRICS.slice();
+    }
+    var ids = {};
+    raw.forEach(function (id) {
+      if (id === 'news' || id === 'announcement') {
+        POST_RUBRICS.filter(function (r) { return r.section === 'news'; }).forEach(function (r) { ids[r.id] = 1; });
+        return;
+      }
+      if (id === 'articles' || id === 'columns') {
+        POST_RUBRICS.filter(function (r) { return r.section === 'articles'; }).forEach(function (r) { ids[r.id] = 1; });
+        return;
+      }
+      if (id === 'voices' || id === 'interview') {
+        POST_RUBRICS.filter(function (r) { return r.section === 'voices'; }).forEach(function (r) { ids[r.id] = 1; });
+        return;
+      }
+      var mapped = normalizeRubricId(id);
+      if (mapped) ids[mapped] = 1;
+    });
+    return POST_RUBRICS.filter(function (r) { return ids[r.id]; });
   }
 
   function pageTypeTitle(id) {
@@ -489,12 +606,14 @@
   }
 
   function getMaterial(id) {
-    return listMaterials().filter(function (m) { return m.id === id; })[0] || null;
+    var raw = listMaterials().filter(function (m) { return m.id === id; })[0] || null;
+    return raw ? normalizePost(raw) : null;
   }
 
   function upsertMaterial(mat, actor) {
     var list = listMaterials();
     var i = list.findIndex(function (m) { return m.id === mat.id; });
+    mat = normalizePost(mat);
     mat.updatedAt = new Date().toISOString();
     if (i === -1) {
       mat.id = mat.id || uid('mat');
@@ -502,7 +621,8 @@
       list.unshift(mat);
     } else {
       list[i] = Object.assign({}, list[i], mat);
-      mat = list[i];
+      mat = normalizePost(list[i]);
+      list[i] = mat;
     }
     saveMaterials(list);
     if (global.AdminAuth) {
@@ -549,7 +669,7 @@
   }
 
   function visibleMaterials(session) {
-    var all = listMaterials();
+    var all = listMaterials().map(normalizePost);
     if (!session) return [];
     var role = global.AdminAuth.roleOf(session);
     if (role.canSeeAllMaterials || session.role === 'chief' || session.role === 'super') return all;
@@ -557,9 +677,10 @@
       return all.filter(function (m) { return m.authorEmail === session.email; });
     }
     if (session.role === 'rubric_editor') {
-      var rubs = session.rubrics || role.rubrics || [];
+      var allowed = allowedPostRubrics(session).map(function (r) { return r.id; });
       return all.filter(function (m) {
-        return rubs.indexOf(m.rubric) !== -1 || rubs.indexOf('*') !== -1;
+        var ids = (m.rubrics && m.rubrics.length) ? m.rubrics : [m.rubric];
+        return ids.some(function (id) { return allowed.indexOf(id) !== -1 || allowed.indexOf(normalizeRubricId(id)) !== -1; });
       });
     }
     return [];
@@ -911,6 +1032,8 @@
   }
 
   global.AdminStore = {
+    POST_SECTIONS: POST_SECTIONS,
+    POST_RUBRICS: POST_RUBRICS,
     RUBRICS: RUBRICS,
     STATUSES: STATUSES,
     PAGE_TYPES: PAGE_TYPES,
@@ -961,5 +1084,9 @@
     slugify: slugify,
     uid: uid,
     storageDegraded: storageDegraded,
+    normalizePost: normalizePost,
+    allowedPostRubrics: allowedPostRubrics,
+    postSectionTitle: postSectionTitle,
+    postRubricTitle: postRubricTitle,
   };
 })(window);

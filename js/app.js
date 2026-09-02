@@ -36,8 +36,8 @@
     { id: 'photo-moderation', title: 'Модерация фото', group: 'Люди' },
     { id: 'my-page', title: 'Моя страница', group: 'Люди' },
     { id: 'upload-photos', title: 'Загрузить фото', group: 'Люди' },
+    { id: 'materials', title: 'Записи', group: 'Система' },
     { id: 'pages', title: 'Страницы', group: 'Система' },
-    { id: 'materials', title: 'Архив', group: 'Система' },
     { id: 'settings', title: 'Настройки', group: 'Система' },
     { id: 'page-editor', title: 'Редактор страницы', hidden: true },
     { id: 'editor', title: 'Редактор', hidden: true },
@@ -69,6 +69,7 @@
     var name = parts[0] || 'dashboard';
     if (name === 'photostock') name = 'media';
     if (name === 'columns') name = 'articles';
+    if (name === 'posts') name = 'materials';
     return { name: name, id: parts[1] || '' };
   }
 
@@ -1734,8 +1735,13 @@
     if (window.AdminDesk && AdminDesk.renderRoute(r.name, r.id, deskCtx)) {
       return;
     }
-    if (r.name === 'materials') renderMaterials();
-    else if (r.name === 'editor') renderEditor(r.id);
+    if (r.name === 'materials') {
+      if (window.AdminPosts) AdminPosts.renderList({ viewEl: viewEl, session: session, role: role, toast: toast, go: go, push: maybePushToServer });
+      else renderMaterials();
+    } else if (r.name === 'editor') {
+      if (window.AdminPosts) AdminPosts.renderEditor({ viewEl: viewEl, session: session, role: role, toast: toast, go: go, push: maybePushToServer }, r.id);
+      else renderEditor(r.id);
+    }
     else if (r.name === 'pages') {
       if (!role.canEditPages) {
         viewEl.innerHTML = '<div class="panel"><div class="empty">Страницы — только супер-админ и главный редактор</div></div>';
