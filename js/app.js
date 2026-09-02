@@ -21,7 +21,7 @@
 
   /* Меню = блоки сайта, не склад сущностей CMS */
   var NAV = [
-    { id: 'dashboard', title: 'Витрина сайта', group: 'Сайт' },
+    { id: 'dashboard', title: 'Обзор', group: 'Сайт' },
     { id: 'news', title: 'Новости', group: 'Сайт' },
     { id: 'articles', title: 'Статьи', group: 'Сайт' },
     { id: 'church', title: 'О Церкви', group: 'Сайт' },
@@ -36,9 +36,9 @@
     { id: 'photo-moderation', title: 'Модерация фото', group: 'Люди' },
     { id: 'my-page', title: 'Моя страница', group: 'Люди' },
     { id: 'upload-photos', title: 'Загрузить фото', group: 'Люди' },
-    { id: 'pages', title: 'Страницы сайта', group: 'Ещё' },
-    { id: 'materials', title: 'Старые черновики', group: 'Ещё' },
-    { id: 'settings', title: 'Настройки', group: 'Ещё' },
+    { id: 'pages', title: 'Страницы', group: 'Система' },
+    { id: 'materials', title: 'Архив', group: 'Система' },
+    { id: 'settings', title: 'Настройки', group: 'Система' },
     { id: 'page-editor', title: 'Редактор страницы', hidden: true },
     { id: 'editor', title: 'Редактор', hidden: true },
     { id: 'photographer-edit', title: 'Карточка фотографа', hidden: true },
@@ -132,7 +132,7 @@
   function renderComingSoon(title, body) {
     viewEl.innerHTML =
       '<div class="topbar"><div><h1>' + esc(title) + '</h1>' +
-      '<p class="muted">Раздел по смысловому блоку сайта</p></div></div>' +
+      '<p class="muted">Раздел в разработке.</p></div></div>' +
       '<div class="panel"><div class="empty" style="text-align:left;line-height:1.55">' +
       body +
       '</div></div>';
@@ -164,13 +164,13 @@
     userEl.innerHTML =
       '<div class="name">' + esc(session.name) + '</div>' +
       '<div class="role">' + esc(role.title) + '</div>' +
-      '<button type="button" class="btn btn-ghost btn-block" id="logout-btn">Сменить роль</button>';
+      '<button type="button" class="btn btn-ghost btn-block" id="logout-btn">Сменить пользователя</button>';
     document.getElementById('logout-btn').onclick = function () {
       var emails = AdminAuth.DEMO_USERS.map(function (u) { return u.email + ' — ' + AdminAuth.ROLES[u.role].title; }).join('\n');
-      var email = prompt('Email роли (без пароля):\n' + emails, session.email);
+      var email = prompt('Email пользователя:\n' + emails, session.email);
       if (!email) return;
       var user = AdminAuth.DEMO_USERS.filter(function (u) { return u.email === email.trim().toLowerCase(); })[0];
-      if (!user) { toast('Нет такой демо-роли'); return; }
+      if (!user) { toast('Пользователь не найден'); return; }
       localStorage.setItem('yak_admin_session', JSON.stringify({
         email: user.email, name: user.name, role: user.role, rubrics: user.rubrics || null, at: Date.now(),
       }));
@@ -184,13 +184,13 @@
     AdminApi.health()
       .then(function () {
         pill.className = 'server-pill on';
-        pill.textContent = 'Сайт на связи';
-        pill.title = 'Можно публиковать на портал';
+        pill.textContent = 'Сервер доступен';
+        pill.title = 'Публикация на портал доступна';
       })
       .catch(function () {
         pill.className = 'server-pill off';
-        pill.textContent = 'Локально';
-        pill.title = 'Записи остаются в этой редакции';
+        pill.textContent = 'Без сервера';
+        pill.title = 'Изменения сохраняются в редакции';
       });
   }
 
@@ -221,7 +221,7 @@
         card('На модерации', review.length, 'ждут решения') +
         card('В очереди', scheduled.length, 'запланировано') +
         card('В работе', drafts.length + review.length, 'рубрика') +
-        card('Теги / категории', AdminStore.listTags().length + ' / ' + AdminStore.listCategories().length, 'таксономия');
+        card('Теги / категории', AdminStore.listTags().length + ' / ' + AdminStore.listCategories().length, 'рубрики');
       listsHtml =
         blockList('На модерации', review, true) +
         blockList('Очередь публикаций', scheduled, false) +
@@ -245,14 +245,14 @@
       statsHtml =
         card('Карточки', AdminStore.listPhotographers().length, 'фотографы') +
         card('На модерации', pending.length, 'очередь') +
-        card('Публичные', AdminStore.publicImages().length, 'approved') +
+        card('Опубликовано', AdminStore.publicImages().length, 'одобрено') +
         card('Всего фото', photos.length, 'в стоке');
       listsHtml =
         '<div class="panel"><div class="panel-head"><h2>Разделы фоторедактора</h2></div>' +
         '<p style="display:flex;flex-wrap:wrap;gap:8px;padding:0 16px 16px">' +
         '<a class="btn btn-primary" href="#photographers">Карточки фотографов</a>' +
         '<a class="btn btn-ghost" href="#photo-moderation">Модерация фото</a></p>' +
-        '<p class="hint-note">Модерация фотостока — раз в день. На фронт попадают только одобренные.</p></div>';
+        '<p class="hint-note">На портал попадают только одобренные снимки.</p></div>';
     } else if (session.role === 'photographer') {
       var mine = AdminStore.listPhotos().filter(function (p) { return p.ownerEmail === session.email; });
       var used = AdminStore.uploadsToday(session.email);
@@ -273,12 +273,12 @@
         card('Разделы', uniq(books.map(function (b) { return b.section; })).length, 'структура') +
         card('PDF', books.filter(function (b) { return b.format === 'pdf'; }).length, 'формат') +
         card('Доступ', 'полный', 'библиотека');
-      listsHtml = '<div class="panel"><div class="panel-head"><h2>Быстрый переход</h2></div><p><a class="btn btn-primary" href="#media">Открыть медиатеку · документы</a></p></div>';
+      listsHtml = '<div class="panel"><div class="panel-head"><h2>Быстрый переход</h2></div><p><a class="btn btn-primary" href="#media">Библиотека</a></p></div>';
     }
 
     var desk = window.AdminDesk;
     viewEl.innerHTML =
-      '<div class="topbar"><div><h1>Сегодня</h1><p>Публикуйте в тот же блок, который видит читатель на сайте.</p></div>' +
+      '<div class="topbar"><div><h1>Обзор</h1><p>Материалы портала по разделам.</p></div>' +
       '<div class="topbar-actions">' +
       (AdminAuth.canAccessNav(session, 'publish')
         ? '<a class="btn btn-primary" href="#publish">Опубликовать</a>'
@@ -311,7 +311,7 @@
 
   function blockList(title, items, linkEdit) {
     var body = !items.length
-      ? '<div class="empty">Пока пусто</div>'
+      ? '<div class="empty">Нет материалов</div>'
       : '<div class="list-stack">' + items.slice(0, 8).map(function (m) {
         var href = linkEdit ? '#editor/' + m.id : '#materials';
         return (
@@ -505,9 +505,9 @@
   function renderMaterials() {
     var mats = AdminStore.visibleMaterials(session);
     viewEl.innerHTML =
-      '<div class="topbar"><div><h1>Старые черновики</h1><p>Архив прошлых импортов. Новые тексты публикуйте из «Опубликовать».</p></div>' +
+      '<div class="topbar"><div><h1>Архив</h1><p>Черновики и импортированные материалы.</p></div>' +
       '<div class="topbar-actions">' +
-      '<a class="btn btn-primary" href="#publish">Опубликовать на сайт</a>' +
+      '<a class="btn btn-primary" href="#dashboard">К обзору</a>' +
       '</div></div>' +
       '<div class="panel">' +
       '<div class="filters" id="filters">' +
@@ -609,7 +609,7 @@
       toast('Отправлено на модерацию');
     } else if (act === 'publish') {
       if (m.rubric === 'pages' || m.kind === 'page') {
-        toast('Архивные WP pages не публикуем — для сайта откройте раздел «Страницы»', true);
+        toast('Архивные страницы не публикуются. Откройте раздел «Страницы».', true);
         if (confirm('Открыть раздел редакционных страниц?')) go('pages');
         return;
       }
@@ -618,7 +618,7 @@
         return;
       }
       AdminStore.setStatus(id, 'published', session.email);
-      toast('Опубликовано (локально)');
+      toast('Опубликовано');
       maybePushToServer(AdminStore.getMaterial(id));
     } else if (act === 'rework') {
       var note = prompt('Комментарий автору', m.editorNote || '');
@@ -701,7 +701,7 @@
   function renderEditor(id) {
     var mat = AdminStore.getMaterial(id);
     if (!mat) {
-      viewEl.innerHTML = '<div class="panel"><div class="empty">Материал не найден. <a href="#materials">К списку</a></div></div>';
+      viewEl.innerHTML = '<div class="panel"><div class="empty">Материал не найден. <a href="#materials">Назад</a></div></div>';
       return;
     }
     if (session.role === 'author' && mat.authorEmail !== session.email) {
@@ -710,14 +710,14 @@
     }
 
     viewEl.innerHTML =
-      '<div class="topbar"><div><h1>Редактор</h1><p>Автосохранение черновика каждые 30 секунд.</p></div>' +
+      '<div class="topbar"><div><h1>Редактор</h1><p>Черновик сохраняется автоматически.</p></div>' +
       '<div class="topbar-actions">' +
       '<span class="autosave" id="autosave-state">Ожидание изменений</span>' +
-      '<a class="btn btn-ghost" href="#materials">К списку</a>' +
+      '<a class="btn btn-ghost" href="#materials">Назад</a>' +
       '<button type="button" class="btn btn-primary" id="btn-save">Сохранить</button>' +
       '</div></div>' +
       ((mat.rubric === 'pages' || mat.kind === 'page')
-        ? '<div class="panel notice-panel"><p class="empty" style="padding:0">Это архивная WP page. Для редакционных страниц сайта используйте <a href="#pages">Страницы</a>.</p></div>'
+        ? '<div class="panel notice-panel"><p class="empty" style="padding:0">Архивная страница. Для публикации на портале откройте раздел <a href="#pages">Страницы</a>.</p></div>'
         : '') +
       '<div class="editor-layout">' +
       '<div class="editor-main">' +
@@ -740,9 +740,9 @@
         return '<option value="' + s.id + '"' + (s.id === mat.status ? ' selected' : '') + '>' + esc(s.title) + '</option>';
       }).join('') +
       '</select></div>' +
-      '<div class="field"><label>Дата публикации (план)</label><input class="input" id="ed-sched" type="datetime-local" value="' + esc(toLocalInput(mat.scheduledAt)) + '" /></div>' +
-      '<div class="field"><label>Обложка URL</label><input class="input" id="ed-cover" value="' + esc(mat.cover || '') + '" /></div>' +
-      '<div class="field"><label>Теги через запятую</label><input class="input" id="ed-tags" value="' + esc((mat.tags || []).join(', ')) + '" /></div>' +
+      '<div class="field"><label>Дата публикации</label><input class="input" id="ed-sched" type="datetime-local" value="' + esc(toLocalInput(mat.scheduledAt)) + '" /></div>' +
+      '<div class="field"><label>Обложка</label><input class="input" id="ed-cover" value="' + esc(mat.cover || '') + '" /></div>' +
+      '<div class="field"><label>Теги</label><input class="input" id="ed-tags" value="' + esc((mat.tags || []).join(', ')) + '" /></div>' +
       '</div>' +
       '<div class="panel"><button type="button" class="btn btn-ghost btn-block" id="btn-send-review">На модерацию</button>' +
       (role.canPublish ? '<button type="button" class="btn btn-primary btn-block" id="btn-publish" style="margin-top:8px">Опубликовать</button>' : '') +
@@ -793,7 +793,7 @@
     if (pub) {
       pub.onclick = function () {
         if (mat.rubric === 'pages' || mat.kind === 'page') {
-          toast('Архивные WP pages не публикуем — откройте раздел «Страницы»', true);
+          toast('Архивные страницы не публикуются. Откройте раздел «Страницы».', true);
           return;
         }
         document.getElementById('ed-status').value = 'published';
@@ -854,7 +854,7 @@
 
   function renderPages() {
     viewEl.innerHTML =
-      '<div class="topbar"><div><h1>Страницы</h1><p>Редакционные страницы сайта (отдельно от импорта WP pages в Материалы).</p></div>' +
+      '<div class="topbar"><div><h1>Страницы</h1><p>Статические страницы портала.</p></div>' +
       '<div class="topbar-actions"><button type="button" class="btn btn-primary" id="btn-new-page">Создать страницу</button></div></div>' +
       '<div class="panel">' +
       '<div class="filters filters-2">' +
@@ -931,16 +931,16 @@
   function renderPageEditor(id) {
     var page = AdminStore.getPage(id);
     if (!page) {
-      viewEl.innerHTML = '<div class="panel"><div class="empty">Страница не найдена. <a href="#pages">К списку</a></div></div>';
+      viewEl.innerHTML = '<div class="panel"><div class="empty">Страница не найдена. <a href="#pages">Назад</a></div></div>';
       return;
     }
 
     var slugLocked = false;
 
     viewEl.innerHTML =
-      '<div class="topbar"><div><h1>Редактор страницы</h1><p>Черновик, публикация, SEO и материалы цикла.</p></div>' +
+      '<div class="topbar"><div><h1>Страница</h1><p>Текст, обложка и публикация.</p></div>' +
       '<div class="topbar-actions">' +
-      '<a class="btn btn-ghost" href="#pages">К списку</a>' +
+      '<a class="btn btn-ghost" href="#pages">Назад</a>' +
       '<button type="button" class="btn btn-ghost" id="pg-view">Смотреть на сайте</button>' +
       '<button type="button" class="btn btn-ghost" id="pg-draft">Сохранить черновик</button>' +
       '<button type="button" class="btn btn-primary" id="pg-publish">Опубликовать</button>' +
@@ -1208,7 +1208,7 @@
     if (showImages && !showDocs) mediaTab = 'images';
 
     viewEl.innerHTML =
-      '<div class="topbar"><div><h1>Фотосток</h1><p>Те же снимки, что на сайте. Одобренные сразу видны в разделе «Фото».</p></div>' +
+      '<div class="topbar"><div><h1>Фотосток</h1><p>Снимки, опубликованные в разделе «Фото».</p></div>' +
       '<div class="topbar-actions">' +
       (mediaTab === 'images'
         ? '<button type="button" class="btn btn-primary" id="btn-add-image">Добавить изображение</button>'
@@ -1219,8 +1219,8 @@
       (showDocs ? '<button type="button" class="tab' + (mediaTab === 'documents' ? ' active' : '') + '" data-tab="documents">Документы</button>' : '') +
       '</div>' +
       (mediaTab === 'images'
-        ? '<p class="hint-note">Модерация фотостока — раз в день. Публичными считаются только файлы со статусом «Одобрено». Загрузки фотографов попадают в очередь.</p>'
-        : '<p class="hint-note">Документы: PDF, FB2, DOC и другие. Доступ: библиотекарь, супер и главный редактор.</p>') +
+        ? '<p class="hint-note">На портал попадают только одобренные снимки.</p>'
+        : '<p class="hint-note">Каталог документов библиотеки.</p>') +
       '<div class="panel" id="media-panel"></div>';
 
     document.querySelectorAll('#media-tabs [data-tab]').forEach(function (btn) {
@@ -1393,7 +1393,7 @@
             else item.format = 'other';
           }
           AdminStore.upsertMedia(item, session.email);
-          toast('Файл сохранён локально');
+          toast('Файл сохранён');
           renderMedia();
         }).catch(function () { toast('Ошибка чтения файла', true); });
       };
@@ -1518,7 +1518,7 @@
       return;
     }
     viewEl.innerHTML =
-      '<div class="topbar"><div><h1>Категории и теги</h1><p>Сущности с собственным URL. Авторы — через теги kind=author.</p></div>' +
+      '<div class="topbar"><div><h1>Категории и теги</h1><p>Рубрики и метки портала.</p></div>' +
       '<div class="topbar-actions">' +
       '<button type="button" class="btn btn-ghost" id="btn-add-cat">+ Категория</button>' +
       '<button type="button" class="btn btn-primary" id="btn-add-tag">+ Тег</button>' +
@@ -1646,7 +1646,7 @@
   /* ---------- Users / Logs / Settings / Profile ---------- */
   function renderUsers() {
     viewEl.innerHTML =
-      '<div class="topbar"><div><h1>Пользователи</h1><p>Демо-роли редакции. Сложная серверная RBAC пока не подключена.</p></div></div>' +
+      '<div class="topbar"><div><h1>Пользователи</h1><p>Роли редакции.</p></div></div>' +
       '<div class="panel"><div class="table-wrap"><table class="data"><thead><tr>' +
       '<th>Имя</th><th>Email</th><th>Роль</th></tr></thead><tbody>' +
       AdminAuth.DEMO_USERS.map(function (u) {
@@ -1659,26 +1659,26 @@
   function renderLogs() {
     var logs = (AdminAuth.getAuditLog ? AdminAuth.getAuditLog() : []).slice().reverse();
     viewEl.innerHTML =
-      '<div class="topbar"><div><h1>Журнал</h1><p>Не редактируется и не очищается из UI.</p></div></div>' +
+      '<div class="topbar"><div><h1>Журнал</h1><p>История действий редакции.</p></div></div>' +
       '<div class="panel"><div class="table-wrap"><table class="data"><thead><tr>' +
       '<th>Когда</th><th>Кто</th><th>Действие</th><th>Объект</th></tr></thead><tbody>' +
       (logs.map(function (l) {
         return '<tr><td>' + esc(fmtDate(l.at)) + '</td><td>' + esc(l.actor) + '</td><td>' +
           esc(l.action) + '</td><td>' + esc(l.target || '') + '</td></tr>';
-      }).join('') || '<tr><td colspan="4" class="empty">Пока пусто</td></tr>') +
+      }).join('') || '<tr><td colspan="4" class="empty">Записей нет</td></tr>') +
       '</tbody></table></div></div>';
   }
 
   function renderSettings() {
     viewEl.innerHTML =
-      '<div class="topbar"><div><h1>Настройки</h1><p>Обычной работе с текстами и медиа этот экран не нужен.</p></div></div>' +
+      '<div class="topbar"><div><h1>Настройки</h1><p>Подключение к серверу и доступ редакции.</p></div></div>' +
       '<div class="panel">' +
-      '<p class="hint-note">Публикации пишутся в редакцию и сразу видны на сайте, если портал открыт с того же адреса, что и админка.</p>' +
-      '<details class="dev-box"><summary>Служебное — не для ежедневной работы</summary>' +
+      '<p class="hint-note">Изменения в редакции отображаются на портале после публикации.</p>' +
+      '<details class="dev-box"><summary>Подключение сервера</summary>' +
       '<div class="form-grid">' +
       '<label>Адрес сервера архива<input class="input" id="set-api" value="' + esc(AdminConfig.API_BASE || '') + '" /></label>' +
       '<label>Ключ доступа<input class="input" id="set-token" value="' + esc(AdminConfig.ADMIN_TOKEN || '') + '" type="password" /></label>' +
-      '<button type="button" class="btn btn-primary" id="set-save">Сохранить служебное</button>' +
+      '<button type="button" class="btn btn-primary" id="set-save">Сохранить</button>' +
       '</div></details></div>';
     var save = document.getElementById('set-save');
     if (save) save.onclick = function () {
@@ -1702,10 +1702,10 @@
     var profile = {};
     try { profile = JSON.parse(localStorage.getItem(key) || '{}'); } catch (e) {}
     viewEl.innerHTML =
-      '<div class="topbar"><div><h1>Профиль</h1><p>Карточка автора / фотографа.</p></div></div>' +
+      '<div class="topbar"><div><h1>Профиль</h1><p>Ваши данные в редакции.</p></div></div>' +
       '<div class="panel form-grid">' +
       '<label>Имя<input class="input" id="pr-name" value="' + esc(profile.name || session.name) + '" /></label>' +
-      '<label>О себе<textarea class="input" id="pr-bio" rows="4">' + esc(profile.bio || '') + '</textarea></label>' +
+      '<label>Биография<textarea class="input" id="pr-bio" rows="4">' + esc(profile.bio || '') + '</textarea></label>' +
       '<label>Контакты<input class="input" id="pr-contacts" value="' + esc(profile.contacts || '') + '" /></label>' +
       '<button type="button" class="btn btn-primary" id="pr-save">Сохранить</button></div>';
     document.getElementById('pr-save').onclick = function () {
@@ -1759,7 +1759,7 @@
       else {
         viewEl.innerHTML =
           '<div class="topbar"><div><h1>Авторы</h1></div></div>' +
-          '<div class="panel"><p class="hint-note">Карточки авторов сайта.</p></div>';
+          '<div class="panel"><p class="hint-note">Авторы портала.</p></div>';
       }
     } else if (
       window.AdminPhotostock &&
@@ -1805,7 +1805,7 @@
   function showBootError(err) {
     if (!viewEl) return;
     viewEl.innerHTML =
-      '<div class="topbar"><div><h1>Редакция</h1><p>Не удалось открыть экран.</p></div></div>' +
+      '<div class="topbar"><div><h1>Редакция</h1><p>Не удалось открыть раздел.</p></div></div>' +
       '<div class="panel"><p>' + esc(err && err.message ? err.message : err) + '</p></div>';
   }
   try {
@@ -1815,6 +1815,6 @@
     showBootError(bootErr);
   }
   if (AdminStore && AdminStore.storageDegraded && AdminStore.storageDegraded()) {
-    toast('Данные только в этой вкладке. Лучше открыть админку через index.html', true);
+    toast('Сессия не сохраняется. Откройте редакцию через index.html', true);
   }
 })();

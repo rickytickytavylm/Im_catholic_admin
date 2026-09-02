@@ -12,13 +12,13 @@
   var seedLoaded = false;
 
   var BLOCKS = [
-    { id: 'news', title: 'Новость', where: 'Лента новостей', hint: 'Короткий факт: что случилось и когда.', portal: 'archive.html?category=news' },
-    { id: 'article', title: 'Статья', where: 'Раздел «Статьи»', hint: 'Текст с заголовком, лидом и обложкой.', portal: 'articles.html' },
-    { id: 'event', title: 'Афиша', where: 'События и календарь', hint: 'Концерт, встреча, паломничество, реколлекции.', portal: 'events.html' },
-    { id: 'audio', title: 'Аудио', where: 'Проповеди и подкасты', hint: 'Ссылка на файл и название.', portal: 'audio.html' },
-    { id: 'video', title: 'Видео', where: 'Фильмы и Shorts', hint: 'Ссылка на ролик, превью, длина.', portal: 'video.html' },
-    { id: 'photo', title: 'Фото', where: 'Фотосток', hint: 'Снимок с тегами. На сайт — после одобрения.', portal: 'photostock.html' },
-    { id: 'church-day', title: 'День Церкви', where: 'Сайдбар и календарь', hint: 'Святой, чтение, молитва, цитата на дату.', portal: 'calendar.html' },
+    { id: 'news', title: 'Новость', where: 'Новости', hint: 'Заголовок, лид, текст и обложка.', portal: 'archive.html?category=news' },
+    { id: 'article', title: 'Статья', where: 'Статьи', hint: 'Заголовок, лид, текст и обложка.', portal: 'articles.html' },
+    { id: 'event', title: 'Афиша', where: 'События', hint: 'Дата, место и описание.', portal: 'events.html' },
+    { id: 'audio', title: 'Аудио', where: 'Аудио', hint: 'Название, исполнитель и файл.', portal: 'audio.html' },
+    { id: 'video', title: 'Видео', where: 'Видео', hint: 'Название, описание и ссылка.', portal: 'video.html' },
+    { id: 'photo', title: 'Фото', where: 'Фотосток', hint: 'Снимок и теги.', portal: 'photostock.html' },
+    { id: 'church-day', title: 'День Церкви', where: 'Календарь', hint: 'Святой, чтение и молитва.', portal: 'calendar.html' },
   ];
 
   var NEWS_CATS = [
@@ -298,7 +298,7 @@
 
   function renderHub(ctx) {
     if (window.AdminGod) AdminGod.paintHome(ctx);
-    else ctx.viewEl.innerHTML = '<div class="panel"><div class="empty">Витрина не загрузилась. Обновите страницу.</div></div>';
+    else ctx.viewEl.innerHTML = '<div class="panel"><div class="empty">Не удалось загрузить обзор.</div></div>';
   }
 
   function emptyRow(text) {
@@ -307,7 +307,7 @@
 
   function statusBadge(status) {
     var on = status === 'published';
-    return '<span class="badge ' + (on ? 'ok' : 'muted') + '">' + (on ? 'На сайте' : 'Черновик') + '</span>';
+    return '<span class="badge ' + (on ? 'ok' : 'muted') + '">' + (on ? 'Опубликовано' : 'Черновик') + '</span>';
   }
 
   function renderList(type, ctx) {
@@ -324,7 +324,7 @@
       AdminGod.paintSection(ctx, type, meta.title, '#' + meta.route + '/new');
       return;
     }
-    ctx.viewEl.innerHTML = emptyRow('Раздел не загрузился.');
+    ctx.viewEl.innerHTML = emptyRow('Не удалось загрузить раздел.');
   }
 
   function field(label, id, value, type, extra) {
@@ -352,10 +352,10 @@
     viewEl.innerHTML =
       '<div class="topbar"><div><h1>' + esc(title) + '</h1></div>' +
       '<div class="topbar-actions">' +
-      '<a class="btn btn-ghost" href="#' + back + '">К списку</a>' +
-      (portal ? '<a class="btn btn-ghost" href="' + portalHref(portal) + '" target="_blank" rel="noopener">Сайт</a>' : '') +
-      (onDelete ? '<button type="button" class="btn btn-ghost" id="desk-del">Удалить</button>' : '') +
-      '<button type="button" class="btn btn-ghost" id="desk-draft">Черновик</button>' +
+      '<a class="btn btn-ghost" href="#' + back + '">Назад</a>' +
+      (portal ? '<a class="btn btn-ghost" href="' + portalHref(portal) + '" target="_blank" rel="noopener">На портале</a>' : '') +
+      (onDelete ? '<button type="button" class="btn btn-ghost" id="desk-del">Снять</button>' : '') +
+      '<button type="button" class="btn btn-ghost" id="desk-draft">Сохранить</button>' +
       '<button type="button" class="btn btn-primary" id="desk-pub">Опубликовать</button>' +
       '</div></div>' +
       '<div class="panel form-grid desk-form">' + body + '</div>';
@@ -370,7 +370,7 @@
       renderFn(item);
       return;
     }
-    ctx.viewEl.innerHTML = '<div class="panel"><div class="empty">Открываю материал с сайта…</div></div>';
+    ctx.viewEl.innerHTML = '<div class="panel"><div class="empty">Загрузка</div></div>';
     if (!window.AdminApi || !AdminApi.getArticle) {
       ctx.go(type === 'news' ? 'news' : 'articles');
       return;
@@ -399,16 +399,16 @@
     composeShell(
       ctx, isNew ? 'Новая новость' : 'Новость', 'news',
       field('Заголовок', 'd-title', item.title) +
-      field('Раздел на сайте', 'd-cat', item.category, 'select', opts(NEWS_CATS, item.category || 'news')) +
+      field('Рубрика', 'd-cat', item.category, 'select', opts(NEWS_CATS, item.category || 'news')) +
       field('Дата', 'd-date', (item.date || todayIso()).slice(0, 10), 'date') +
-      field('Коротко, в одну фразу', 'd-excerpt', item.excerpt, 'textarea') +
+      field('Лид', 'd-excerpt', item.excerpt, 'textarea') +
       field('Текст', 'd-body', item.body || item.contentHtml, 'textarea') +
-      field('Обложка — ссылка или файл', 'd-cover', item.cover || item.image) +
-      '<div class="field"><label>Загрузить обложку</label><input class="input" type="file" id="d-file" accept="image/*" /></div>' +
+      field('Обложка', 'd-cover', item.cover || item.image) +
+      '<div class="field"><label>Файл обложки</label><input class="input" type="file" id="d-file" accept="image/*" /></div>' +
       field('Автор', 'd-author', item.author || ctx.session.name),
       function (status) { saveArticle(ctx, item, 'news', status); },
       function () { saveArticle(ctx, item, 'news', 'published'); },
-      isNew ? null : function () { if (confirm('Снять новость с сайта?')) { hideItem('news', item.id); ctx.toast('Снято'); ctx.go('news'); } },
+      isNew ? null : function () { if (confirm('Снять новость с публикации?')) { hideItem('news', item.id); ctx.toast('Снято с публикации'); ctx.go('news'); } },
       'archive.html?category=news'
     );
     bindCoverFile();
@@ -427,16 +427,16 @@
     composeShell(
       ctx, isNew ? 'Новая статья' : 'Статья', 'articles',
       field('Заголовок', 'd-title', item.title) +
-      field('Куда на сайте', 'd-cat', item.category, 'select', opts(ARTICLE_CATS, item.category || 'columns')) +
+      field('Рубрика', 'd-cat', item.category, 'select', opts(ARTICLE_CATS, item.category || 'columns')) +
       field('Дата', 'd-date', (item.date || todayIso()).slice(0, 10), 'date') +
-      field('Лид — первое предложение', 'd-excerpt', item.excerpt, 'textarea') +
-      field('Текст статьи', 'd-body', item.body || item.contentHtml, 'textarea') +
+      field('Лид', 'd-excerpt', item.excerpt, 'textarea') +
+      field('Текст', 'd-body', item.body || item.contentHtml, 'textarea') +
       field('Обложка', 'd-cover', item.cover || item.image) +
-      '<div class="field"><label>Загрузить обложку</label><input class="input" type="file" id="d-file" accept="image/*" /></div>' +
+      '<div class="field"><label>Файл обложки</label><input class="input" type="file" id="d-file" accept="image/*" /></div>' +
       field('Автор', 'd-author', item.author || ctx.session.name),
       function (status) { saveArticle(ctx, item, 'article', status); },
       function () { saveArticle(ctx, item, 'article', 'published'); },
-      isNew ? null : function () { if (confirm('Снять статью с сайта?')) { hideItem('article', item.id); ctx.toast('Снято'); ctx.go('articles'); } },
+      isNew ? null : function () { if (confirm('Снять статью с публикации?')) { hideItem('article', item.id); ctx.toast('Снято с публикации'); ctx.go('articles'); } },
       'articles.html'
     );
     bindCoverFile();
@@ -459,7 +459,7 @@
 
   function saveArticle(ctx, item, type, status) {
     var title = val('d-title');
-    if (!title) { ctx.toast('Нужен заголовок', true); return; }
+    if (!title) { ctx.toast('Укажите заголовок', true); return; }
     var next = Object.assign({}, item, {
       kind: type === 'news' ? 'news' : 'article',
       title: title,
@@ -476,7 +476,7 @@
       status: status,
     });
     upsert(type, next);
-    ctx.toast(status === 'published' ? 'Опубликовано на сайте' : 'Черновик сохранён');
+    ctx.toast(status === 'published' ? 'Опубликовано' : 'Черновик сохранён');
     ctx.go(type === 'news' ? 'news' : 'articles');
   }
 
@@ -491,23 +491,23 @@
       field('Название', 'd-title', item.title) +
       field('Тип', 'd-cat', item.category, 'select', opts(EVENT_CATS, item.category || 'meeting')) +
       field('Дата', 'd-date', item.date, 'date') +
-      field('До какой даты (если несколько дней)', 'd-end', item.endDate || '', 'date') +
+      field('Дата окончания', 'd-end', item.endDate || '', 'date') +
       field('Время', 'd-time', item.time, 'text', 'placeholder="19:00"') +
       field('Город', 'd-city', item.city) +
       field('Площадка', 'd-venue', item.venue) +
       field('Адрес', 'd-place', item.place) +
-      field('Коротко о событии', 'd-desc', item.desc, 'textarea') +
-      field('Ссылка на регистрацию или афишу', 'd-href', item.href),
+      field('Описание', 'd-desc', item.desc, 'textarea') +
+      field('Ссылка', 'd-href', item.href),
       function (status) { saveEvent(ctx, item, status); },
       function () { saveEvent(ctx, item, 'published'); },
-      isNew ? null : function () { if (confirm('Снять событие с афиши?')) { hideItem('event', item.id); ctx.toast('Снято'); ctx.go('afisha'); } },
+      isNew ? null : function () { if (confirm('Снять событие с публикации?')) { hideItem('event', item.id); ctx.toast('Снято с публикации'); ctx.go('afisha'); } },
       'events.html'
     );
   }
 
   function saveEvent(ctx, item, status) {
     var title = val('d-title');
-    if (!title) { ctx.toast('Нужно название', true); return; }
+    if (!title) { ctx.toast('Укажите название', true); return; }
     upsert('event', Object.assign({}, item, {
       title: title,
       category: val('d-cat'),
@@ -521,7 +521,7 @@
       href: val('d-href'),
       status: status,
     }));
-    ctx.toast(status === 'published' ? 'Событие на афише' : 'Черновик сохранён');
+    ctx.toast(status === 'published' ? 'Опубликовано' : 'Черновик сохранён');
     ctx.go('afisha');
   }
 
@@ -532,15 +532,15 @@
     composeShell(
       ctx, isNew ? 'Новое аудио' : 'Аудио', 'audio',
       field('Название', 'd-title', item.title) +
-      field('Кто говорит', 'd-artist', item.artist) +
+      field('Исполнитель', 'd-artist', item.artist) +
       field('Дата', 'd-date', item.date, 'date') +
       field('Длительность', 'd-dur', item.duration, 'text', 'placeholder="12:40"') +
-      field('Ссылка на файл (mp3)', 'd-url', item.audioUrl || item.url) +
-      '<div class="field"><label>Или загрузить файл</label><input class="input" type="file" id="d-file" accept="audio/*" /></div>' +
+      field('Ссылка на файл', 'd-url', item.audioUrl || item.url) +
+      '<div class="field"><label>Файл</label><input class="input" type="file" id="d-file" accept="audio/*" /></div>' +
       field('Обложка', 'd-cover', item.cover),
       function (status) { saveAudio(ctx, item, status); },
       function () { saveAudio(ctx, item, 'published'); },
-      isNew ? null : function () { if (confirm('Снять аудио с сайта?')) { hideItem('audio', item.id); ctx.toast('Снято'); ctx.go('audio'); } },
+      isNew ? null : function () { if (confirm('Снять аудио с публикации?')) { hideItem('audio', item.id); ctx.toast('Снято с публикации'); ctx.go('audio'); } },
       'audio.html'
     );
     var file = document.getElementById('d-file');
@@ -559,8 +559,8 @@
 
   function saveAudio(ctx, item, status) {
     var title = val('d-title');
-    if (!title) { ctx.toast('Нужно название', true); return; }
-    if (!val('d-url')) { ctx.toast('Нужна ссылка или файл', true); return; }
+    if (!title) { ctx.toast('Укажите название', true); return; }
+    if (!val('d-url')) { ctx.toast('Укажите ссылку или файл', true); return; }
     upsert('audio', Object.assign({}, item, {
       title: title,
       artist: val('d-artist'),
@@ -571,7 +571,7 @@
       cover: val('d-cover'),
       status: status,
     }));
-    ctx.toast(status === 'published' ? 'Аудио на сайте' : 'Черновик сохранён');
+    ctx.toast(status === 'published' ? 'Опубликовано' : 'Черновик сохранён');
     ctx.go('audio');
   }
 
@@ -582,16 +582,16 @@
     composeShell(
       ctx, isNew ? 'Новое видео' : 'Видео', 'video',
       field('Название', 'd-title', item.title) +
-      field('Формат', 'd-type', item.type, 'select', opts([{ id: 'long', title: 'Фильм / длинное' }, { id: 'short', title: 'Shorts' }], item.type || 'long')) +
-      field('Кто в кадре', 'd-speaker', item.speaker) +
-      field('О чём ролик', 'd-desc', item.description, 'textarea') +
-      field('Ссылка на видео (mp4)', 'd-url', item.videoUrl) +
-      field('Превью — ссылка', 'd-thumb', item.thumb) +
-      '<div class="field"><label>Или загрузить превью</label><input class="input" type="file" id="d-file" accept="image/*" /></div>' +
-      field('Длительность, секунды', 'd-dur', item.duration, 'number'),
+      field('Формат', 'd-type', item.type, 'select', opts([{ id: 'long', title: 'Полнометражное' }, { id: 'short', title: 'Shorts' }], item.type || 'long')) +
+      field('Спикер', 'd-speaker', item.speaker) +
+      field('Описание', 'd-desc', item.description, 'textarea') +
+      field('Ссылка на видео', 'd-url', item.videoUrl) +
+      field('Превью', 'd-thumb', item.thumb) +
+      '<div class="field"><label>Файл превью</label><input class="input" type="file" id="d-file" accept="image/*" /></div>' +
+      field('Длительность, сек.', 'd-dur', item.duration, 'number'),
       function (status) { saveVideo(ctx, item, status); },
       function () { saveVideo(ctx, item, 'published'); },
-      isNew ? null : function () { if (confirm('Снять видео с сайта?')) { hideItem('video', item.id); ctx.toast('Снято'); ctx.go('video'); } },
+      isNew ? null : function () { if (confirm('Снять видео с публикации?')) { hideItem('video', item.id); ctx.toast('Снято с публикации'); ctx.go('video'); } },
       'video.html'
     );
     bindCoverFile();
@@ -610,8 +610,8 @@
 
   function saveVideo(ctx, item, status) {
     var title = val('d-title');
-    if (!title) { ctx.toast('Нужно название', true); return; }
-    if (!val('d-url')) { ctx.toast('Нужна ссылка на ролик', true); return; }
+    if (!title) { ctx.toast('Укажите название', true); return; }
+    if (!val('d-url')) { ctx.toast('Укажите ссылку на видео', true); return; }
     upsert('video', Object.assign({}, item, {
       title: title,
       type: val('d-type') || 'long',
@@ -622,7 +622,7 @@
       duration: Number(val('d-dur')) || 0,
       status: status,
     }));
-    ctx.toast(status === 'published' ? 'Видео на сайте' : 'Черновик сохранён');
+    ctx.toast(status === 'published' ? 'Опубликовано' : 'Черновик сохранён');
     ctx.go('video');
   }
 
@@ -642,14 +642,14 @@
     composeShell(
       ctx, 'День Церкви', 'church-day',
       field('Дата', 'd-date', item.date, 'date') +
-      field('Как называется день', 'd-title', lit.title, 'text', 'placeholder="Пятница XVIII обычной недели"') +
+      field('Название дня', 'd-title', lit.title, 'text', 'placeholder="Пятница XVIII обычной недели"') +
       field('Святой дня', 'd-saint', lit.saint && lit.saint.name) +
-      field('Чтение дня', 'd-reading', lit.reading, 'textarea') +
-      field('Молитва дня', 'd-prayer', lit.prayer, 'textarea') +
-      field('Цитата дня', 'd-quote', lit.quote, 'textarea'),
+      field('Чтение', 'd-reading', lit.reading, 'textarea') +
+      field('Молитва', 'd-prayer', lit.prayer, 'textarea') +
+      field('Цитата', 'd-quote', lit.quote, 'textarea'),
       function (status) { saveChurch(ctx, item, status); },
       function () { saveChurch(ctx, item, 'published'); },
-      isNew ? null : function () { if (confirm('Снять этот день?')) { hideItem('church-day', item.id); ctx.toast('Снято'); ctx.go('church-day'); } },
+      isNew ? null : function () { if (confirm('Снять день с публикации?')) { hideItem('church-day', item.id); ctx.toast('Снято с публикации'); ctx.go('church-day'); } },
       'calendar.html'
     );
   }
@@ -671,7 +671,7 @@
         quote: val('d-quote'),
       },
     }));
-    ctx.toast(status === 'published' ? 'День Церкви обновлён' : 'Черновик сохранён');
+    ctx.toast(status === 'published' ? 'Опубликовано' : 'Черновик сохранён');
     ctx.go('church-day');
   }
 
@@ -682,7 +682,7 @@
         ctx, item.name || 'Автор', 'authors',
         field('Имя', 'd-title', item.name) +
         field('Роль', 'd-role', item.role) +
-        field('О себе', 'd-bio', item.bio, 'textarea'),
+        field('Биография', 'd-bio', item.bio, 'textarea'),
         function (status) { saveAuthor(ctx, item, status); },
         function () { saveAuthor(ctx, item, 'published'); },
         null,
@@ -692,7 +692,7 @@
     }
     var items = mergedList('authors');
     ctx.viewEl.innerHTML =
-      '<div class="topbar"><div><h1>Авторы</h1><p>Карточки авторов, которые уже есть на сайте.</p></div></div>' +
+      '<div class="topbar"><div><h1>Авторы</h1><p>Авторы портала.</p></div></div>' +
       '<div class="panel">' +
       (items.length
         ? '<div class="list-stack">' + items.map(function (a) {
@@ -703,7 +703,7 @@
             '</div></a>'
           );
         }).join('') + '</div>'
-        : emptyRow('Авторы сайта не загрузились. Обновите страницу.')) +
+        : emptyRow('Не удалось загрузить авторов.')) +
       '</div>';
   }
 
@@ -716,7 +716,7 @@
       bio: val('d-bio'),
       status: status,
     }));
-    ctx.toast(status === 'published' ? 'Карточка автора обновлена' : 'Черновик сохранён');
+    ctx.toast(status === 'published' ? 'Сохранено' : 'Черновик сохранён');
     ctx.go('authors');
   }
 

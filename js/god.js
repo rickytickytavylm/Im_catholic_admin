@@ -40,11 +40,11 @@
       '<section class="god-band">' +
       '<div class="god-band-head">' +
       '<h2>' + esc(title) + (count != null ? ' <em>' + count + '</em>' : '') + '</h2>' +
-      (href ? '<a href="' + href + '">Все →</a>' : '') +
+      (href ? '<a href="' + href + '">Все</a>' : '') +
       '</div>' +
       (itemsHtml
         ? '<div class="god-rail">' + itemsHtml + '</div>'
-        : '<p class="god-miss">Этот блок на сайте есть, но сейчас не подгрузился. Обновите страницу.</p>') +
+        : '<p class="god-miss">Не удалось загрузить раздел.</p>') +
       '</section>'
     );
   }
@@ -130,8 +130,8 @@
       var days = dayItems();
 
       view.innerHTML =
-        '<div class="topbar"><div><h1>Сайт как есть</h1>' +
-        '<p>Это живой ресурс. Нажмите любую карточку — откроется правка того, что уже видит читатель.</p></div></div>' +
+        '<div class="topbar"><div><h1>Обзор</h1>' +
+        '<p>Все разделы портала.</p></div></div>' +
         band('Новости', '#news', news.slice(0, 8).map(function (it) {
           return card('#news/' + encodeURIComponent(it.id), it.image || it.cover || 'assets/cards/articles-spirituality.webp', it.title, it.date || it.excerpt);
         }).join(''), news.length) +
@@ -229,7 +229,7 @@
       var list = items();
       view.innerHTML =
         '<div class="topbar"><div><h1>' + esc(title) + '</h1>' +
-        '<p>Карточки с сайта. Нажмите — правите заголовок, описание, обложку.</p></div>' +
+        '<p>Материалы раздела.</p></div>' +
         '<div class="topbar-actions">' +
         (addHref ? '<a class="btn btn-primary" href="' + addHref + '">Добавить</a>' : '') +
         '</div></div>' +
@@ -237,7 +237,7 @@
           ? '<div class="god-grid">' + list.map(function (it) {
             return card(hrefOf(it), imgOf(it), titleOf(it), metaOf(it));
           }).join('') + '</div>'
-          : '<div class="panel"><div class="empty">Загружаю содержимое сайта…</div></div>');
+          : '<div class="panel"><div class="empty">Загрузка</div></div>');
     }
 
     draw();
@@ -258,19 +258,19 @@
     }
     var desk = window.AdminDesk;
     ctx.viewEl.innerHTML =
-      '<div class="topbar"><div><h1>' + esc(item.title) + '</h1><p>Карточка раздела на сайте.</p></div>' +
-      '<div class="topbar-actions"><a class="btn btn-ghost" href="#' + back + '">К разделу</a>' +
+      '<div class="topbar"><div><h1>' + esc(item.title) + '</h1><p>Карточка раздела.</p></div>' +
+      '<div class="topbar-actions"><a class="btn btn-ghost" href="#' + back + '">Назад</a>' +
       '<button type="button" class="btn btn-primary" id="god-save">Сохранить</button></div></div>' +
       '<div class="god-edit">' +
       '<div class="god-preview" style="' + thumbStyle(item.image) + '"></div>' +
       '<div class="panel form-grid desk-form">' +
       '<div class="field"><label>Заголовок</label><input class="input" id="g-title" value="' + esc(item.title) + '" /></div>' +
-      '<div class="field"><label>Подпись</label><textarea class="textarea" id="g-sub" rows="3">' + esc(item.sub || '') + '</textarea></div>' +
-      '<div class="field"><label>Картинка</label><input class="input" id="g-img" value="' + esc(item.image || '') + '" /></div>' +
+      '<div class="field"><label>Подзаголовок</label><textarea class="textarea" id="g-sub" rows="3">' + esc(item.sub || '') + '</textarea></div>' +
+      '<div class="field"><label>Изображение</label><input class="input" id="g-img" value="' + esc(item.image || '') + '" /></div>' +
       '</div></div>';
     document.getElementById('god-save').onclick = function () {
       if (!desk || !desk.upsertGuide) {
-        ctx.toast('Сохранено локально');
+        ctx.toast('Сохранено');
         return;
       }
       desk.upsertGuide({
@@ -280,7 +280,7 @@
         image: document.getElementById('g-img').value,
         status: 'published',
       });
-      ctx.toast('Карточка обновлена');
+      ctx.toast('Сохранено');
       ctx.go(back);
     };
   }

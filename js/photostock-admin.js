@@ -53,7 +53,7 @@
     });
 
     viewEl.innerHTML =
-      '<div class="topbar"><div><h1>Карточки фотографов</h1><p>Создание/удаление — супер, главред, фоторедактор. Редактировать может и связанный user.</p></div>' +
+      '<div class="topbar"><div><h1>Фотографы</h1><p>Карточки фотографов портала.</p></div>' +
       '<div class="topbar-actions"><button type="button" class="btn btn-primary" id="ph-add">Добавить карточку</button></div></div>' +
       '<div class="panel"><div class="table-wrap"><table class="data"><thead><tr>' +
       '<th>Имя</th><th>Дата</th><th>Тег</th><th>Email</th><th></th></tr></thead><tbody>' +
@@ -68,7 +68,7 @@
           '<button type="button" class="btn btn-danger" data-del="' + esc(p.id) + '">Удалить</button>' +
           '</td></tr>'
         );
-      }).join('') || '<tr><td colspan="5" class="empty">Пока нет карточек</td></tr>') +
+      }).join('') || '<tr><td colspan="5" class="empty">Нет карточек</td></tr>') +
       '</tbody></table></div></div>';
 
     document.getElementById('ph-add').onclick = function () { go('photographer-edit', 'new'); };
@@ -120,12 +120,12 @@
 
     viewEl.innerHTML =
       '<div class="topbar"><div><h1>' + (isNew ? 'Новая карточка' : 'Карточка фотографа') + '</h1></div>' +
-      '<div class="topbar-actions"><a class="btn btn-ghost" href="#photographers">К списку</a>' +
+      '<div class="topbar-actions"><a class="btn btn-ghost" href="#photographers">Назад</a>' +
       '<button type="button" class="btn btn-primary" id="ph-save">Сохранить</button></div></div>' +
       '<div class="panel form-grid">' +
       '<label>Имя и фамилия<input class="input" id="ph-name" value="' + esc(ph.name) + '" /></label>' +
       '<label>Slug<input class="input" id="ph-slug" value="' + esc(ph.slug) + '" /></label>' +
-      '<label>Email (привязка к user)<input class="input" id="ph-email" value="' + esc(ph.email || '') + '" ' +
+      '<label>Email<input class="input" id="ph-email" value="' + esc(ph.email || '') + '" ' +
       (canManageCards(session, role) ? '' : 'readonly') + ' /></label>' +
       '<label>Фото (файл)<input class="input" type="file" id="ph-photo-file" accept="image/*" /></label>' +
       '<div id="ph-photo-preview">' +
@@ -135,7 +135,7 @@
           esc((ph.name || '?').split(/\s+/).map(function (w) { return w[0]; }).join('').slice(0, 2).toUpperCase()) +
           '</span>') +
       '</div>' +
-      '<label>Справка<textarea class="input" id="ph-bio" rows="5">' + esc(ph.bio || '') + '</textarea></label>' +
+      '<label>Биография<textarea class="input" id="ph-bio" rows="5">' + esc(ph.bio || '') + '</textarea></label>' +
       '<label>ВК<input class="input" id="ph-vk" value="' + esc((ph.social && ph.social.vk) || '') + '" /></label>' +
       '<label>ТГ<input class="input" id="ph-tg" value="' + esc((ph.social && ph.social.tg) || '') + '" /></label>' +
       '<label>Макс<input class="input" id="ph-max" value="' + esc((ph.social && ph.social.max) || '') + '" /></label>' +
@@ -203,7 +203,7 @@
     function paint() {
       var pending = AdminStore.listPhotos().filter(function (p) { return p.status === 'pending'; });
       viewEl.innerHTML =
-        '<div class="topbar"><div><h1>Модерация фото</h1><p>Одобренные фото появляются на витрине фотостока.</p></div></div>' +
+        '<div class="topbar"><div><h1>Модерация фото</h1><p>Очередь снимков на публикацию.</p></div></div>' +
         '<div class="panel"><div class="table-wrap"><table class="data"><thead><tr>' +
         '<th>Превью</th><th>Фотограф / тег</th><th>Теги</th><th></th></tr></thead><tbody>' +
         (pending.map(function (p) {
@@ -300,7 +300,7 @@
               '</td></tr>'
             );
           })
-          .join('') || '<tr><td colspan="5" class="empty">Пока нет загрузок</td></tr>';
+          .join('') || '<tr><td colspan="5" class="empty">Нет загрузок</td></tr>';
 
       body.querySelectorAll('[data-act]').forEach(function (btn) {
         btn.onclick = function () {
@@ -326,11 +326,11 @@
     }
 
     viewEl.innerHTML =
-      '<div class="topbar"><div><h1>Загрузить фото</h1><p>Лимит: ' +
+      '<div class="topbar"><div><h1>Загрузить фото</h1><p>До ' +
       MAX_PER_DAY +
-      ' шт/сутки, до 5 Мб каждое. Сегодня: ' +
+      ' файлов в сутки, не более 5 Мб. Сегодня: ' +
       used +
-      '/' +
+      ' из ' +
       MAX_PER_DAY +
       '.</p></div>' +
       '<div class="topbar-actions">' +
@@ -338,8 +338,8 @@
       '<button type="button" class="btn btn-primary" id="btn-pick">Загрузить фото</button>' +
       '</div></div>' +
       '<input type="file" id="file-input" accept="image/*" multiple hidden />' +
-      '<div class="panel" id="upload-panel"><p class="hint-note">Выберите файлы — появится таблица для тегов.</p></div>' +
-      '<div class="panel" style="margin-top:14px"><div class="panel-head"><h2>Все мои загрузки</h2></div>' +
+      '<div class="panel" id="upload-panel"><p class="hint-note">Выберите файлы и укажите теги.</p></div>' +
+      '<div class="panel" style="margin-top:14px"><div class="panel-head"><h2>Мои загрузки</h2></div>' +
       '<div class="table-wrap"><table class="data"><thead><tr>' +
       '<th>Превью</th><th>Теги</th><th>Дата</th><th>Статус</th><th></th></tr></thead>' +
       '<tbody id="my-photos-body"></tbody></table></div></div>';
@@ -375,7 +375,7 @@
         if (i >= files.length) {
           AdminStore.addUploadCount(session.email, files.length);
           panel.innerHTML =
-            '<p class="hint-note">Все фото успешно загружены. Пожалуйста, проставьте теги, чтобы пользователям было проще их найти. Введите 5–7 тегов для каждого фото, разделяя их запятыми.</p>' +
+            '<p class="hint-note">Файлы загружены. Укажите 5–7 тегов через запятую.</p>' +
             '<div class="table-wrap"><table class="data"><thead><tr><th>Превью</th><th>Теги</th></tr></thead><tbody>' +
             batch
               .map(function (item, idx) {
@@ -401,10 +401,10 @@
               batch[idx].tags = tags;
               AdminStore.upsertMedia(batch[idx], session.email);
             });
-            toast('Спасибо! Ваши фото будут доступны на сайте после модерации');
+            toast('Отправлено на модерацию');
             batch = [];
             paintOwnTable();
-            panel.innerHTML = '<p class="hint-note">Партия отправлена на модерацию.</p>';
+            panel.innerHTML = '<p class="hint-note">Отправлено на модерацию.</p>';
           };
           return;
         }
