@@ -53,7 +53,7 @@
   ];
 
   function emptyState() {
-    return { articles: [], events: [], audio: [], video: [], churchDays: [], authors: [], guides: [] };
+    return { articles: [], events: [], audio: [], video: [], churchDays: [], authors: [], guides: [], authorLinks: [], photographers: [], videoChannels: [] };
   }
 
   var archiveCache = { news: [], article: [] };
@@ -584,6 +584,8 @@
       field('Название', 'd-title', item.title) +
       field('Формат', 'd-type', item.type, 'select', opts([{ id: 'long', title: 'Полнометражное' }, { id: 'short', title: 'Shorts' }], item.type || 'long')) +
       field('Спикер', 'd-speaker', item.speaker) +
+      field('Канал партнёра', 'd-channel', item.channelId) +
+      field('Цикл', 'd-cycle', item.cycle) +
       field('Описание', 'd-desc', item.description, 'textarea') +
       field('Ссылка на видео', 'd-url', item.videoUrl) +
       field('Превью', 'd-thumb', item.thumb) +
@@ -616,6 +618,8 @@
       title: title,
       type: val('d-type') || 'long',
       speaker: val('d-speaker'),
+      channelId: val('d-channel'),
+      cycle: val('d-cycle'),
       description: val('d-desc'),
       videoUrl: val('d-url'),
       thumb: val('d-thumb'),
@@ -675,24 +679,147 @@
     ctx.go('church-day');
   }
 
+  function catalogPubs() {
+    var seen = {};
+    var out = [];
+    function add(p) {
+      if (!p || !p.slug || seen[p.slug]) return;
+      seen[p.slug] = 1;
+      out.push({
+        slug: p.slug,
+        title: p.title || p.slug,
+        date: (p.date || '').slice(0, 10),
+        excerpt: p.excerpt || '',
+      });
+    }
+    (window.YakAuthors || []).forEach(function (a) {
+      (a.recent || []).forEach(add);
+    });
+    mergedList('article').concat(mergedList('news')).forEach(function (a) {
+      add({ slug: a.slug || a.id, title: a.title, date: a.date, excerpt: a.excerpt });
+    });
+    if (window.AdminStore && AdminStore.listMaterials) {
+      AdminStore.listMaterials().forEach(function (m) {
+        add({ slug: m.slug || m.id, title: m.title, date: m.date || m.updatedAt, excerpt: m.excerpt });
+      });
+    }
+    return out;
+  }
+
+  function linkAuthor(authorSlug, pub) {
+    if (!authorSlug || !pub || !pub.slug) return;
+    var data = read();
+    data.authorLinks = (data.authorLinks || []).filter(function (x) {
+      return !(x.authorSlug === authorSlug && x.slug === pub.slug);
+    });
+    data.authorLinks.unshift({
+      authorSlug: authorSlug,
+      slug: pub.slug,
+      title: pub.title || pub.slug,
+      date: pub.date || '',
+      excerpt: pub.excerpt || '',
+    });
+    write(data);
+    var author = getItem('authors', authorSlug) || { id: authorSlug, slug: authorSlug, recent: [] };
+    author.recent = author.recent || [];
+    if (!author.recent.some(function (p) { return p.slug === pub.slug; })) {
+      author.recent.unshift({ slug: pub.slug, title: pub.title || pub.slug, date: pub.date || '', excerpt: pub.excerpt || '' });
+    }
+    author.status = author.status || 'published';
+    upsert('authors', author);
+  }
+
+  function unlinkAuthor(authorSlug, slug) {
+    var data = read();
+    data.authorLinks = (data.authorLinks || []).filter(function (x) {
+      return !(x.authorSlug === authorSlug && x.slug === slug);
+    });
+    write(data);
+    var author = getItem('authors', authorSlug);
+    if (author && author.recent) {
+      author.recent = author.recent.filter(function (p) { return p.slug !== slug; });
+      upsert('authors', author);
+    }
+  }
+
   function renderAuthors(ctx, id) {
     if (id && id !== 'new') {
-      var item = getItem('authors', id) || { id: id, slug: id, name: '', bio: '', role: '' };
+      var baked = (window.YakAuthors || []).filter(function (a) { return a.slug === id || a.id === id; })[0] || {};
+      var item = Object.assign({}, baked, getItem('authors', id) || { id: id, slug: id });
+      var linked = (item.recent || []).slice();
+      (read().authorLinks || []).forEach(function (l) {
+        if (l.authorSlug === item.slug && !linked.some(function (p) { return p.slug === l.slug; })) linked.unshift(l);
+      });
       composeShell(
         ctx, item.name || 'Автор', 'authors',
         field('Имя', 'd-title', item.name) +
         field('Роль', 'd-role', item.role) +
-        field('Биография', 'd-bio', item.bio, 'textarea'),
+        field('Биография', 'd-bio', item.bio, 'textarea') +
+        '<div class="field"><label>Фото</label><input class="input" type="file" id="d-photo" accept="image/*" />' +
+        '<input type="hidden" id="d-photo-url" value="' + esc(item.photo || '') + '" />' +
+        (item.photo ? '<img src="' + esc(item.photo) + '" alt="" style="width:72px;height:72px;border-radius:50%;object-fit:cover;margin-top:8px" />' : '') +
+        '</div>' +
+        '<div class="field"><label>Привязать старую публикацию</label>' +
+        '<input class="input" id="d-pub-q" list="d-pub-list" placeholder="Название или slug статьи" />' +
+        '<datalist id="d-pub-list"></datalist>' +
+        '<button type="button" class="btn btn-ghost" id="d-pub-add" style="margin-top:8px">Добавить к автору</button>' +
+        '<p class="hint-note">У старых материалов автора часто нет. Найдите публикацию и привяжите — она появится на карточке автора и в ленте.</p>' +
+        '<div id="d-pub-linked"></div></div>',
         function (status) { saveAuthor(ctx, item, status); },
         function () { saveAuthor(ctx, item, 'published'); },
         null,
-        'authors.html'
+        'author.html?slug=' + encodeURIComponent(item.slug || id)
       );
+      var pubs = catalogPubs();
+      document.getElementById('d-pub-list').innerHTML = pubs.slice(0, 400).map(function (p) {
+        return '<option value="' + esc(p.slug) + '">' + esc(p.title) + '</option>';
+      }).join('');
+      var photo = document.getElementById('d-photo');
+      if (photo) photo.onchange = function () {
+        var f = photo.files && photo.files[0];
+        if (!f) return;
+        var reader = new FileReader();
+        reader.onload = function () {
+          document.getElementById('d-photo-url').value = reader.result;
+        };
+        reader.readAsDataURL(f);
+      };
+      function paintLinked() {
+        var box = document.getElementById('d-pub-linked');
+        if (!box) return;
+        box.innerHTML = linked.length
+          ? '<ul class="cycle-list">' + linked.map(function (p) {
+            return '<li class="cycle-row"><span>' + esc(p.title || p.slug) + '</span>' +
+              '<button type="button" class="btn btn-ghost" data-un="' + esc(p.slug) + '">Снять</button></li>';
+          }).join('') + '</ul>'
+          : '<p class="hint-note">Пока нет привязанных публикаций.</p>';
+        box.querySelectorAll('[data-un]').forEach(function (btn) {
+          btn.onclick = function () {
+            unlinkAuthor(item.slug, btn.getAttribute('data-un'));
+            linked = linked.filter(function (p) { return p.slug !== btn.getAttribute('data-un'); });
+            paintLinked();
+            ctx.toast('Снято');
+          };
+        });
+      }
+      paintLinked();
+      document.getElementById('d-pub-add').onclick = function () {
+        var q = val('d-pub-q');
+        if (!q) { ctx.toast('Укажите slug или название', true); return; }
+        var hit = pubs.filter(function (p) {
+          return p.slug === q || String(p.title || '').toLowerCase() === q.toLowerCase();
+        })[0] || { slug: q, title: q };
+        linkAuthor(item.slug, hit);
+        if (!linked.some(function (p) { return p.slug === hit.slug; })) linked.unshift(hit);
+        document.getElementById('d-pub-q').value = '';
+        paintLinked();
+        ctx.toast('Публикация привязана');
+      };
       return;
     }
     var items = mergedList('authors');
     ctx.viewEl.innerHTML =
-      '<div class="topbar"><div><h1>Авторы</h1><p>Авторы портала.</p></div></div>' +
+      '<div class="topbar"><div><h1>Авторы</h1><p>Карточки, описания и привязка публикаций.</p></div></div>' +
       '<div class="panel">' +
       (items.length
         ? '<div class="list-stack">' + items.map(function (a) {
@@ -714,6 +841,7 @@
       name: val('d-title'),
       role: val('d-role'),
       bio: val('d-bio'),
+      photo: val('d-photo-url') || item.photo || '',
       status: status,
     }));
     ctx.toast(status === 'published' ? 'Сохранено' : 'Черновик сохранён');
@@ -778,6 +906,7 @@
     portalHref: portalHref,
     read: read,
     upsertGuide: upsertGuide,
+    linkAuthor: linkAuthor,
   };
 
   try {

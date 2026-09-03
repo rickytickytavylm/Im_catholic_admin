@@ -142,11 +142,22 @@
       type: 'long',
       videoUrl: BUCKET + 'ocean-mercy/' + v.slug + '.mp4',
       thumb: 'assets/video/' + v.thumbId + '.webp',
+      channelId: 'ocean-mercy',
+      cycle: 'Океан милосердия',
     };
   });
 
   global.YakVideos = {
     bucket: BUCKET,
     items: LONGS.concat(SHORTS),
+    channels: [
+      {
+        id: 'ocean-mercy',
+        name: 'Океан милосердия',
+        logo: 'assets/video/long-01.webp',
+        bio: 'Цикл фильмов о милосердии, святости и достоинстве человека.',
+        links: [{ label: 'Смотреть на портале', href: 'video-channel.html?id=ocean-mercy' }],
+      },
+    ],
   };
 })(window);

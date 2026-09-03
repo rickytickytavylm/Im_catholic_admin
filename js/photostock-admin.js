@@ -141,7 +141,13 @@
       '<label>Макс<input class="input" id="ph-max" value="' + esc((ph.social && ph.social.max) || '') + '" /></label>' +
       '<label>Pinterest<input class="input" id="ph-pin" value="' + esc((ph.social && ph.social.pinterest) || '') + '" /></label>' +
       '<label>Личный сайт<input class="input" id="ph-site" value="' + esc((ph.social && ph.social.site) || '') + '" /></label>' +
-      '<p class="hint-note">Тег фотографа: <code>#' + esc(ph.tagSlug || (ph.slug ? ph.slug + '-photos' : '…-photos')) + '</code></p>' +
+      '<p class="hint-note">Тег фотографа: <code>#' + esc(ph.tagSlug || (ph.slug ? ph.slug + '-photos' : '…-photos')) + '</code>. Чтобы снимки появились на сайте, загрузите их ниже и откройте портал с того же адреса, что и редакция.</p>' +
+      '</div>' +
+      '<div class="panel post-card" style="margin-top:14px">' +
+      '<h3>Фото этого фотографа</h3>' +
+      '<p class="hint-note">Загрузка сразу на карточку. Редактор публикует без отдельной модерации.</p>' +
+      '<input type="file" id="ph-works" accept="image/*" multiple />' +
+      '<div id="ph-works-list" class="photo-grid" style="margin-top:12px"></div>' +
       '</div>';
 
     var photoData = ph.photo || '';
@@ -184,8 +190,60 @@
         site: document.getElementById('ph-site').value.trim(),
       };
       AdminStore.upsertPhotographer(ph, session.email);
-      toast('Сохранено');
+      try {
+        var desk = JSON.parse(localStorage.getItem('yak_desk') || '{}');
+        desk.photographers = desk.photographers || [];
+        var found = false;
+        desk.photographers.forEach(function (row, i) {
+          if (row.id === ph.id || row.slug === ph.slug) {
+            desk.photographers[i] = ph;
+            found = true;
+          }
+        });
+        if (!found) desk.photographers.unshift(ph);
+        localStorage.setItem('yak_desk', JSON.stringify(desk));
+      } catch (e) {}
+      toast('Сохранено. Карточка доступна на портале.');
       go('photographers');
+    };
+
+    function paintWorks() {
+      var box = document.getElementById('ph-works-list');
+      if (!box) return;
+      var mine = AdminStore.listPhotos().filter(function (p) {
+        return p.photographerId === ph.id || p.photographerSlug === ph.slug;
+      });
+      box.innerHTML = mine.map(function (p) {
+        return '<div class="photo-card"><div class="ph" style="background-image:url(\'' + esc(p.url || p.thumb || '').replace(/'/g, '%27') + '\')"></div></div>';
+      }).join('') || '<p class="hint-note">Пока нет снимков у этой карточки.</p>';
+    }
+    paintWorks();
+    var works = document.getElementById('ph-works');
+    if (works) works.onchange = function () {
+      var files = [].slice.call(works.files || []);
+      files.forEach(function (file) {
+        if (file.size > MAX_BYTES) return;
+        readFile(file).then(function (url) {
+          AdminStore.upsertMedia({
+            id: AdminStore.uid('media'),
+            kind: 'image',
+            title: file.name,
+            url: url,
+            thumb: url,
+            status: 'approved',
+            photographerId: ph.id,
+            photographerSlug: ph.slug,
+            photographerName: ph.name,
+            photographerTag: ph.tagSlug || (ph.slug + '-photos'),
+            tags: [ph.tagSlug || (ph.slug + '-photos')],
+            ownerEmail: session.email,
+            createdAt: new Date().toISOString(),
+          }, session.email);
+          paintWorks();
+        });
+      });
+      works.value = '';
+      toast('Фото добавлены на карточку');
     };
   }
 

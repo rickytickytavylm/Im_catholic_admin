@@ -502,6 +502,20 @@
       return;
     }
     AdminStore.upsertMaterial(next, ctx.session.email);
+    if (window.AdminDesk && AdminDesk.linkAuthor && next.authorTag) {
+      var slug = '';
+      (window.YakAuthors || []).forEach(function (a) {
+        if (a.slug === next.authorTag || a.name === next.authorTag) slug = a.slug;
+      });
+      if (slug) {
+        AdminDesk.linkAuthor(slug, {
+          slug: next.slug || next.id,
+          title: next.title,
+          date: (next.date || next.updatedAt || '').slice(0, 10),
+          excerpt: next.excerpt || '',
+        });
+      }
+    }
     Object.assign(mat, next);
     var state = document.getElementById('post-save-state');
     if (state) {
