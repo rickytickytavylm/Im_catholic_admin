@@ -499,6 +499,12 @@ table.data .title-link:hover { color: var(--accent); }
 }
 .slug-path input:focus { background: var(--surface-2); border-radius: 6px; }
 .excerpt-input { margin: 0 0 14px; resize: vertical; min-height: 72px; }
+.lead-rte { margin: 0 0 14px; }
+.lead-rte .rte-body {
+  min-height: 88px; padding: 12px 14px 16px; font-size: 16px; line-height: 1.55;
+}
+.lead-rte .rte-bar { position: static; }
+.lead-rte a { color: #2a5bd7; text-decoration: underline; }
 .rubric-pills { display: flex; flex-wrap: wrap; gap: 6px; }
 .rubric-pill { cursor: pointer; margin: 0; }
 .rubric-pill input { position: absolute; opacity: 0; pointer-events: none; }
@@ -694,7 +700,10 @@ table.data .title-link:hover { color: var(--accent); }
 .guide-row-copy strong { font-size: 16px; }
 .guide-row-copy small { color: var(--stone-500); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .guide-live .guide-body { font-size: 15px; line-height: 1.55; }
-.guide-live .guide-lead { font-size: 16px; margin: 0 0 12px; }
+.guide-live .guide-lead { font-size: 16px; margin: 0 0 12px; line-height: 1.5; }
+.guide-live .guide-lead a { color: #2a5bd7; text-decoration: underline; }
+.guide-live .guide-lead p { margin: 0 0 .4em; }
+.guide-live .guide-lead p:last-child { margin: 0; }
 .guide-live h2 { font-family: 'Cormorant Garamond', serif; font-size: 20px; margin: 18px 0 8px; }
 .guide-live .guide-quote { margin: 0 0 12px; padding-left: 12px; border-left: 3px solid #b08a4a; }
 .guide-live .guide-note { padding-left: 12px; border-left: 3px solid #b08a4a; }

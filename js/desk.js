@@ -235,6 +235,7 @@
       kind: type === 'news' ? 'news' : 'article',
       title: a.title || '',
       excerpt: a.excerpt || '',
+      excerptHtml: a.excerptHtml || (hasMarkup(a.excerpt) ? a.excerpt : ''),
       body: a.contentText || a.content || '',
       contentHtml: a.contentHtml || '',
       cover: a.image || a.cover || '',
@@ -386,6 +387,61 @@
     return (n.textContent || '').replace(/\s+/g, ' ').trim();
   }
 
+  function hasMarkup(s) {
+    return /<[a-z][\s\S]*>/i.test(String(s || ''));
+  }
+
+  function sanitizeLead(html) {
+    var box = document.createElement('div');
+    box.innerHTML = html || '';
+    box.querySelectorAll('script,style,iframe,object,img,video,figure,svg').forEach(function (n) { n.remove(); });
+    var allow = { a: 1, em: 1, i: 1, strong: 1, b: 1, u: 1, br: 1, p: 1, span: 1 };
+    [].slice.call(box.querySelectorAll('*')).forEach(function (n) {
+      var tag = n.tagName.toLowerCase();
+      if (!allow[tag]) {
+        while (n.firstChild) n.parentNode.insertBefore(n.firstChild, n);
+        n.parentNode.removeChild(n);
+        return;
+      }
+      if (tag !== 'a') {
+        [].slice.call(n.attributes).forEach(function (attr) { n.removeAttribute(attr.name); });
+        return;
+      }
+      var href = n.getAttribute('href') || '';
+      [].slice.call(n.attributes).forEach(function (attr) {
+        if (attr.name !== 'href') n.removeAttribute(attr.name);
+      });
+      if (!href || /^\s*(javascript|data):/i.test(href)) n.removeAttribute('href');
+      else {
+        n.setAttribute('href', href);
+        n.setAttribute('target', '_blank');
+        n.setAttribute('rel', 'noopener noreferrer');
+      }
+    });
+    return box.innerHTML;
+  }
+
+  function linkifyPlain(text) {
+    return esc(text)
+      .replace(/\n+/g, '<br>')
+      .replace(/(https?:\/\/[^\s<&]+|www\.[^\s<&]+)/gi, function (raw) {
+        var href = raw.indexOf('www.') === 0 ? 'https://' + raw : raw;
+        return '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + raw + '</a>';
+      });
+  }
+
+  function excerptToEditorHtml(item) {
+    var html = item.excerptHtml || '';
+    if (!html && hasMarkup(item.excerpt)) html = item.excerpt;
+    if (html) return sanitizeLead(html);
+    return item.excerpt ? esc(item.excerpt) : '';
+  }
+
+  function leadHtml() {
+    var el = document.getElementById('d-excerpt');
+    return el ? sanitizeLead(el.innerHTML || '') : '';
+  }
+
   function openArchiveForm(ctx, type, id, renderFn) {
     var cached = getItem(type, id);
     var hasText = cached && (cached.body || cached.contentHtml);
@@ -402,6 +458,8 @@
         mapped = Object.assign({}, mapped, cached, {
           body: cached.body || mapped.body,
           contentHtml: cached.contentHtml || mapped.contentHtml,
+          excerpt: cached.excerpt || mapped.excerpt,
+          excerptHtml: cached.excerptHtml || mapped.excerptHtml || cached.excerpt || mapped.excerpt,
         });
       }
       archiveCache[type] = (archiveCache[type] || []).filter(function (x) {
@@ -535,7 +593,14 @@
         '<div class="author-suggest" id="d-author-suggest" hidden></div></div>') +
       '<input class="input" id="d-date" type="date" value="' + esc((item.date || todayIso()).slice(0, 10)) + '" />' +
       '</div></div>' +
-      '<textarea class="textarea excerpt-input" id="d-excerpt" rows="3" placeholder="Лид — коротко, в ленте и под заголовком">' + esc(item.excerpt || '') + '</textarea>' +
+      '<div class="rte lead-rte">' +
+      '<div class="rte-bar" id="d-lead-bar">' +
+      '<button type="button" data-cmd="bold" title="Жирный">Ж</button>' +
+      '<button type="button" data-cmd="italic" title="Курсив">К</button>' +
+      '<button type="button" data-act="link" title="Ссылка">Ссылка</button>' +
+      '</div>' +
+      '<div class="rte-body excerpt-input" id="d-excerpt" contenteditable="true" data-placeholder="Лид — коротко, со ссылками если нужно"></div>' +
+      '</div>' +
       '<div class="rte">' +
       '<div class="rte-bar" id="d-rte-bar">' +
       '<button type="button" data-cmd="bold" title="Жирный">Ж</button>' +
@@ -556,11 +621,14 @@
 
     var bodyEl = document.getElementById('d-body');
     bodyEl.innerHTML = articleHtml(item);
+    var leadEl = document.getElementById('d-excerpt');
+    if (leadEl) leadEl.innerHTML = excerptToEditorHtml(item);
     mountDeskRTE(bodyEl, function () { drawPubPreview(); });
+    mountLeadRTE(leadEl, function () { drawPubPreview(); });
     bindCoverFile(function () { drawPubPreview(); });
     bindSlugField(!!slug);
     if (!isNews) bindAuthorChip(currentAuthor);
-    ['d-title', 'd-excerpt', 'd-date'].forEach(function (fid) {
+    ['d-title', 'd-date'].forEach(function (fid) {
       var el = document.getElementById(fid);
       if (el) el.addEventListener('input', drawPubPreview);
     });
@@ -683,14 +751,48 @@
         authorAvaHtml(author) +
         '<span>' + esc(author.name) + '</span></a>';
     }
+    var lead = leadHtml();
     el.innerHTML =
       (cover ? '<img src="' + esc(mediaSrc(cover)) + '" alt="" />' : '') +
       (rubs.length ? '<p class="dp-date">' + esc(rubs.join(' · ')) + '</p>' : '') +
       '<p class="dp-date">' + esc(val('d-date')) + (val('d-slug') ? ' · /' + esc(val('d-slug')) : '') + '</p>' +
       authorHtml +
       '<h3 class="dp-title">' + (esc(val('d-title')) || '<em class="dp-empty">Заголовок</em>') + '</h3>' +
-      (val('d-excerpt') ? '<p class="guide-lead">' + esc(val('d-excerpt')) + '</p>' : '') +
+      (lead ? '<div class="guide-lead">' + lead + '</div>' : '') +
       '<div class="guide-body">' + ((body && body.innerHTML) || '') + '</div>';
+  }
+
+  function mountLeadRTE(el, onChange) {
+    if (!el) return;
+    el.addEventListener('paste', function (e) {
+      e.preventDefault();
+      var html = (e.clipboardData && (e.clipboardData.getData('text/html') || e.clipboardData.getData('text/plain'))) || '';
+      var box = document.createElement('div');
+      if (hasMarkup(html)) box.innerHTML = html;
+      else box.innerHTML = linkifyPlain(html);
+      box.querySelectorAll('script,style,img,figure,iframe,video').forEach(function (n) { n.remove(); });
+      document.execCommand('insertHTML', false, sanitizeLead(box.innerHTML));
+      if (onChange) onChange();
+    });
+    el.addEventListener('input', function () { if (onChange) onChange(); });
+    var bar = document.getElementById('d-lead-bar');
+    if (!bar) return;
+    bar.onclick = function (e) {
+      var btn = e.target.closest('button');
+      if (!btn) return;
+      el.focus();
+      var cmd = btn.getAttribute('data-cmd');
+      var act = btn.getAttribute('data-act');
+      if (cmd) document.execCommand(cmd, false, null);
+      if (act === 'link') {
+        var sel = window.getSelection && window.getSelection();
+        var picked = sel && String(sel) ? String(sel).trim() : '';
+        var hint = /^https?:\/\//i.test(picked) ? picked : 'https://';
+        var href = prompt('Ссылка', hint);
+        if (href) document.execCommand('createLink', false, href);
+      }
+      if (onChange) onChange();
+    };
   }
 
   function mountDeskRTE(el, onChange) {
@@ -771,6 +873,8 @@
     if (!rubrics.length) { ctx.toast('Отметьте хотя бы одну рубрику', true); return; }
     var bodyEl = document.getElementById('d-body');
     var html = bodyEl ? bodyEl.innerHTML : '';
+    var lead = leadHtml();
+    var excerptPlain = htmlToText(lead);
     var author = type === 'article' ? findAuthor(val('d-author-slug') || val('d-author-q')) : null;
     var slug = val('d-slug') || slugify(title);
     var next = Object.assign({}, item, {
@@ -780,7 +884,8 @@
       category: rubrics[0],
       rubrics: rubrics,
       date: val('d-date') || todayIso(),
-      excerpt: val('d-excerpt') || htmlToText(html).slice(0, 220),
+      excerpt: excerptPlain || htmlToText(html).slice(0, 220),
+      excerptHtml: lead,
       body: htmlToText(html),
       contentHtml: html,
       cover: val('d-cover'),
