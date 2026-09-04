@@ -364,23 +364,49 @@
     if (onDelete) document.getElementById('desk-del').onclick = onDelete;
   }
 
+  function articleHtml(item) {
+    var html = item.contentHtml || '';
+    if (html && /<[a-z][\s\S]*>/i.test(html)) return html;
+    var text = item.body || html || '';
+    if (!text) return '<p></p>';
+    return String(text).split(/\n\n+/).map(function (p) {
+      return '<p>' + esc(p.trim()).replace(/\n/g, '<br>') + '</p>';
+    }).join('');
+  }
+
+  function htmlToText(html) {
+    var n = document.createElement('div');
+    n.innerHTML = html || '';
+    return (n.textContent || '').replace(/\s+/g, ' ').trim();
+  }
+
   function openArchiveForm(ctx, type, id, renderFn) {
-    var item = getItem(type, id);
-    if (item) {
-      renderFn(item);
-      return;
-    }
-    ctx.viewEl.innerHTML = '<div class="panel"><div class="empty">Загрузка</div></div>';
+    var cached = getItem(type, id);
+    var hasText = cached && (cached.body || cached.contentHtml);
+    ctx.viewEl.innerHTML = '<div class="panel"><div class="empty">Загрузка полного текста</div></div>';
     if (!window.AdminApi || !AdminApi.getArticle) {
-      ctx.go(type === 'news' ? 'news' : 'articles');
+      if (cached) renderFn(cached);
+      else ctx.go(type === 'news' ? 'news' : 'articles');
       return;
     }
     AdminApi.getArticle(id).then(function (a) {
       if (!a || !a.title) throw new Error('empty');
       var mapped = mapArchive(a, type);
-      archiveCache[type] = (archiveCache[type] || []).concat([mapped]);
+      if (cached && cached.source !== 'site') {
+        mapped = Object.assign({}, mapped, cached, {
+          body: cached.body || mapped.body,
+          contentHtml: cached.contentHtml || mapped.contentHtml,
+        });
+      }
+      archiveCache[type] = (archiveCache[type] || []).filter(function (x) {
+        return String(x.id) !== String(mapped.id);
+      }).concat([mapped]);
       renderFn(mapped);
     }).catch(function () {
+      if (hasText) {
+        renderFn(cached);
+        return;
+      }
       ctx.toast('Не удалось открыть материал', true);
       ctx.go(type === 'news' ? 'news' : 'articles');
     });
@@ -389,61 +415,159 @@
   function renderNewsForm(ctx, id) {
     var isNew = !id || id === 'new';
     if (isNew) {
-      paintNewsForm(ctx, { id: uid('news'), kind: 'news', category: 'news', date: todayIso(), status: 'draft' }, true);
+      paintPublicationForm(ctx, { id: uid('news'), kind: 'news', category: 'news', date: todayIso(), status: 'draft' }, true, 'news');
       return;
     }
-    openArchiveForm(ctx, 'news', id, function (item) { paintNewsForm(ctx, item, false); });
-  }
-
-  function paintNewsForm(ctx, item, isNew) {
-    composeShell(
-      ctx, isNew ? 'Новая новость' : 'Новость', 'news',
-      field('Заголовок', 'd-title', item.title) +
-      field('Рубрика', 'd-cat', item.category, 'select', opts(NEWS_CATS, item.category || 'news')) +
-      field('Дата', 'd-date', (item.date || todayIso()).slice(0, 10), 'date') +
-      field('Лид', 'd-excerpt', item.excerpt, 'textarea') +
-      field('Текст', 'd-body', item.body || item.contentHtml, 'textarea') +
-      field('Обложка', 'd-cover', item.cover || item.image) +
-      '<div class="field"><label>Файл обложки</label><input class="input" type="file" id="d-file" accept="image/*" /></div>' +
-      field('Автор', 'd-author', item.author || ctx.session.name),
-      function (status) { saveArticle(ctx, item, 'news', status); },
-      function () { saveArticle(ctx, item, 'news', 'published'); },
-      isNew ? null : function () { if (confirm('Снять новость с публикации?')) { hideItem('news', item.id); ctx.toast('Снято с публикации'); ctx.go('news'); } },
-      'archive.html?category=news'
-    );
-    bindCoverFile();
+    openArchiveForm(ctx, 'news', id, function (item) { paintPublicationForm(ctx, item, false, 'news'); });
   }
 
   function renderArticleForm(ctx, id) {
     var isNew = !id || id === 'new';
     if (isNew) {
-      paintArticleForm(ctx, { id: uid('art'), kind: 'article', category: 'columns', date: todayIso(), status: 'draft' }, true);
+      paintPublicationForm(ctx, { id: uid('art'), kind: 'article', category: 'columns', date: todayIso(), status: 'draft' }, true, 'article');
       return;
     }
-    openArchiveForm(ctx, 'article', id, function (item) { paintArticleForm(ctx, item, false); });
+    openArchiveForm(ctx, 'article', id, function (item) { paintPublicationForm(ctx, item, false, 'article'); });
   }
 
-  function paintArticleForm(ctx, item, isNew) {
-    composeShell(
-      ctx, isNew ? 'Новая статья' : 'Статья', 'articles',
+  function paintPublicationForm(ctx, item, isNew, type) {
+    var isNews = type === 'news';
+    var cats = isNews ? NEWS_CATS : ARTICLE_CATS;
+    var back = isNews ? 'news' : 'articles';
+    var portal = isNews ? 'archive.html?category=news' : 'articles.html';
+    var cover = item.cover || item.image || '';
+
+    ctx.viewEl.innerHTML =
+      '<div class="topbar"><div><h1>' + esc(isNew ? (isNews ? 'Новая новость' : 'Новая статья') : (item.title || (isNews ? 'Новость' : 'Статья'))) + '</h1>' +
+      '<p>' + (isNews ? 'Полный текст новости — как на сайте.' : 'Полный текст статьи — как на сайте.') + '</p></div>' +
+      '<div class="topbar-actions">' +
+      '<a class="btn btn-ghost" href="#' + back + '">Назад</a>' +
+      '<a class="btn btn-ghost" href="' + portalHref(portal) + '" target="_blank" rel="noopener">На портале</a>' +
+      (isNew ? '' : '<button type="button" class="btn btn-ghost" id="desk-del">Снять</button>') +
+      '<button type="button" class="btn btn-ghost" id="desk-draft">Сохранить черновик</button>' +
+      '<button type="button" class="btn btn-primary" id="desk-pub">Опубликовать</button>' +
+      '</div></div>' +
+      '<div class="day-editor guide-editor">' +
+      '<div class="panel form-grid desk-form">' +
       field('Заголовок', 'd-title', item.title) +
-      field('Рубрика', 'd-cat', item.category, 'select', opts(ARTICLE_CATS, item.category || 'columns')) +
+      field('Рубрика', 'd-cat', item.category, 'select', opts(cats, item.category || (isNews ? 'news' : 'columns'))) +
       field('Дата', 'd-date', (item.date || todayIso()).slice(0, 10), 'date') +
       field('Лид', 'd-excerpt', item.excerpt, 'textarea') +
-      field('Текст', 'd-body', item.body || item.contentHtml, 'textarea') +
-      field('Обложка', 'd-cover', item.cover || item.image) +
-      '<div class="field"><label>Файл обложки</label><input class="input" type="file" id="d-file" accept="image/*" /></div>' +
-      field('Автор', 'd-author', item.author || ctx.session.name),
-      function (status) { saveArticle(ctx, item, 'article', status); },
-      function () { saveArticle(ctx, item, 'article', 'published'); },
-      isNew ? null : function () { if (confirm('Снять статью с публикации?')) { hideItem('article', item.id); ctx.toast('Снято с публикации'); ctx.go('articles'); } },
-      'articles.html'
-    );
-    bindCoverFile();
+      field('Автор', 'd-author', item.author || (ctx.session && ctx.session.name) || '') +
+      '<div class="field"><label>Обложка</label>' +
+      '<div class="cover-frame' + (cover ? '' : ' is-empty') + '" id="d-cover-frame">' +
+      (cover ? '<img src="' + esc(mediaSrc(cover)) + '" alt="" />' : '<span>Фото 16:9</span>') +
+      '</div>' +
+      '<input type="hidden" id="d-cover" value="' + esc(cover) + '" />' +
+      '<div class="post-side-actions" style="margin-top:8px">' +
+      '<button type="button" class="btn btn-ghost" id="d-cover-up">С устройства</button></div>' +
+      '<input type="file" id="d-file" accept="image/*" hidden /></div>' +
+      '<div class="field"><label>Текст</label>' +
+      '<div class="rte">' +
+      '<div class="rte-bar" id="d-rte-bar">' +
+      '<button type="button" data-block="p">Текст</button>' +
+      '<button type="button" data-block="h2">Заголовок</button>' +
+      '<button type="button" data-cmd="bold">Жирный</button>' +
+      '<button type="button" data-cmd="italic">Курсив</button>' +
+      '<button type="button" data-block="quote">Цитата</button>' +
+      '<button type="button" data-cmd="insertUnorderedList">Список</button>' +
+      '<button type="button" data-act="link">Ссылка</button>' +
+      '<button type="button" data-act="image">Фото</button>' +
+      '</div>' +
+      '<div class="rte-body" id="d-body" contenteditable="true" data-placeholder="Текст публикации"></div>' +
+      '<input type="file" id="d-inline-file" accept="image/*" hidden />' +
+      '</div></div></div>' +
+      '<aside class="day-preview-wrap"><div class="day-preview-sticky">' +
+      '<p class="day-preview-label">Предпросмотр — полный текст</p>' +
+      '<div id="d-preview" class="day-preview guide-live"></div></div></aside></div>';
+
+    var bodyEl = document.getElementById('d-body');
+    bodyEl.innerHTML = articleHtml(item);
+    mountDeskRTE(bodyEl, function () { drawPubPreview(); });
+    bindCoverFile(function () { drawPubPreview(); });
+    ['d-title', 'd-excerpt', 'd-author', 'd-date'].forEach(function (fid) {
+      var el = document.getElementById(fid);
+      if (el) el.addEventListener('input', drawPubPreview);
+    });
+    drawPubPreview();
+
+    document.getElementById('desk-draft').onclick = function () { saveArticle(ctx, item, type, 'draft'); };
+    document.getElementById('desk-pub').onclick = function () { saveArticle(ctx, item, type, 'published'); };
+    var delBtn = document.getElementById('desk-del');
+    if (delBtn) delBtn.onclick = function () {
+      if (confirm(isNews ? 'Снять новость с публикации?' : 'Снять статью с публикации?')) {
+        hideItem(type, item.id);
+        ctx.toast('Снято с публикации');
+        ctx.go(back);
+      }
+    };
   }
 
-  function bindCoverFile() {
+  function drawPubPreview() {
+    var el = document.getElementById('d-preview');
+    if (!el) return;
+    var cover = val('d-cover');
+    var body = document.getElementById('d-body');
+    el.innerHTML =
+      (cover ? '<img src="' + esc(mediaSrc(cover)) + '" alt="" />' : '') +
+      '<p class="dp-date">' + esc(val('d-date')) + (val('d-author') ? ' · ' + esc(val('d-author')) : '') + '</p>' +
+      '<h3 class="dp-title">' + (esc(val('d-title')) || '<em class="dp-empty">Заголовок</em>') + '</h3>' +
+      (val('d-excerpt') ? '<p class="guide-lead">' + esc(val('d-excerpt')) + '</p>' : '') +
+      '<div class="guide-body">' + ((body && body.innerHTML) || '') + '</div>';
+  }
+
+  function mountDeskRTE(el, onChange) {
+    el.addEventListener('paste', function (e) {
+      e.preventDefault();
+      var html = (e.clipboardData && (e.clipboardData.getData('text/html') || e.clipboardData.getData('text/plain'))) || '';
+      var box = document.createElement('div');
+      if (/<[a-z][\s\S]*>/i.test(html)) box.innerHTML = html;
+      else box.innerHTML = '<p>' + esc(html).replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br>') + '</p>';
+      box.querySelectorAll('script,style').forEach(function (n) { n.remove(); });
+      document.execCommand('insertHTML', false, box.innerHTML);
+      if (onChange) onChange();
+    });
+    el.addEventListener('input', function () { if (onChange) onChange(); });
+    var bar = document.getElementById('d-rte-bar');
+    if (!bar) return;
+    bar.onclick = function (e) {
+      var btn = e.target.closest('button');
+      if (!btn) return;
+      el.focus();
+      var cmd = btn.getAttribute('data-cmd');
+      var block = btn.getAttribute('data-block');
+      var act = btn.getAttribute('data-act');
+      if (cmd) document.execCommand(cmd, false, null);
+      if (block === 'p' || block === 'h2') document.execCommand('formatBlock', false, block);
+      if (block === 'quote') document.execCommand('formatBlock', false, 'blockquote');
+      if (act === 'link') {
+        var href = prompt('Ссылка', 'https://');
+        if (href) document.execCommand('createLink', false, href);
+      }
+      if (act === 'image') {
+        var input = document.getElementById('d-inline-file');
+        if (!input) return;
+        input.onchange = function () {
+          var f = input.files && input.files[0];
+          if (!f) return;
+          var reader = new FileReader();
+          reader.onload = function () {
+            document.execCommand('insertHTML', false, '<figure class="rte-figure"><img src="' + esc(reader.result) + '" alt="" /></figure>');
+            if (onChange) onChange();
+          };
+          reader.readAsDataURL(f);
+          input.value = '';
+        };
+        input.click();
+      }
+      if (onChange) onChange();
+    };
+  }
+
+  function bindCoverFile(onChange) {
     var file = document.getElementById('d-file');
+    var btn = document.getElementById('d-cover-up');
+    if (btn && file) btn.onclick = function () { file.click(); };
     if (!file) return;
     file.onchange = function () {
       var f = file.files && file.files[0];
@@ -452,6 +576,12 @@
       reader.onload = function () {
         var cover = document.getElementById('d-cover');
         if (cover) cover.value = reader.result;
+        var frame = document.getElementById('d-cover-frame');
+        if (frame) {
+          frame.classList.remove('is-empty');
+          frame.innerHTML = '<img src="' + reader.result + '" alt="" />';
+        }
+        if (onChange) onChange();
       };
       reader.readAsDataURL(f);
     };
@@ -460,16 +590,16 @@
   function saveArticle(ctx, item, type, status) {
     var title = val('d-title');
     if (!title) { ctx.toast('Укажите заголовок', true); return; }
+    var bodyEl = document.getElementById('d-body');
+    var html = bodyEl ? bodyEl.innerHTML : '';
     var next = Object.assign({}, item, {
       kind: type === 'news' ? 'news' : 'article',
       title: title,
       category: val('d-cat'),
       date: val('d-date') || todayIso(),
-      excerpt: val('d-excerpt'),
-      body: val('d-body'),
-      contentHtml: val('d-body').split(/\n+/).map(function (p) {
-        return '<p>' + esc(p) + '</p>';
-      }).join(''),
+      excerpt: val('d-excerpt') || htmlToText(html).slice(0, 220),
+      body: htmlToText(html),
+      contentHtml: html,
       cover: val('d-cover'),
       image: val('d-cover'),
       author: val('d-author') || ctx.session.name,
@@ -1022,8 +1152,7 @@
       return true;
     }
     if (name === 'media' || name === 'photostock') {
-      if (window.AdminGod) AdminGod.paintSection(ctx, 'photo', 'Фотосток', '#upload-photos');
-      return true;
+      return false;
     }
     if (name === 'church' || name === 'spirit') {
       if (window.AdminGuides) {
