@@ -580,3 +580,55 @@ table.data .title-link:hover { color: var(--accent); }
   .posts-toolbar { flex-wrap: wrap; }
   .posts-toolbar .btn { flex: 1 1 auto; }
 }
+
+/* День Церкви — редактор с предпросмотром */
+.day-editor { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); gap: 18px; align-items: start; }
+.day-preview-sticky { position: sticky; top: 16px; }
+.day-preview-label { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--stone-500); margin: 0 0 8px; }
+.day-preview {
+  border: 1px solid var(--line); border-radius: 18px; padding: 20px; background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.day-preview .dp-date { font-size: 13px; color: var(--stone-500); margin: 0 0 10px; }
+.day-preview .dp-title { font-family: 'Cormorant Garamond', serif; font-size: 26px; line-height: 1.15; margin: 10px 0 6px; }
+.day-preview .dp-empty { color: var(--stone-400); font-style: italic; }
+.day-preview .dp-color { font-size: 13px; color: var(--stone-500); margin: 0 0 6px; }
+.day-preview .dp-block { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
+.day-preview .dp-block h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--stone-500); margin: 0 0 4px; }
+.day-preview .dp-block p { margin: 0; font-size: 15px; line-height: 1.5; }
+.day-preview .dp-quote { font-style: italic; color: var(--stone-600); }
+.cal-rank {
+  display: inline-block; font-size: 12px; padding: 3px 10px; border-radius: 999px;
+  background: var(--surface-2); color: var(--stone-600); text-transform: lowercase;
+}
+.cal-rank-solemn { background: #f6e5c8; color: #8a5a12; }
+.cal-rank-feast { background: #f3d9d4; color: #a33b2a; }
+.cal-rank-sun { background: #dfeadd; color: #3c6b3f; }
+.cal-rank-feria { background: var(--surface-2); color: var(--stone-600); }
+
+@media (max-width: 1100px) {
+  .day-editor { grid-template-columns: 1fr; }
+  .day-preview-sticky { position: static; }
+}
+
+.guides-list { padding: 16px; }
+.guide-group { margin: 0 0 22px; }
+.guide-group h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--stone-500); margin: 0 0 8px; }
+.guide-rows { display: grid; gap: 6px; }
+.guide-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px;
+  background: var(--surface-2); text-decoration: none; color: inherit;
+}
+.guide-row:hover { border-color: var(--accent); }
+.guide-row-copy { display: grid; gap: 2px; min-width: 0; }
+.guide-row-copy strong { font-size: 16px; }
+.guide-row-copy small { color: var(--stone-500); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guide-live .guide-body { font-size: 15px; line-height: 1.55; }
+.guide-live .guide-lead { font-size: 16px; margin: 0 0 12px; }
+.guide-live h2 { font-family: 'Cormorant Garamond', serif; font-size: 20px; margin: 18px 0 8px; }
+.guide-live .guide-quote { margin: 0 0 12px; padding-left: 12px; border-left: 3px solid #b08a4a; }
+.guide-live .guide-note { padding-left: 12px; border-left: 3px solid #b08a4a; }
+.guide-live img { max-width: 100%; border-radius: 10px; }
+.prayer-edit { border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin: 0 0 10px; display: grid; gap: 8px; }
+.prayer-edit-head { display: flex; justify-content: space-between; align-items: center; }

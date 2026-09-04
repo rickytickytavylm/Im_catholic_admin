@@ -636,6 +636,37 @@
     return names[d.getDay()];
   }
 
+  var DAY_CATS = [
+    { id: 'будний', title: 'Будний день' },
+    { id: 'воскресный', title: 'Воскресенье' },
+    { id: 'праздник', title: 'Праздник' },
+    { id: 'торжество', title: 'Торжество' },
+  ];
+  var DAY_COLORS = [
+    { id: '', title: '— не указан —' },
+    { id: 'зелёный', title: 'Зелёный' },
+    { id: 'белый', title: 'Белый' },
+    { id: 'красный', title: 'Красный' },
+    { id: 'фиолетовый', title: 'Фиолетовый' },
+    { id: 'розовый', title: 'Розовый' },
+    { id: 'чёрный', title: 'Чёрный' },
+  ];
+
+  function catClass(cat) {
+    if (cat === 'торжество') return 'solemn';
+    if (cat === 'праздник') return 'feast';
+    if (cat === 'воскресный' || cat === 'воскресенье') return 'sun';
+    return 'feria';
+  }
+
+  function fmtLongRu(iso) {
+    if (!iso) return '';
+    var p = String(iso).split('-');
+    var months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+    if (p.length < 3) return iso;
+    return Number(p[2]) + ' ' + (months[Number(p[1]) - 1] || '') + ' ' + p[0];
+  }
+
   function renderChurchForm(ctx, id) {
     var isNew = !id || id === 'new';
     var item = isNew
@@ -643,33 +674,91 @@
       : getItem('church-day', id);
     if (!item) { ctx.toast('День не найден', true); ctx.go('church-day'); return; }
     var lit = item.liturgical || {};
-    composeShell(
-      ctx, 'День Церкви', 'church-day',
-      field('Дата', 'd-date', item.date, 'date') +
+    var defaultCat = weekdayName(item.date) === 'Воскресенье' ? 'воскресный' : 'будний';
+
+    ctx.viewEl.innerHTML =
+      '<div class="topbar"><div><h1>День Церкви</h1><p>Литургический день: святой, чтение, молитва и цитата.</p></div>' +
+      '<div class="topbar-actions">' +
+      '<a class="btn btn-ghost" href="#church-day">Назад</a>' +
+      '<a class="btn btn-ghost" href="' + portalHref('calendar.html') + '" target="_blank" rel="noopener">На портале</a>' +
+      (isNew ? '' : '<button type="button" class="btn btn-ghost" id="desk-del">Снять</button>') +
+      '<button type="button" class="btn btn-ghost" id="desk-draft">Сохранить черновик</button>' +
+      '<button type="button" class="btn btn-primary" id="desk-pub">Опубликовать</button>' +
+      '</div></div>' +
+      '<div class="day-editor">' +
+      '<div class="panel form-grid desk-form">' +
+      '<div class="field"><label for="d-date">Дата</label>' +
+      '<input class="input" id="d-date" type="date" value="' + esc(item.date) + '" />' +
+      '<p class="hint-note" id="d-weekday">' + esc(item.weekday || weekdayName(item.date)) + '</p></div>' +
+      field('Категория', 'd-cat', lit.category || defaultCat, 'select', opts(DAY_CATS, lit.category || defaultCat)) +
+      field('Литургический цвет', 'd-color', lit.color || '', 'select', opts(DAY_COLORS, lit.color || '')) +
       field('Название дня', 'd-title', lit.title, 'text', 'placeholder="Пятница XVIII обычной недели"') +
       field('Святой дня', 'd-saint', lit.saint && lit.saint.name) +
-      field('Чтение', 'd-reading', lit.reading, 'textarea') +
-      field('Молитва', 'd-prayer', lit.prayer, 'textarea') +
-      field('Цитата', 'd-quote', lit.quote, 'textarea'),
-      function (status) { saveChurch(ctx, item, status); },
-      function () { saveChurch(ctx, item, 'published'); },
-      isNew ? null : function () { if (confirm('Снять день с публикации?')) { hideItem('church-day', item.id); ctx.toast('Снято с публикации'); ctx.go('church-day'); } },
-      'calendar.html'
-    );
+      field('Ссылка на святого (необязательно)', 'd-saint-href', lit.saint && lit.saint.href, 'text', 'placeholder="https://…"') +
+      field('Чтение дня', 'd-reading', lit.reading, 'textarea') +
+      field('Молитва дня', 'd-prayer', lit.prayer, 'textarea') +
+      field('Цитата дня', 'd-quote', lit.quote, 'textarea') +
+      '</div>' +
+      '<aside class="day-preview-wrap"><div class="day-preview-sticky">' +
+      '<p class="day-preview-label">Предпросмотр — как увидит читатель</p>' +
+      '<div id="d-preview" class="day-preview"></div></div></aside>' +
+      '</div>';
+
+    var dateEl = document.getElementById('d-date');
+    function syncWeekday() {
+      var wd = document.getElementById('d-weekday');
+      if (wd) wd.textContent = weekdayName(val('d-date')) || '';
+    }
+    function drawPreview() {
+      var cat = val('d-cat') || defaultCat;
+      var el = document.getElementById('d-preview');
+      if (!el) return;
+      var saint = val('d-saint');
+      var saintHref = val('d-saint-href');
+      function blk(label, body) {
+        if (!body) return '';
+        return '<div class="dp-block"><h4>' + esc(label) + '</h4>' + body + '</div>';
+      }
+      el.innerHTML =
+        '<p class="dp-date">' + esc(weekdayName(val('d-date'))) + ' · ' + esc(fmtLongRu(val('d-date'))) + '</p>' +
+        '<span class="cal-rank cal-rank-' + catClass(cat) + '">' + esc(cat) + '</span>' +
+        '<h3 class="dp-title">' + (esc(val('d-title')) || '<em class="dp-empty">Название дня</em>') + '</h3>' +
+        (val('d-color') ? '<p class="dp-color">Литургический цвет: <b>' + esc(val('d-color')) + '</b></p>' : '') +
+        blk('Святой дня', saint ? (saintHref ? '<a href="' + esc(saintHref) + '">' + esc(saint) + '</a>' : '<p>' + esc(saint) + '</p>') : '') +
+        blk('Чтение дня', val('d-reading') ? '<p>' + esc(val('d-reading')) + '</p>' : '') +
+        blk('Молитва дня', val('d-prayer') ? '<p>' + esc(val('d-prayer')) + '</p>' : '') +
+        blk('Цитата дня', val('d-quote') ? '<p class="dp-quote">' + esc(val('d-quote')) + '</p>' : '');
+    }
+    if (dateEl) dateEl.addEventListener('change', function () { syncWeekday(); drawPreview(); });
+    ['d-cat', 'd-color', 'd-title', 'd-saint', 'd-saint-href', 'd-reading', 'd-prayer', 'd-quote'].forEach(function (fid) {
+      var el = document.getElementById(fid);
+      if (el) el.addEventListener('input', drawPreview);
+      if (el && el.tagName === 'SELECT') el.addEventListener('change', drawPreview);
+    });
+    drawPreview();
+
+    document.getElementById('desk-draft').onclick = function () { saveChurch(ctx, item, 'draft'); };
+    document.getElementById('desk-pub').onclick = function () { saveChurch(ctx, item, 'published'); };
+    var delBtn = document.getElementById('desk-del');
+    if (delBtn) delBtn.onclick = function () {
+      if (confirm('Снять день с публикации?')) { hideItem('church-day', item.id); ctx.toast('Снято с публикации'); ctx.go('church-day'); }
+    };
   }
 
   function saveChurch(ctx, item, status) {
     var date = val('d-date') || todayIso();
+    var title = val('d-title');
+    if (!title) { ctx.toast('Укажите название дня', true); return; }
     upsert('church-day', Object.assign({}, item, {
       date: date,
       weekday: weekdayName(date),
-      title: val('d-title') || weekdayName(date),
+      title: title,
       status: status,
       liturgical: {
-        title: val('d-title'),
-        category: 'будний',
-        color: '',
-        saint: { name: val('d-saint'), href: '' },
+        title: title,
+        category: val('d-cat') || (weekdayName(date) === 'Воскресенье' ? 'воскресный' : 'будний'),
+        color: val('d-color'),
+        saint: { name: val('d-saint'), href: val('d-saint-href') },
         reading: val('d-reading'),
         prayer: val('d-prayer'),
         quote: val('d-quote'),
@@ -859,7 +948,72 @@
   };
 
   function upsertGuide(item) {
-    return upsert('guides', item);
+    var data = read();
+    var list = data.guides || [];
+    item.updatedAt = new Date().toISOString();
+    if (!item.createdAt) item.createdAt = item.updatedAt;
+    var i = list.findIndex(function (x) {
+      if (String(x.id) === String(item.id)) return true;
+      if (item.nodeId && x.nodeId === item.nodeId && x.section === item.section) return true;
+      return false;
+    });
+    if (i === -1) list.unshift(item);
+    else list[i] = Object.assign({}, list[i], item);
+    data.guides = list;
+    write(data);
+    return item;
+  }
+
+  function exportDesk() {
+    var data = read();
+    var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'yak-desk-' + todayIso() + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function importDesk(ctx, mode) {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json,.json';
+    input.onchange = function () {
+      var f = input.files && input.files[0];
+      if (!f) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        var incoming;
+        try { incoming = JSON.parse(reader.result); } catch (e) { if (ctx) ctx.toast('Файл повреждён', true); return; }
+        if (!incoming || typeof incoming !== 'object') { if (ctx) ctx.toast('Неверный формат', true); return; }
+        if (mode === 'replace') {
+          write(Object.assign(emptyState(), incoming));
+        } else {
+          var cur = read();
+          Object.keys(emptyState()).forEach(function (key) {
+            var inc = incoming[key] || [];
+            if (!inc.length) return;
+            var list = cur[key] || [];
+            inc.forEach(function (rec) {
+              if (!rec) return;
+              var i = list.findIndex(function (x) {
+                return String(x.id) === String(rec.id) || (rec.date && String(x.date) === String(rec.date));
+              });
+              if (i === -1) list.unshift(rec);
+              else list[i] = Object.assign({}, list[i], rec);
+            });
+            cur[key] = list;
+          });
+          write(cur);
+        }
+        if (ctx) { ctx.toast('Контент загружен'); if (ctx.go) ctx.go('church-day'); }
+      };
+      reader.readAsText(f);
+    };
+    input.click();
   }
 
   function renderRoute(name, id, ctx) {
@@ -871,14 +1025,14 @@
       if (window.AdminGod) AdminGod.paintSection(ctx, 'photo', 'Фотосток', '#upload-photos');
       return true;
     }
-    if (name === 'church') {
-      if (id && window.AdminGod) AdminGod.paintGuideEdit(ctx, window.YakGuides && YakGuides.church, decodeURIComponent(id), 'church');
-      else if (window.AdminGod) AdminGod.paintSection(ctx, 'church', 'О Церкви', '');
-      return true;
-    }
-    if (name === 'spirit') {
-      if (id && window.AdminGod) AdminGod.paintGuideEdit(ctx, window.YakGuides && YakGuides.spirit, decodeURIComponent(id), 'spirit');
-      else if (window.AdminGod) AdminGod.paintSection(ctx, 'spirit', 'Духовная жизнь', '');
+    if (name === 'church' || name === 'spirit') {
+      if (window.AdminGuides) {
+        if (id) AdminGuides.renderEditor(ctx, name, decodeURIComponent(id));
+        else AdminGuides.renderList(ctx, name);
+        return true;
+      }
+      if (id && window.AdminGod) AdminGod.paintGuideEdit(ctx, window.YakGuides && YakGuides[name], decodeURIComponent(id), name);
+      else if (window.AdminGod) AdminGod.paintSection(ctx, name, name === 'church' ? 'О Церкви' : 'Духовная жизнь', '');
       return true;
     }
     if (name === 'authors') {
@@ -907,6 +1061,8 @@
     read: read,
     upsertGuide: upsertGuide,
     linkAuthor: linkAuthor,
+    exportDesk: exportDesk,
+    importDesk: importDesk,
   };
 
   try {

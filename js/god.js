@@ -55,7 +55,7 @@
     (root.cards || []).forEach(function (c) {
       if (!c || !c.title) return;
       out.push({
-        id: prefix + '/' + c.id,
+        id: c.id,
         title: c.title,
         sub: c.sub || c.kicker || '',
         image: c.image || '',
@@ -67,7 +67,7 @@
       (n.cards || []).forEach(function (c) {
         if (!c || !c.title) return;
         out.push({
-          id: prefix + '/' + key + '/' + (c.id || c.title),
+          id: c.id || key,
           title: c.title,
           sub: c.sub || n.title || '',
           image: c.image || '',
@@ -77,7 +77,11 @@
     try {
       var raw = JSON.parse(localStorage.getItem('yak_desk') || '{}');
       var ovs = {};
-      (raw.guides || []).forEach(function (g) { if (g && g.id) ovs[g.id] = g; });
+      (raw.guides || []).forEach(function (g) {
+        if (!g) return;
+        if (g.nodeId) ovs[g.nodeId] = g;
+        if (g.id) ovs[g.id] = g;
+      });
       out = out.map(function (c) { return ovs[c.id] ? Object.assign({}, c, ovs[c.id]) : c; });
     } catch (e) {}
     return out;
@@ -227,10 +231,13 @@
 
     function draw() {
       var list = items();
+      var canBackup = window.AdminDesk && AdminDesk.exportDesk;
       view.innerHTML =
         '<div class="topbar"><div><h1>' + esc(title) + '</h1>' +
         '<p>Материалы раздела.</p></div>' +
         '<div class="topbar-actions">' +
+        (canBackup ? '<button type="button" class="btn btn-ghost" id="god-export">Выгрузить контент</button>' +
+          '<button type="button" class="btn btn-ghost" id="god-import">Загрузить контент</button>' : '') +
         (addHref ? '<a class="btn btn-primary" href="' + addHref + '">Добавить</a>' : '') +
         '</div></div>' +
         (list.length
@@ -238,6 +245,13 @@
             return card(hrefOf(it), imgOf(it), titleOf(it), metaOf(it));
           }).join('') + '</div>'
           : '<div class="panel"><div class="empty">Загрузка</div></div>');
+
+      var expBtn = document.getElementById('god-export');
+      if (expBtn) expBtn.onclick = function () { AdminDesk.exportDesk(); };
+      var impBtn = document.getElementById('god-import');
+      if (impBtn) impBtn.onclick = function () {
+        AdminDesk.importDesk(ctx, confirm('OK — добавить к текущему контенту.\nОтмена — заменить весь контент файлом.') ? 'merge' : 'replace');
+      };
     }
 
     draw();
