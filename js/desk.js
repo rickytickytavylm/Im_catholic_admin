@@ -482,11 +482,11 @@
   function rubricChecks(cats, selected) {
     selected = selected || [];
     return (
-      '<div class="rubric-groups">' +
+      '<div class="rubric-pills">' +
       cats.map(function (c) {
         var on = selected.indexOf(c.id) !== -1;
-        return '<label class="check-row"><input type="checkbox" class="d-rubric" value="' + esc(c.id) + '"' +
-          (on ? ' checked' : '') + ' /> ' + esc(c.title) + '</label>';
+        return '<label class="rubric-pill"><input type="checkbox" class="d-rubric" value="' + esc(c.id) + '"' +
+          (on ? ' checked' : '') + ' /><span>' + esc(c.title) + '</span></label>';
       }).join('') +
       '</div>'
     );
@@ -501,67 +501,59 @@
     var picked = (item.rubrics && item.rubrics.length) ? item.rubrics.slice()
       : (item.category ? [item.category] : []);
     var slug = item.slug || '';
-    var authors = catalogAuthors();
     var currentAuthor = findAuthor(item.authorSlug || (item.authorSlugs && item.authorSlugs[0]) || item.author);
 
     ctx.viewEl.innerHTML =
-      '<div class="topbar"><div><h1>' + esc(isNew ? (isNews ? 'Новая новость' : 'Новая статья') : (item.title || (isNews ? 'Новость' : 'Статья'))) + '</h1>' +
-      '<p>' + (isNews ? 'Полный текст новости — как на сайте.' : 'Полный текст статьи — как на сайте.') + '</p></div>' +
-      '<div class="topbar-actions">' +
-      '<a class="btn btn-ghost" href="#' + back + '">Назад</a>' +
-      '<a class="btn btn-ghost" href="' + portalHref(portal) + '" target="_blank" rel="noopener">На портале</a>' +
+      '<div class="post-editor">' +
+      '<div class="post-editor-bar">' +
+      '<a class="btn btn-ghost" href="#' + back + '">К списку</a>' +
+      '<div class="post-editor-bar-actions">' +
+      '<a class="btn btn-ghost" href="' + portalHref(portal) + '" target="_blank" rel="noopener">На сайте</a>' +
       (isNew ? '' : '<button type="button" class="btn btn-ghost" id="desk-del">Снять</button>') +
-      '<button type="button" class="btn btn-ghost" id="desk-draft">Сохранить черновик</button>' +
+      '<button type="button" class="btn btn-ghost" id="desk-draft">Черновик</button>' +
       '<button type="button" class="btn btn-primary" id="desk-pub">Опубликовать</button>' +
       '</div></div>' +
-      '<div class="day-editor guide-editor">' +
-      '<div class="panel form-grid desk-form">' +
-      field('Заголовок', 'd-title', item.title) +
-      '<div class="field slug-row"><label>Адрес</label><span class="slug-prefix">/</span>' +
-      '<input class="input" id="d-slug" value="' + esc(slug) + '" placeholder="medjugorje-vandalism" /></div>' +
-      '<p class="hint-note">Складывается из заголовка. Можно поправить вручную.</p>' +
-      '<div class="field"><label>Рубрики</label>' + rubricChecks(cats, picked) +
-      '<p class="hint-note">' + (isNews ? 'Можно отметить несколько новостных рубрик.' : 'Можно отметить несколько рубрик статей.') + '</p></div>' +
-      field('Дата', 'd-date', (item.date || todayIso()).slice(0, 10), 'date') +
-      field('Лид', 'd-excerpt', item.excerpt, 'textarea') +
-      (isNews
-        ? field('Подпись редакции', 'd-author', item.author || '')
-        : (
-          '<div class="field"><label>Автор</label>' +
-          '<input class="input" id="d-author-q" list="d-author-list" placeholder="Начните вводить имя автора" />' +
-          '<datalist id="d-author-list">' + authors.map(function (a) {
-            return '<option value="' + esc(a.name) + '"></option>';
-          }).join('') + '</datalist>' +
-          '<input type="hidden" id="d-author-slug" value="' + esc((currentAuthor && currentAuthor.slug) || item.authorSlug || '') + '" />' +
-          '<div id="d-author-chip" class="author-chip-wrap"></div>' +
-          '<p class="hint-note">Тег существующего автора: на сайте — кружок, имя и ссылка на карточку.</p></div>'
-        )) +
-      '<div class="field"><label>Обложка</label>' +
-      '<div class="cover-frame' + (cover ? '' : ' is-empty') + '" id="d-cover-frame">' +
-      (cover ? '<img src="' + esc(mediaSrc(cover)) + '" alt="" />' : '<span>Фото 16:9</span>') +
-      '</div>' +
-      '<input type="hidden" id="d-cover" value="' + esc(cover) + '" />' +
-      '<div class="post-side-actions" style="margin-top:8px">' +
-      '<button type="button" class="btn btn-ghost" id="d-cover-up">С устройства</button></div>' +
-      '<input type="file" id="d-file" accept="image/*" hidden /></div>' +
-      '<div class="field"><label>Текст</label>' +
+      '<div class="post-layout">' +
+      '<div class="post-main panel">' +
+      '<input class="editor-title" id="d-title" value="' + esc(item.title || '') + '" placeholder="' + (isNews ? 'Заголовок новости' : 'Заголовок статьи') + '" />' +
+      '<div class="slug-quiet"><span>Адрес</span><span class="slug-path">/<input id="d-slug" value="' + esc(slug) + '" spellcheck="false" /></span></div>' +
+      '<textarea class="textarea excerpt-input" id="d-excerpt" rows="3" placeholder="Лид — коротко, в ленте и под заголовком">' + esc(item.excerpt || '') + '</textarea>' +
       '<div class="rte">' +
       '<div class="rte-bar" id="d-rte-bar">' +
-      '<button type="button" data-block="p">Текст</button>' +
-      '<button type="button" data-block="h2">Заголовок</button>' +
-      '<button type="button" data-cmd="bold">Жирный</button>' +
-      '<button type="button" data-cmd="italic">Курсив</button>' +
-      '<button type="button" data-block="quote">Цитата</button>' +
-      '<button type="button" data-cmd="insertUnorderedList">Список</button>' +
-      '<button type="button" data-act="link">Ссылка</button>' +
-      '<button type="button" data-act="image">Фото</button>' +
+      '<button type="button" data-cmd="bold" title="Жирный">Ж</button>' +
+      '<button type="button" data-cmd="italic" title="Курсив">К</button>' +
+      '<button type="button" data-block="h2" title="Заголовок">H2</button>' +
+      '<button type="button" data-block="quote" title="Цитата">« »</button>' +
+      '<button type="button" data-cmd="insertUnorderedList" title="Список">•</button>' +
+      '<button type="button" data-act="link" title="Ссылка">Ссылка</button>' +
+      '<span class="rte-sep"></span>' +
+      '<button type="button" data-act="image" title="Фото в текст">Фото</button>' +
       '</div>' +
-      '<div class="rte-body" id="d-body" contenteditable="true" data-placeholder="Текст публикации"></div>' +
+      '<div class="rte-body" id="d-body" contenteditable="true" data-placeholder="Текст"></div>' +
       '<input type="file" id="d-inline-file" accept="image/*" hidden />' +
-      '</div></div></div>' +
-      '<aside class="day-preview-wrap"><div class="day-preview-sticky">' +
-      '<p class="day-preview-label">Предпросмотр — полный текст</p>' +
-      '<div id="d-preview" class="day-preview guide-live"></div></div></aside></div>';
+      '</div></div>' +
+      '<aside class="post-side">' +
+      '<div class="panel post-card"><h3>Обложка</h3>' +
+      '<div class="cover-frame' + (cover ? '' : ' is-empty') + '" id="d-cover-frame">' +
+      (cover ? '<img src="' + esc(mediaSrc(cover)) + '" alt="" />' : '<span>16:9</span>') +
+      '</div>' +
+      '<input type="hidden" id="d-cover" value="' + esc(cover) + '" />' +
+      '<div class="post-side-actions">' +
+      '<button type="button" class="btn btn-ghost" id="d-cover-up">С устройства</button></div>' +
+      '<input type="file" id="d-file" accept="image/*" hidden /></div>' +
+      '<div class="panel post-card"><h3>Рубрики <em>обязательно</em></h3>' +
+      rubricChecks(cats, picked) + '</div>' +
+      (isNews
+        ? '<div class="panel post-card"><h3>Дата</h3>' +
+          '<input class="input" id="d-date" type="date" value="' + esc((item.date || todayIso()).slice(0, 10)) + '" /></div>'
+        : '<div class="panel post-card"><h3>Автор</h3>' +
+          '<input type="hidden" id="d-author-slug" value="' + esc((currentAuthor && currentAuthor.slug) || item.authorSlug || '') + '" />' +
+          '<div id="d-author-chip" class="author-chip-wrap"></div>' +
+          '<div class="author-search" id="d-author-search">' +
+          '<input class="input" id="d-author-q" placeholder="Найти автора" autocomplete="off" />' +
+          '<div class="author-suggest" id="d-author-suggest" hidden></div></div>' +
+          '<label class="side-date">Дата<input class="input" id="d-date" type="date" value="' + esc((item.date || todayIso()).slice(0, 10)) + '" /></label></div>') +
+      '</aside></div></div>';
 
     var bodyEl = document.getElementById('d-body');
     bodyEl.innerHTML = articleHtml(item);
@@ -569,7 +561,7 @@
     bindCoverFile(function () { drawPubPreview(); });
     bindSlugField(!!slug);
     if (!isNews) bindAuthorChip(currentAuthor);
-    ['d-title', 'd-excerpt', 'd-author', 'd-date'].forEach(function (fid) {
+    ['d-title', 'd-excerpt', 'd-date'].forEach(function (fid) {
       var el = document.getElementById(fid);
       if (el) el.addEventListener('input', drawPubPreview);
     });
@@ -600,76 +592,75 @@
     if (!slug.value) slug.value = slugify(title.value);
   }
 
+  function authorAvaHtml(author) {
+    var photo = author && author.photo ? mediaSrc(author.photo) : '';
+    if (photo) return '<span class="author-chip-ava" style="background-image:url(\'' + esc(photo).replace(/'/g, '%27') + '\')"></span>';
+    return '<span class="author-chip-ava is-empty">' + esc(String((author && author.name) || '?').charAt(0)) + '</span>';
+  }
+
   function paintAuthorChip(author) {
     var box = document.getElementById('d-author-chip');
     var hidden = document.getElementById('d-author-slug');
+    var search = document.getElementById('d-author-search');
+    var suggest = document.getElementById('d-author-suggest');
     if (!box) return;
+    if (hidden) hidden.value = author ? (author.slug || '') : '';
+    if (suggest) { suggest.hidden = true; suggest.innerHTML = ''; }
     if (!author) {
-      if (hidden) hidden.value = '';
       box.innerHTML = '';
-      drawPubPreview();
+      if (search) search.hidden = false;
       return;
     }
-    if (hidden) hidden.value = author.slug || '';
-    var photo = author.photo ? mediaSrc(author.photo) : '';
+    if (search) search.hidden = true;
     box.innerHTML =
       '<div class="author-chip">' +
-      (photo
-        ? '<span class="author-chip-ava" style="background-image:url(\'' + esc(photo).replace(/'/g, '%27') + '\')"></span>'
-        : '<span class="author-chip-ava is-empty">' + esc(String(author.name || '?').charAt(0)) + '</span>') +
-      '<span><strong>' + esc(author.name) + '</strong>' +
+      authorAvaHtml(author) +
+      '<span class="author-chip-name"><strong>' + esc(author.name) + '</strong>' +
       (author.role ? '<small>' + esc(author.role) + '</small>' : '') + '</span>' +
-      '<button type="button" class="btn btn-ghost" id="d-author-clear">Убрать</button></div>';
+      '<button type="button" class="author-chip-x" id="d-author-clear" aria-label="Сменить автора">Сменить</button></div>';
     var clear = document.getElementById('d-author-clear');
     if (clear) clear.onclick = function () {
       var q = document.getElementById('d-author-q');
-      if (q) q.value = '';
+      if (q) { q.value = ''; q.focus(); }
       paintAuthorChip(null);
     };
-    drawPubPreview();
   }
 
   function bindAuthorChip(initial) {
     var q = document.getElementById('d-author-q');
-    if (!q) return;
-    if (initial) {
-      q.value = initial.name;
-      paintAuthorChip(initial);
+    var suggest = document.getElementById('d-author-suggest');
+    if (!q || !suggest) return;
+    if (initial) paintAuthorChip(initial);
+    function show(list) {
+      if (!list.length) {
+        suggest.hidden = true;
+        suggest.innerHTML = '';
+        return;
+      }
+      suggest.hidden = false;
+      suggest.innerHTML = list.map(function (a) {
+        return '<button type="button" class="author-suggest-item" data-slug="' + esc(a.slug) + '">' +
+          authorAvaHtml(a) + '<span>' + esc(a.name) + '</span></button>';
+      }).join('');
+      suggest.querySelectorAll('[data-slug]').forEach(function (btn) {
+        btn.onclick = function () {
+          paintAuthorChip(findAuthor(btn.getAttribute('data-slug')));
+        };
+      });
     }
-    function pick() {
-      var hit = findAuthor(q.value);
-      paintAuthorChip(hit);
-    }
-    q.addEventListener('change', pick);
-    q.addEventListener('blur', pick);
+    q.addEventListener('input', function () {
+      var t = q.value.trim().toLowerCase();
+      if (!t) { show(catalogAuthors().slice(0, 8)); return; }
+      show(catalogAuthors().filter(function (a) {
+        return (a.name || '').toLowerCase().indexOf(t) !== -1 || (a.slug || '').toLowerCase().indexOf(t) !== -1;
+      }).slice(0, 8));
+    });
+    q.addEventListener('focus', function () {
+      if (!val('d-author-slug')) show(catalogAuthors().slice(0, 8));
+    });
   }
 
-  function drawPubPreview() {
-    var el = document.getElementById('d-preview');
-    if (!el) return;
-    var cover = val('d-cover');
-    var body = document.getElementById('d-body');
-    var author = findAuthor(val('d-author-slug')) || findAuthor(val('d-author'));
-    var authorHtml = '';
-    if (author) {
-      var photo = author.photo ? mediaSrc(author.photo) : '';
-      authorHtml =
-        '<a class="author-chip preview-author" href="' + portalHref('author.html?slug=' + encodeURIComponent(author.slug)) + '" target="_blank" rel="noopener">' +
-        (photo
-          ? '<span class="author-chip-ava" style="background-image:url(\'' + esc(photo).replace(/'/g, '%27') + '\')"></span>'
-          : '<span class="author-chip-ava is-empty">' + esc(String(author.name || '?').charAt(0)) + '</span>') +
-        '<span>' + esc(author.name) + '</span></a>';
-    } else if (val('d-author')) {
-      authorHtml = '<p class="dp-date">' + esc(val('d-author')) + '</p>';
-    }
-    el.innerHTML =
-      (cover ? '<img src="' + esc(mediaSrc(cover)) + '" alt="" />' : '') +
-      '<p class="dp-date">' + esc(val('d-date')) + (val('d-slug') ? ' · /' + esc(val('d-slug')) : '') + '</p>' +
-      authorHtml +
-      '<h3 class="dp-title">' + (esc(val('d-title')) || '<em class="dp-empty">Заголовок</em>') + '</h3>' +
-      (val('d-excerpt') ? '<p class="guide-lead">' + esc(val('d-excerpt')) + '</p>' : '') +
-      '<div class="guide-body">' + ((body && body.innerHTML) || '') + '</div>';
-  }
+  function drawPubPreview() {}
 
   function mountDeskRTE(el, onChange) {
     el.addEventListener('paste', function (e) {
