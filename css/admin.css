@@ -476,6 +476,15 @@ table.data .title-link:hover { color: var(--accent); }
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
 }
 .post-editor-bar-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.pub-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 400px); gap: 18px; align-items: start; }
+.pub-rubrics { margin: 0 0 14px; }
+.pub-meta { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 12px; margin: 0 0 14px; align-items: start; }
+.pub-cover { display: grid; gap: 6px; }
+.pub-cover .cover-frame { aspect-ratio: 16 / 9; border-radius: 12px; }
+.pub-meta-col { display: grid; gap: 8px; align-content: start; }
+@media (max-width: 1100px) {
+  .pub-layout { grid-template-columns: 1fr; }
+}
 .slug-quiet {
   display: flex; align-items: center; gap: 10px; margin: 2px 0 14px;
   font-size: 12px; color: var(--stone-500); font-weight: 700;
@@ -556,6 +565,7 @@ table.data .title-link:hover { color: var(--accent); }
   border: 1px solid var(--line); border-radius: 16px; background: var(--surface-2);
   text-decoration: none; color: inherit; width: 100%;
 }
+.preview-author { width: fit-content; margin: 0 0 10px; }
 .author-chip strong, .preview-author span:last-child { font-size: 14px; }
 .author-chip small { display: block; color: var(--stone-500); font-size: 12px; }
 .author-chip-ava {

@@ -513,10 +513,28 @@
       '<button type="button" class="btn btn-ghost" id="desk-draft">Черновик</button>' +
       '<button type="button" class="btn btn-primary" id="desk-pub">Опубликовать</button>' +
       '</div></div>' +
-      '<div class="post-layout">' +
+      '<div class="pub-layout">' +
       '<div class="post-main panel">' +
       '<input class="editor-title" id="d-title" value="' + esc(item.title || '') + '" placeholder="' + (isNews ? 'Заголовок новости' : 'Заголовок статьи') + '" />' +
       '<div class="slug-quiet"><span>Адрес</span><span class="slug-path">/<input id="d-slug" value="' + esc(slug) + '" spellcheck="false" /></span></div>' +
+      '<div class="pub-rubrics">' + rubricChecks(cats, picked) + '</div>' +
+      '<div class="pub-meta">' +
+      '<div class="pub-cover">' +
+      '<div class="cover-frame' + (cover ? '' : ' is-empty') + '" id="d-cover-frame">' +
+      (cover ? '<img src="' + esc(mediaSrc(cover)) + '" alt="" />' : '<span>Обложка</span>') +
+      '</div>' +
+      '<input type="hidden" id="d-cover" value="' + esc(cover) + '" />' +
+      '<button type="button" class="btn btn-ghost" id="d-cover-up">Фото</button>' +
+      '<input type="file" id="d-file" accept="image/*" hidden /></div>' +
+      '<div class="pub-meta-col">' +
+      (isNews ? '' :
+        '<input type="hidden" id="d-author-slug" value="' + esc((currentAuthor && currentAuthor.slug) || item.authorSlug || '') + '" />' +
+        '<div id="d-author-chip" class="author-chip-wrap"></div>' +
+        '<div class="author-search" id="d-author-search">' +
+        '<input class="input" id="d-author-q" placeholder="Автор — найти по имени" autocomplete="off" />' +
+        '<div class="author-suggest" id="d-author-suggest" hidden></div></div>') +
+      '<input class="input" id="d-date" type="date" value="' + esc((item.date || todayIso()).slice(0, 10)) + '" />' +
+      '</div></div>' +
       '<textarea class="textarea excerpt-input" id="d-excerpt" rows="3" placeholder="Лид — коротко, в ленте и под заголовком">' + esc(item.excerpt || '') + '</textarea>' +
       '<div class="rte">' +
       '<div class="rte-bar" id="d-rte-bar">' +
@@ -532,28 +550,9 @@
       '<div class="rte-body" id="d-body" contenteditable="true" data-placeholder="Текст"></div>' +
       '<input type="file" id="d-inline-file" accept="image/*" hidden />' +
       '</div></div>' +
-      '<aside class="post-side">' +
-      '<div class="panel post-card"><h3>Обложка</h3>' +
-      '<div class="cover-frame' + (cover ? '' : ' is-empty') + '" id="d-cover-frame">' +
-      (cover ? '<img src="' + esc(mediaSrc(cover)) + '" alt="" />' : '<span>16:9</span>') +
-      '</div>' +
-      '<input type="hidden" id="d-cover" value="' + esc(cover) + '" />' +
-      '<div class="post-side-actions">' +
-      '<button type="button" class="btn btn-ghost" id="d-cover-up">С устройства</button></div>' +
-      '<input type="file" id="d-file" accept="image/*" hidden /></div>' +
-      '<div class="panel post-card"><h3>Рубрики <em>обязательно</em></h3>' +
-      rubricChecks(cats, picked) + '</div>' +
-      (isNews
-        ? '<div class="panel post-card"><h3>Дата</h3>' +
-          '<input class="input" id="d-date" type="date" value="' + esc((item.date || todayIso()).slice(0, 10)) + '" /></div>'
-        : '<div class="panel post-card"><h3>Автор</h3>' +
-          '<input type="hidden" id="d-author-slug" value="' + esc((currentAuthor && currentAuthor.slug) || item.authorSlug || '') + '" />' +
-          '<div id="d-author-chip" class="author-chip-wrap"></div>' +
-          '<div class="author-search" id="d-author-search">' +
-          '<input class="input" id="d-author-q" placeholder="Найти автора" autocomplete="off" />' +
-          '<div class="author-suggest" id="d-author-suggest" hidden></div></div>' +
-          '<label class="side-date">Дата<input class="input" id="d-date" type="date" value="' + esc((item.date || todayIso()).slice(0, 10)) + '" /></label></div>') +
-      '</aside></div></div>';
+      '<aside class="day-preview-wrap"><div class="day-preview-sticky">' +
+      '<p class="day-preview-label">Предпросмотр — как на сайте</p>' +
+      '<div id="d-preview" class="day-preview guide-live"></div></div></aside></div></div>';
 
     var bodyEl = document.getElementById('d-body');
     bodyEl.innerHTML = articleHtml(item);
@@ -564,6 +563,9 @@
     ['d-title', 'd-excerpt', 'd-date'].forEach(function (fid) {
       var el = document.getElementById(fid);
       if (el) el.addEventListener('input', drawPubPreview);
+    });
+    ctx.viewEl.querySelectorAll('.d-rubric').forEach(function (box) {
+      box.addEventListener('change', drawPubPreview);
     });
     drawPubPreview();
 
@@ -609,6 +611,7 @@
     if (!author) {
       box.innerHTML = '';
       if (search) search.hidden = false;
+      drawPubPreview();
       return;
     }
     if (search) search.hidden = true;
@@ -624,6 +627,7 @@
       if (q) { q.value = ''; q.focus(); }
       paintAuthorChip(null);
     };
+    drawPubPreview();
   }
 
   function bindAuthorChip(initial) {
@@ -645,6 +649,7 @@
       suggest.querySelectorAll('[data-slug]').forEach(function (btn) {
         btn.onclick = function () {
           paintAuthorChip(findAuthor(btn.getAttribute('data-slug')));
+          drawPubPreview();
         };
       });
     }
@@ -660,7 +665,33 @@
     });
   }
 
-  function drawPubPreview() {}
+  function drawPubPreview() {
+    var el = document.getElementById('d-preview');
+    if (!el) return;
+    var cover = val('d-cover');
+    var body = document.getElementById('d-body');
+    var author = findAuthor(val('d-author-slug'));
+    var rubs = selectedRubrics().map(function (id) {
+      var all = NEWS_CATS.concat(ARTICLE_CATS);
+      for (var i = 0; i < all.length; i++) if (all[i].id === id) return all[i].title;
+      return id;
+    }).filter(Boolean);
+    var authorHtml = '';
+    if (author) {
+      authorHtml =
+        '<a class="author-chip preview-author" href="' + portalHref('author.html?slug=' + encodeURIComponent(author.slug)) + '" target="_blank" rel="noopener">' +
+        authorAvaHtml(author) +
+        '<span>' + esc(author.name) + '</span></a>';
+    }
+    el.innerHTML =
+      (cover ? '<img src="' + esc(mediaSrc(cover)) + '" alt="" />' : '') +
+      (rubs.length ? '<p class="dp-date">' + esc(rubs.join(' · ')) + '</p>' : '') +
+      '<p class="dp-date">' + esc(val('d-date')) + (val('d-slug') ? ' · /' + esc(val('d-slug')) : '') + '</p>' +
+      authorHtml +
+      '<h3 class="dp-title">' + (esc(val('d-title')) || '<em class="dp-empty">Заголовок</em>') + '</h3>' +
+      (val('d-excerpt') ? '<p class="guide-lead">' + esc(val('d-excerpt')) + '</p>' : '') +
+      '<div class="guide-body">' + ((body && body.innerHTML) || '') + '</div>';
+  }
 
   function mountDeskRTE(el, onChange) {
     el.addEventListener('paste', function (e) {
