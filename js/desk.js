@@ -222,13 +222,16 @@
   }
 
   function mapArchive(a, type) {
-    var cat = (a.categorySlugs && a.categorySlugs[0]) || '';
-    if (!cat && a.categories && a.categories[0]) {
-      cat = typeof a.categories[0] === 'string' ? a.categories[0] : (a.categories[0].slug || '');
+    var slugs = (a.categorySlugs || []).slice();
+    if (!slugs.length && a.categories && a.categories[0]) {
+      var first = a.categories[0];
+      slugs = [typeof first === 'string' ? first : (first.slug || '')];
     }
-    if (!cat) cat = type === 'news' ? 'news' : 'columns';
+    slugs = slugs.filter(Boolean);
+    if (!slugs.length) slugs = [type === 'news' ? 'news' : 'columns'];
     return {
       id: String(a.id || a.slug || ''),
+      slug: a.slug || '',
       kind: type === 'news' ? 'news' : 'article',
       title: a.title || '',
       excerpt: a.excerpt || '',
@@ -238,7 +241,10 @@
       image: a.image || a.cover || '',
       date: String(a.date || '').slice(0, 10),
       author: a.author || '',
-      category: cat,
+      authorSlug: a.authorSlug || '',
+      authorSlugs: a.authorSlugs || (a.authorSlug ? [a.authorSlug] : []),
+      category: slugs[0],
+      rubrics: slugs,
       status: 'published',
       source: 'site',
     };
@@ -430,12 +436,73 @@
     openArchiveForm(ctx, 'article', id, function (item) { paintPublicationForm(ctx, item, false, 'article'); });
   }
 
+  function slugify(s) {
+    if (window.AdminStore && AdminStore.slugify) return AdminStore.slugify(s);
+    return String(s || '').toLowerCase().replace(/[^a-z0-9а-яё]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'item';
+  }
+
+  function catalogAuthors() {
+    var out = [];
+    var seen = {};
+    function add(a) {
+      if (!a) return;
+      var slug = a.slug || a.id;
+      var name = a.name || '';
+      if (!slug && !name) return;
+      var key = String(slug || name).toLowerCase();
+      if (seen[key]) {
+        var i = seen[key] - 1;
+        out[i] = Object.assign({}, out[i], a, { slug: out[i].slug || slug, name: out[i].name || name });
+        return;
+      }
+      seen[key] = out.length + 1;
+      out.push({ slug: slug, name: name, photo: a.photo || '', role: a.role || '' });
+    }
+    (window.YakAuthors || []).forEach(add);
+    (read().authors || []).forEach(add);
+    return out.sort(function (a, b) {
+      return String(a.name).localeCompare(String(b.name), 'ru');
+    });
+  }
+
+  function findAuthor(tag) {
+    tag = String(tag || '').trim().toLowerCase();
+    if (!tag) return null;
+    var list = catalogAuthors();
+    for (var i = 0; i < list.length; i++) {
+      if (String(list[i].slug).toLowerCase() === tag || String(list[i].name).toLowerCase() === tag) return list[i];
+    }
+    return null;
+  }
+
+  function selectedRubrics() {
+    return [].map.call(document.querySelectorAll('.d-rubric:checked'), function (el) { return el.value; });
+  }
+
+  function rubricChecks(cats, selected) {
+    selected = selected || [];
+    return (
+      '<div class="rubric-groups">' +
+      cats.map(function (c) {
+        var on = selected.indexOf(c.id) !== -1;
+        return '<label class="check-row"><input type="checkbox" class="d-rubric" value="' + esc(c.id) + '"' +
+          (on ? ' checked' : '') + ' /> ' + esc(c.title) + '</label>';
+      }).join('') +
+      '</div>'
+    );
+  }
+
   function paintPublicationForm(ctx, item, isNew, type) {
     var isNews = type === 'news';
     var cats = isNews ? NEWS_CATS : ARTICLE_CATS;
     var back = isNews ? 'news' : 'articles';
     var portal = isNews ? 'archive.html?category=news' : 'articles.html';
     var cover = item.cover || item.image || '';
+    var picked = (item.rubrics && item.rubrics.length) ? item.rubrics.slice()
+      : (item.category ? [item.category] : []);
+    var slug = item.slug || '';
+    var authors = catalogAuthors();
+    var currentAuthor = findAuthor(item.authorSlug || (item.authorSlugs && item.authorSlugs[0]) || item.author);
 
     ctx.viewEl.innerHTML =
       '<div class="topbar"><div><h1>' + esc(isNew ? (isNews ? 'Новая новость' : 'Новая статья') : (item.title || (isNews ? 'Новость' : 'Статья'))) + '</h1>' +
@@ -450,10 +517,25 @@
       '<div class="day-editor guide-editor">' +
       '<div class="panel form-grid desk-form">' +
       field('Заголовок', 'd-title', item.title) +
-      field('Рубрика', 'd-cat', item.category, 'select', opts(cats, item.category || (isNews ? 'news' : 'columns'))) +
+      '<div class="field slug-row"><label>Адрес</label><span class="slug-prefix">/</span>' +
+      '<input class="input" id="d-slug" value="' + esc(slug) + '" placeholder="medjugorje-vandalism" /></div>' +
+      '<p class="hint-note">Складывается из заголовка. Можно поправить вручную.</p>' +
+      '<div class="field"><label>Рубрики</label>' + rubricChecks(cats, picked) +
+      '<p class="hint-note">' + (isNews ? 'Можно отметить несколько новостных рубрик.' : 'Можно отметить несколько рубрик статей.') + '</p></div>' +
       field('Дата', 'd-date', (item.date || todayIso()).slice(0, 10), 'date') +
       field('Лид', 'd-excerpt', item.excerpt, 'textarea') +
-      field('Автор', 'd-author', item.author || (ctx.session && ctx.session.name) || '') +
+      (isNews
+        ? field('Подпись редакции', 'd-author', item.author || '')
+        : (
+          '<div class="field"><label>Автор</label>' +
+          '<input class="input" id="d-author-q" list="d-author-list" placeholder="Начните вводить имя автора" />' +
+          '<datalist id="d-author-list">' + authors.map(function (a) {
+            return '<option value="' + esc(a.name) + '"></option>';
+          }).join('') + '</datalist>' +
+          '<input type="hidden" id="d-author-slug" value="' + esc((currentAuthor && currentAuthor.slug) || item.authorSlug || '') + '" />' +
+          '<div id="d-author-chip" class="author-chip-wrap"></div>' +
+          '<p class="hint-note">Тег существующего автора: на сайте — кружок, имя и ссылка на карточку.</p></div>'
+        )) +
       '<div class="field"><label>Обложка</label>' +
       '<div class="cover-frame' + (cover ? '' : ' is-empty') + '" id="d-cover-frame">' +
       (cover ? '<img src="' + esc(mediaSrc(cover)) + '" alt="" />' : '<span>Фото 16:9</span>') +
@@ -485,6 +567,8 @@
     bodyEl.innerHTML = articleHtml(item);
     mountDeskRTE(bodyEl, function () { drawPubPreview(); });
     bindCoverFile(function () { drawPubPreview(); });
+    bindSlugField(!!slug);
+    if (!isNews) bindAuthorChip(currentAuthor);
     ['d-title', 'd-excerpt', 'd-author', 'd-date'].forEach(function (fid) {
       var el = document.getElementById(fid);
       if (el) el.addEventListener('input', drawPubPreview);
@@ -503,14 +587,85 @@
     };
   }
 
+  function bindSlugField(locked) {
+    var title = document.getElementById('d-title');
+    var slug = document.getElementById('d-slug');
+    if (!title || !slug) return;
+    if (locked || slug.value) slug.dataset.locked = '1';
+    title.addEventListener('input', function () {
+      if (!slug.dataset.locked) slug.value = slugify(title.value);
+      drawPubPreview();
+    });
+    slug.addEventListener('input', function () { slug.dataset.locked = '1'; });
+    if (!slug.value) slug.value = slugify(title.value);
+  }
+
+  function paintAuthorChip(author) {
+    var box = document.getElementById('d-author-chip');
+    var hidden = document.getElementById('d-author-slug');
+    if (!box) return;
+    if (!author) {
+      if (hidden) hidden.value = '';
+      box.innerHTML = '';
+      drawPubPreview();
+      return;
+    }
+    if (hidden) hidden.value = author.slug || '';
+    var photo = author.photo ? mediaSrc(author.photo) : '';
+    box.innerHTML =
+      '<div class="author-chip">' +
+      (photo
+        ? '<span class="author-chip-ava" style="background-image:url(\'' + esc(photo).replace(/'/g, '%27') + '\')"></span>'
+        : '<span class="author-chip-ava is-empty">' + esc(String(author.name || '?').charAt(0)) + '</span>') +
+      '<span><strong>' + esc(author.name) + '</strong>' +
+      (author.role ? '<small>' + esc(author.role) + '</small>' : '') + '</span>' +
+      '<button type="button" class="btn btn-ghost" id="d-author-clear">Убрать</button></div>';
+    var clear = document.getElementById('d-author-clear');
+    if (clear) clear.onclick = function () {
+      var q = document.getElementById('d-author-q');
+      if (q) q.value = '';
+      paintAuthorChip(null);
+    };
+    drawPubPreview();
+  }
+
+  function bindAuthorChip(initial) {
+    var q = document.getElementById('d-author-q');
+    if (!q) return;
+    if (initial) {
+      q.value = initial.name;
+      paintAuthorChip(initial);
+    }
+    function pick() {
+      var hit = findAuthor(q.value);
+      paintAuthorChip(hit);
+    }
+    q.addEventListener('change', pick);
+    q.addEventListener('blur', pick);
+  }
+
   function drawPubPreview() {
     var el = document.getElementById('d-preview');
     if (!el) return;
     var cover = val('d-cover');
     var body = document.getElementById('d-body');
+    var author = findAuthor(val('d-author-slug')) || findAuthor(val('d-author'));
+    var authorHtml = '';
+    if (author) {
+      var photo = author.photo ? mediaSrc(author.photo) : '';
+      authorHtml =
+        '<a class="author-chip preview-author" href="' + portalHref('author.html?slug=' + encodeURIComponent(author.slug)) + '" target="_blank" rel="noopener">' +
+        (photo
+          ? '<span class="author-chip-ava" style="background-image:url(\'' + esc(photo).replace(/'/g, '%27') + '\')"></span>'
+          : '<span class="author-chip-ava is-empty">' + esc(String(author.name || '?').charAt(0)) + '</span>') +
+        '<span>' + esc(author.name) + '</span></a>';
+    } else if (val('d-author')) {
+      authorHtml = '<p class="dp-date">' + esc(val('d-author')) + '</p>';
+    }
     el.innerHTML =
       (cover ? '<img src="' + esc(mediaSrc(cover)) + '" alt="" />' : '') +
-      '<p class="dp-date">' + esc(val('d-date')) + (val('d-author') ? ' · ' + esc(val('d-author')) : '') + '</p>' +
+      '<p class="dp-date">' + esc(val('d-date')) + (val('d-slug') ? ' · /' + esc(val('d-slug')) : '') + '</p>' +
+      authorHtml +
       '<h3 class="dp-title">' + (esc(val('d-title')) || '<em class="dp-empty">Заголовок</em>') + '</h3>' +
       (val('d-excerpt') ? '<p class="guide-lead">' + esc(val('d-excerpt')) + '</p>' : '') +
       '<div class="guide-body">' + ((body && body.innerHTML) || '') + '</div>';
@@ -590,22 +745,38 @@
   function saveArticle(ctx, item, type, status) {
     var title = val('d-title');
     if (!title) { ctx.toast('Укажите заголовок', true); return; }
+    var rubrics = selectedRubrics();
+    if (!rubrics.length) { ctx.toast('Отметьте хотя бы одну рубрику', true); return; }
     var bodyEl = document.getElementById('d-body');
     var html = bodyEl ? bodyEl.innerHTML : '';
+    var author = type === 'article' ? findAuthor(val('d-author-slug') || val('d-author-q')) : null;
+    var slug = val('d-slug') || slugify(title);
     var next = Object.assign({}, item, {
       kind: type === 'news' ? 'news' : 'article',
       title: title,
-      category: val('d-cat'),
+      slug: slug,
+      category: rubrics[0],
+      rubrics: rubrics,
       date: val('d-date') || todayIso(),
       excerpt: val('d-excerpt') || htmlToText(html).slice(0, 220),
       body: htmlToText(html),
       contentHtml: html,
       cover: val('d-cover'),
       image: val('d-cover'),
-      author: val('d-author') || ctx.session.name,
+      author: author ? author.name : (val('d-author') || (ctx.session && ctx.session.name) || ''),
+      authorSlug: author ? author.slug : '',
+      authorSlugs: author ? [author.slug] : [],
       status: status,
     });
     upsert(type, next);
+    if (author && status === 'published') {
+      linkAuthor(author.slug, {
+        slug: slug,
+        title: title,
+        date: next.date,
+        excerpt: next.excerpt,
+      });
+    }
     ctx.toast(status === 'published' ? 'Опубликовано' : 'Черновик сохранён');
     ctx.go(type === 'news' ? 'news' : 'articles');
   }

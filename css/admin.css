@@ -505,6 +505,20 @@ table.data .title-link:hover { color: var(--accent); }
   color: var(--ink);
 }
 .check-row input { width: 16px; height: 16px; accent-color: var(--accent); }
+.author-chip-wrap { margin-top: 8px; }
+.author-chip, .preview-author {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2);
+  text-decoration: none; color: inherit; width: fit-content; max-width: 100%;
+}
+.author-chip strong, .preview-author span:last-child { font-size: 14px; }
+.author-chip small { display: block; color: var(--stone-500); font-size: 12px; }
+.author-chip-ava {
+  width: 36px; height: 36px; border-radius: 50%; background: #d9d0c4 center/cover no-repeat; flex: 0 0 auto;
+}
+.author-chip-ava.is-empty {
+  display: grid; place-items: center; font-weight: 700; color: #6b5e52; background: #efe8dc;
+}
 .seo-count { font-size: 11px; color: var(--stone-500); }
 .input.is-auto, .textarea.is-auto { background: var(--surface-2); }
 .post-publish { display: grid; gap: 8px; }
