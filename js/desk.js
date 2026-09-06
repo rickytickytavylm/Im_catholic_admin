@@ -212,8 +212,20 @@
     });
   }
 
+  function deskRecord(type, id) {
+    id = String(id || '');
+    var list = listOf(type);
+    for (var i = 0; i < list.length; i++) {
+      var x = list[i];
+      if (String(x.id) === id || String(x.slug || '') === id || String(x.date || '') === id) return x;
+    }
+    return null;
+  }
+
   function getItem(type, id) {
     id = String(id || '');
+    var saved = deskRecord(type, id);
+    if (saved) return saved;
     var list = mergedList(type);
     for (var i = 0; i < list.length; i++) {
       if (String(list[i].id) === id || list[i].date === id || list[i].slug === id) return list[i];
@@ -443,7 +455,8 @@
   }
 
   function openArchiveForm(ctx, type, id, renderFn) {
-    var cached = getItem(type, id);
+    var desk = deskRecord(type, id);
+    var cached = desk || getItem(type, id);
     var hasText = cached && (cached.body || cached.contentHtml);
     ctx.viewEl.innerHTML = '<div class="panel"><div class="empty">Загрузка полного текста</div></div>';
     if (!window.AdminApi || !AdminApi.getArticle) {
@@ -454,21 +467,14 @@
     AdminApi.getArticle(id).then(function (a) {
       if (!a || !a.title) throw new Error('empty');
       var mapped = mapArchive(a, type);
-      if (cached && cached.source !== 'site') {
-        mapped = Object.assign({}, mapped, cached, {
-          body: cached.body || mapped.body,
-          contentHtml: cached.contentHtml || mapped.contentHtml,
-          excerpt: cached.excerpt || mapped.excerpt,
-          excerptHtml: cached.excerptHtml || mapped.excerptHtml || cached.excerpt || mapped.excerpt,
-        });
-      }
+      if (desk) mapped = Object.assign({}, mapped, desk, { source: 'desk' });
       archiveCache[type] = (archiveCache[type] || []).filter(function (x) {
         return String(x.id) !== String(mapped.id);
       }).concat([mapped]);
       renderFn(mapped);
     }).catch(function () {
       if (hasText) {
-        renderFn(cached);
+        renderFn(desk || cached);
         return;
       }
       ctx.toast('Не удалось открыть материал', true);
@@ -894,6 +900,7 @@
       authorSlug: author ? author.slug : '',
       authorSlugs: author ? [author.slug] : [],
       status: status,
+      source: 'desk',
     });
     upsert(type, next);
     if (author && status === 'published') {
