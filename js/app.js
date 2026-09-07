@@ -1674,7 +1674,7 @@
     viewEl.innerHTML =
       '<div class="topbar"><div><h1>Настройки</h1><p>Подключение к серверу и доступ редакции.</p></div></div>' +
       '<div class="panel">' +
-      '<p class="hint-note">Изменения в редакции отображаются на портале после публикации.</p>' +
+      '<p class="hint-note">Чтобы новые статьи и правки старых попали на сайт для всех, нужен ключ доступа к серверу. Без него публикация остаётся только в этом браузере.</p>' +
       '<details class="dev-box"><summary>Подключение сервера</summary>' +
       '<div class="form-grid">' +
       '<label>Адрес сервера архива<input class="input" id="set-api" value="' + esc(AdminConfig.API_BASE || '') + '" /></label>' +

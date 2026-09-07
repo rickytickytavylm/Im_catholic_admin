@@ -543,6 +543,54 @@
     return [].map.call(document.querySelectorAll('.d-rubric:checked'), function (el) { return el.value; });
   }
 
+  function rubricTitle(id) {
+    var all = NEWS_CATS.concat(ARTICLE_CATS);
+    for (var i = 0; i < all.length; i++) if (all[i].id === id) return all[i].title;
+    return id;
+  }
+
+  function ensureNumericId(item) {
+    var n = parseInt(item.id, 10);
+    if (String(n) === String(item.id) && n > 0 && n < 2147483647) return n;
+    item.id = 2000000000 + (Date.now() % 100000000);
+    return item.id;
+  }
+
+  function httpCover(item) {
+    var cover = item.cover || item.image || '';
+    if (!cover || cover.indexOf('data:') === 0) return '';
+    return cover;
+  }
+
+  function publishToArchive(item, type) {
+    if (!window.AdminApi || !AdminApi.upsertArchive) {
+      return Promise.reject(new Error('нет соединения с сервером'));
+    }
+    if (!AdminApi.token || !AdminApi.token()) {
+      return Promise.reject(new Error('нет ключа сервера. Настройки → ключ доступа'));
+    }
+    var slugs = (item.rubrics || []).slice();
+    if (type === 'news' && slugs.indexOf('news') === -1) slugs.unshift('news');
+    if (type === 'article' && slugs.indexOf('columns') === -1) slugs.push('columns');
+    return AdminApi.upsertArchive({
+      articles: [{
+        id: ensureNumericId(item),
+        slug: item.slug,
+        title: item.title,
+        date: item.date,
+        modified: new Date().toISOString(),
+        author: item.author || '',
+        categories: slugs.map(rubricTitle),
+        categorySlugs: slugs,
+        excerpt: item.excerptHtml || item.excerpt || '',
+        contentHtml: item.contentHtml || '',
+        contentText: item.body || '',
+        image: httpCover(item) || undefined,
+        source: 'desk',
+      }],
+    });
+  }
+
   function rubricChecks(cats, selected) {
     selected = selected || [];
     return (
@@ -902,6 +950,7 @@
       status: status,
       source: 'desk',
     });
+    if (status === 'published') ensureNumericId(next);
     upsert(type, next);
     if (author && status === 'published') {
       linkAuthor(author.slug, {
@@ -911,8 +960,20 @@
         excerpt: next.excerpt,
       });
     }
-    ctx.toast(status === 'published' ? 'Опубликовано' : 'Черновик сохранён');
-    ctx.go(type === 'news' ? 'news' : 'articles');
+    if (status !== 'published') {
+      ctx.toast('Черновик сохранён');
+      ctx.go(type === 'news' ? 'news' : 'articles');
+      return;
+    }
+    ctx.toast('Отправляем на сайт…');
+    publishToArchive(next, type).then(function () {
+      upsert(type, next);
+      ctx.toast('Опубликовано на сайте');
+      ctx.go(type === 'news' ? 'news' : 'articles');
+    }).catch(function (e) {
+      ctx.toast('В редакции сохранено, на сайт не ушло: ' + (e.message || e), true);
+      ctx.go(type === 'news' ? 'news' : 'articles');
+    });
   }
 
   function renderEventForm(ctx, id) {

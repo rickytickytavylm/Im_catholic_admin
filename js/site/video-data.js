@@ -150,7 +150,7 @@
       duration: v.duration,
       type: 'long',
       videoUrl: BUCKET + 'ocean-mercy/' + v.slug + '.mp4',
-      thumb: 'assets/video/' + v.thumbId + '.webp',
+      thumb: 'assets/video/' + v.thumbId + '-mercy.webp?v=2026090701',
       channelId: 'ocean-mercy',
       cycle: 'Океан милосердия',
     };
@@ -407,7 +407,7 @@
     {
       id: 'ocean-mercy',
       name: 'Океан милосердия',
-      logo: 'assets/video/long-01.webp',
+      logo: 'assets/video/long-01-mercy.webp?v=2026090701',
       bio: 'Цикл фильмов о милосердии, святости и достоинстве человека на портале ЯКатолик.',
       links: [{ label: 'Смотреть на портале', href: 'video-channel.html?id=ocean-mercy' }],
       cycles: [],
