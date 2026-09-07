@@ -1,26 +1,12 @@
 /**
- * Каталог видео: собственные ролики Fides + каналы партнёров (YouTube / VK).
+ * Каталог видео: собственные ролики Fides + каналы партнёров (VK / RuTube).
  */
 (function (global) {
   'use strict';
 
   var BUCKET = 'https://storage.yandexcloud.net/fidesetratio/';
 
-  function ytThumb(id) {
-    return 'https://i.ytimg.com/vi/' + id + '/hqdefault.jpg';
-  }
-
-  function ytEmbed(id) {
-    return 'https://www.youtube.com/embed/' + id + '?rel=0&modestbranding=1';
-  }
-
-  function ytWatch(id) {
-    return 'https://www.youtube.com/watch?v=' + id;
-  }
-
-  function ytShort(id) {
-    return 'https://www.youtube.com/shorts/' + id;
-  }
+  /* YouTube в России без VPN не открывается — в каталоге только своё видео и VK/RuTube партнёров. */
 
   var OWN_SHORTS = [
     {
@@ -158,41 +144,7 @@
 
   /* ——— Партнёры: контент с их площадок ——— */
 
-  var PARTNER_SHORTS = [
-    {
-      id: 101,
-      title: 'Shorts',
-      speaker: 'Вселенская Церковь по-русски',
-      yt: '6uN3aX8zuVM',
-      channelId: 'unasancta',
-    },
-    {
-      id: 102,
-      title: 'Shorts',
-      speaker: 'Вселенская Церковь по-русски',
-      yt: 's9oV9bMqFsY',
-      channelId: 'unasancta',
-    },
-    {
-      id: 103,
-      title: 'Shorts',
-      speaker: 'Вселенская Церковь по-русски',
-      yt: 'dZfEHritNLc',
-      channelId: 'unasancta',
-    },
-  ].map(function (v) {
-    return {
-      id: v.id,
-      title: v.title,
-      description: '',
-      speaker: v.speaker,
-      type: 'short',
-      channelId: v.channelId,
-      thumb: ytThumb(v.yt),
-      embedUrl: ytEmbed(v.yt),
-      externalUrl: ytShort(v.yt),
-    };
-  });
+  var PARTNER_SHORTS = [];
 
   var PARTNER_LONGS = [
     /* Универсальная Церковь — отдельные ролики с VK */
@@ -221,86 +173,8 @@
       thumb: 'assets/video/partners/mama.svg',
       externalUrl: 'https://vkvideo.ru/video-26685443_456239124',
     },
-    /* ТВ Кана — цикл лекций */
-    {
-      id: 401,
-      title: 'Мужчиной и женщиной сотворил их. Лекция 1',
-      speaker: 'ТВ Кана',
-      channelId: 'tvkana',
-      cycle: 'Мужчиной и женщиной сотворил их',
-      yt: '8SU4tsx0JMU',
-    },
-    {
-      id: 402,
-      title: 'Мужчиной и женщиной сотворил их. Лекция 2',
-      speaker: 'ТВ Кана',
-      channelId: 'tvkana',
-      cycle: 'Мужчиной и женщиной сотворил их',
-      yt: '0vGcBJaEzUg',
-    },
-    {
-      id: 403,
-      title: 'Мужчиной и женщиной сотворил их. Лекция 3',
-      speaker: 'ТВ Кана',
-      channelId: 'tvkana',
-      cycle: 'Мужчиной и женщиной сотворил их',
-      yt: 'phKyfXllREI',
-    },
-    {
-      id: 404,
-      title: 'Мужчиной и женщиной сотворил их. Лекция 4',
-      speaker: 'ТВ Кана',
-      channelId: 'tvkana',
-      cycle: 'Мужчиной и женщиной сотворил их',
-      yt: 'lOFRzFQbaRQ',
-    },
-    {
-      id: 405,
-      title: 'Мужчиной и женщиной сотворил их. Лекция 5',
-      speaker: 'ТВ Кана',
-      channelId: 'tvkana',
-      cycle: 'Мужчиной и женщиной сотворил их',
-      yt: '1S7LDOb4P6M',
-    },
-    {
-      id: 406,
-      title: 'Мужчиной и женщиной сотворил их. Лекция 6',
-      speaker: 'ТВ Кана',
-      channelId: 'tvkana',
-      cycle: 'Мужчиной и женщиной сотворил их',
-      yt: 'SXNz1XtvYVo',
-    },
-    /* ТВ Кана — отдельные видео */
-    {
-      id: 411,
-      title: 'ТВ Кана',
-      speaker: 'ТВ Кана',
-      channelId: 'tvkana',
-      yt: '-flZWrGQfEA',
-    },
-    {
-      id: 412,
-      title: 'ТВ Кана',
-      speaker: 'ТВ Кана',
-      channelId: 'tvkana',
-      yt: 'yDYFaXtnIVY',
-    },
-    {
-      id: 413,
-      title: 'ТВ Кана',
-      speaker: 'ТВ Кана',
-      channelId: 'tvkana',
-      yt: 'DIUdmasEg_E',
-    },
-    {
-      id: 414,
-      title: 'ТВ Кана',
-      speaker: 'ТВ Кана',
-      channelId: 'tvkana',
-      yt: 'DzNRQZu5zPA',
-    },
   ].map(function (v) {
-    var out = {
+    return {
       id: v.id,
       title: v.title,
       description: v.description || '',
@@ -313,12 +187,6 @@
       embedUrl: '',
       videoUrl: '',
     };
-    if (v.yt) {
-      out.thumb = ytThumb(v.yt);
-      out.embedUrl = ytEmbed(v.yt);
-      out.externalUrl = ytWatch(v.yt);
-    }
-    return out;
   });
 
   var CHANNELS = [
@@ -330,33 +198,11 @@
         'Проект «Вселенская Церковь по-русски» — лучшие зарубежные католические проповедники и мыслители современности на русском языке. Основное направление — перевод видео проповедей и лекций о Католической Церкви. Автор проекта Александр Баранов также переводит статьи, книги и послания Римских Пап.',
       links: [
         { label: 'ВК', href: 'https://vk.ru/unasancta' },
-        { label: 'YouTube', href: 'https://www.youtube.com/channel/UCC__HqIwTt13Wj6Qrq-IVvA' },
         { label: 'RuTube', href: 'https://rutube.ru/channel/60130973/' },
         { label: 'ТГ', href: 'https://t.me/CathRus' },
         { label: 'Дзен', href: 'https://dzen.ru/unasancta' },
       ],
-      cycles: [
-        {
-          title: 'Католичество: ключевые фигуры',
-          href: 'https://youtube.com/playlist?list=PL_iyRtcvzoDnEqwhnVsW_A_zevDN-uAUU',
-          thumb: 'assets/video/partners/unasancta.svg',
-        },
-        {
-          title: 'Понять «Отче наш»',
-          href: 'https://youtube.com/playlist?list=PL_iyRtcvzoDlA4Cs4bgqxIHXon68O0fL_',
-          thumb: 'assets/video/partners/unasancta.svg',
-        },
-        {
-          title: 'Путешествие к сердцу веры',
-          href: 'https://www.youtube.com/playlist?list=PL_iyRtcvzoDnAa98RRzax3rZ1Up6XXjNm',
-          thumb: 'assets/video/partners/unasancta.svg',
-        },
-        {
-          title: 'Библейский Розарий',
-          href: 'https://www.youtube.com/playlist?list=PL_iyRtcvzoDlwo8dvs9TdVs65txFyUtNp',
-          thumb: 'assets/video/partners/unasancta.svg',
-        },
-      ],
+      cycles: [],
     },
     {
       id: 'mama',
@@ -389,20 +235,8 @@
         'Сибирское католическое телевидение «Кана» работает для католиков России, Казахстана и других государств бывшего СССР. Студия освящена 2 февраля 1996 года епископом Иосифом Вертом. По решению Конференции католических епископов РФ служение предназначено не только для Преображенской епархии в Новосибирске, но и для других российских епархий и русскоязычных верующих.',
       links: [
         { label: 'ВК', href: 'https://vk.ru/tvkana' },
-        { label: 'YouTube', href: 'https://www.youtube.com/user/TVKANA' },
       ],
-      cycles: [
-        {
-          title: 'Католические храмы России',
-          href: 'https://youtube.com/playlist?list=PL8XNfxdiyDOwikjrsBfjuOHQbBtAEAxvJ',
-          thumb: 'assets/video/partners/tvkana.svg',
-        },
-        {
-          title: 'Маленькие притчи обо всём на свете',
-          href: 'https://youtube.com/playlist?list=PL8XNfxdiyDOzJPEe0SXZiFV521-hVc4LL',
-          thumb: 'assets/video/partners/tvkana.svg',
-        },
-      ],
+      cycles: [],
     },
     {
       id: 'ocean-mercy',
