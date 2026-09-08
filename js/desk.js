@@ -58,11 +58,49 @@
 
   var archiveCache = { news: [], article: [] };
 
+  function numericIdOf(value) {
+    var n = parseInt(value, 10);
+    return String(n) === String(value) && n > 0 && n < 2147483647 ? n : 0;
+  }
+
+  function collapseArticles(list) {
+    var byKey = {};
+    var order = [];
+    (list || []).forEach(function (a) {
+      if (!a) return;
+      var key = String(a.slug || a.id || '').toLowerCase();
+      if (!key) return;
+      if (!byKey[key]) {
+        byKey[key] = a;
+        order.push(key);
+        return;
+      }
+      var prev = byKey[key];
+      var newer = String(a.updatedAt || a.date || '') >= String(prev.updatedAt || prev.date || '') ? a : prev;
+      var older = newer === a ? prev : a;
+      var keepId = numericIdOf(newer.id) || numericIdOf(older.id) || newer.id;
+      newer.id = keepId;
+      if (!httpUrl(newer.cover || newer.image) && httpUrl(older.cover || older.image)) {
+        newer.cover = older.cover || older.image;
+        newer.image = newer.cover;
+      }
+      if (!newer.imageOriginal && older.imageOriginal) newer.imageOriginal = older.imageOriginal;
+      byKey[key] = newer;
+    });
+    return order.map(function (k) { return byKey[k]; });
+  }
+
+  function httpUrl(value) {
+    return value && /^https?:\/\//i.test(value) ? value : '';
+  }
+
   function read() {
     try {
       var raw = localStorage.getItem(KEY);
       var data = raw ? JSON.parse(raw) : null;
-      return Object.assign(emptyState(), data || {});
+      data = Object.assign(emptyState(), data || {});
+      if (data.articles && data.articles.length) data.articles = collapseArticles(data.articles);
+      return data;
     } catch (e) {
       return emptyState();
     }
@@ -273,9 +311,18 @@
     });
     listOf(type).forEach(function (x) {
       if (!x || x.id == null) return;
-      byId[String(x.id)] = Object.assign({}, byId[String(x.id)] || {}, x);
+      var cur = byId[String(x.id)] || (x.slug && byId[String(x.slug)]) || {};
+      var merged = Object.assign({}, cur, x);
+      byId[String(merged.id)] = merged;
+      if (merged.slug) byId[String(merged.slug)] = merged;
     });
-    return Object.keys(byId).map(function (k) { return byId[k]; }).sort(function (a, b) {
+    var seen = {};
+    return Object.keys(byId).map(function (k) { return byId[k]; }).filter(function (x) {
+      var key = String(x.slug || x.id);
+      if (seen[key]) return false;
+      seen[key] = 1;
+      return true;
+    }).sort(function (a, b) {
       return String(b.date || b.updatedAt || '').localeCompare(String(a.date || a.updatedAt || ''));
     });
   }
@@ -362,9 +409,21 @@
     var list = data[key] || [];
     item.updatedAt = new Date().toISOString();
     if (!item.createdAt) item.createdAt = item.updatedAt;
-    var i = list.findIndex(function (x) { return String(x.id) === String(item.id); });
+    var i = list.findIndex(function (x) {
+      if (String(x.id) === String(item.id)) return true;
+      if (item.slug && x.slug && String(x.slug) === String(item.slug) && (key === 'articles' || key === 'authors')) return true;
+      return false;
+    });
+    list = list.filter(function (x, idx) {
+      if (idx === i) return true;
+      if (String(x.id) === String(item.id)) return false;
+      if (item.slug && x.slug && String(x.slug) === String(item.slug) && (key === 'articles' || key === 'authors')) return false;
+      if (item._prevDeskId && String(x.id) === String(item._prevDeskId)) return false;
+      return true;
+    });
+    i = list.findIndex(function (x) { return String(x.id) === String(item.id) || (item.slug && x.slug && String(x.slug) === String(item.slug)); });
     if (i === -1) list.unshift(item);
-    else list[i] = item;
+    else list[i] = Object.assign({}, list[i], item);
     data[key] = list;
     write(data, item.id || item.slug);
     return item;
@@ -622,16 +681,22 @@
   }
 
   function ensureNumericId(item) {
-    var n = parseInt(item.id, 10);
-    if (String(n) === String(item.id) && n > 0 && n < 2147483647) return n;
-    item.id = 2000000000 + (Date.now() % 100000000);
-    return item.id;
+    var n = numericIdOf(item.id) || numericIdOf(item.archiveId);
+    if (n) {
+      if (String(item.id) !== String(n)) item._prevDeskId = item.id;
+      item.id = n;
+      item.archiveId = n;
+      return n;
+    }
+    var minted = 2000000000 + (Date.now() % 100000000);
+    item._prevDeskId = item.id;
+    item.id = minted;
+    item.archiveId = minted;
+    return minted;
   }
 
   function httpCover(item) {
-    var cover = item.cover || item.image || '';
-    if (!cover || cover.indexOf('data:') === 0) return '';
-    return cover;
+    return httpUrl(item.cover) || httpUrl(item.image) || httpUrl(item.imageOriginal) || '';
   }
 
   function publishToArchive(item, type) {
@@ -657,7 +722,7 @@
         excerpt: item.excerptHtml || item.excerpt || '',
         contentHtml: item.contentHtml || '',
         contentText: item.body || '',
-        image: httpCover(item) || undefined,
+        image: httpCover(item) || item.imageOriginal || undefined,
         source: 'desk',
       }],
     });
@@ -1026,6 +1091,7 @@
       contentHtml: html,
       cover: val('d-cover'),
       image: val('d-cover'),
+      imageOriginal: httpUrl(val('d-cover')) || item.imageOriginal || httpUrl(item.image) || httpUrl(item.cover) || '',
       author: author ? author.name : (val('d-author') || (ctx.session && ctx.session.name) || ''),
       authorSlug: author ? author.slug : '',
       authorSlugs: author ? [author.slug] : [],
