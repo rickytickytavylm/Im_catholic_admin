@@ -323,7 +323,10 @@
       seen[key] = 1;
       return true;
     }).sort(function (a, b) {
-      return String(b.date || b.updatedAt || '').localeCompare(String(a.date || a.updatedAt || ''));
+      /* Только дата публикации — правки не должны поднимать материал наверх */
+      var da = String(a.date || a.createdAt || '').slice(0, 10);
+      var db = String(b.date || b.createdAt || '').slice(0, 10);
+      return db.localeCompare(da);
     });
   }
 
@@ -1084,7 +1087,7 @@
       slug: slug,
       category: rubrics[0],
       rubrics: rubrics,
-      date: val('d-date') || todayIso(),
+      date: val('d-date') || String(item.date || '').slice(0, 10) || todayIso(),
       excerpt: excerptPlain || htmlToText(html).slice(0, 220),
       excerptHtml: lead,
       body: htmlToText(html),
