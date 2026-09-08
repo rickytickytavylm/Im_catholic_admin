@@ -180,9 +180,11 @@
 
   function paintSection(ctx, type, title, addHref) {
     var view = ctx.viewEl;
+    var isArchive = type === 'news' || type === 'article';
+    var query = (isArchive && window.AdminDesk && AdminDesk.archiveInfo) ? (AdminDesk.archiveInfo(type).q || '') : '';
     function items() {
-      if (type === 'news') return newsItems();
-      if (type === 'article') return articleItems();
+      if (type === 'news') return (window.AdminDesk && AdminDesk.mergedList) ? AdminDesk.mergedList('news', query) : [];
+      if (type === 'article') return (window.AdminDesk && AdminDesk.mergedList) ? AdminDesk.mergedList('article', query) : [];
       if (type === 'event') return eventItems();
       if (type === 'audio') return audioItems();
       if (type === 'video') return videoItems();
@@ -229,9 +231,39 @@
       return it.title || it.name || (it.liturgical && it.liturgical.title) || (it.tags && it.tags[0]) || 'Без названия';
     }
 
+    function archiveInfo() {
+      return (isArchive && window.AdminDesk && AdminDesk.archiveInfo) ? AdminDesk.archiveInfo(type) : null;
+    }
+
+    function archiveBar(list) {
+      var info = archiveInfo();
+      if (!info) return '';
+      var status;
+      if (info.loading) status = 'Загружаю архив…';
+      else if (info.error && !info.loaded) status = 'Сервер не ответил — показаны только локальные правки';
+      else if (info.total != null) status = 'Показано ' + list.length + ' из ' + info.total + (info.q ? ' по запросу «' + esc(info.q) + '»' : '');
+      else status = 'Показано ' + list.length;
+      return (
+        '<div class="panel archive-bar">' +
+        '<input class="input" id="god-q" type="search" placeholder="Поиск по всему архиву: заголовок, автор, слово из текста" value="' + esc(query) + '" />' +
+        '<div class="archive-bar-row">' +
+        '<span class="archive-status">' + status + '</span>' +
+        '<span class="archive-bar-actions">' +
+        (info.hasMore && !info.loading
+          ? '<button type="button" class="btn btn-ghost" id="god-more">Ещё 50</button>' +
+            '<button type="button" class="btn btn-ghost" id="god-all">Показать всё</button>'
+          : '') +
+        (info.error ? '<button type="button" class="btn btn-ghost" id="god-retry">Повторить</button>' : '') +
+        '</span></div></div>'
+      );
+    }
+
     function draw() {
       var list = items();
+      var info = archiveInfo();
       var canBackup = window.AdminDesk && AdminDesk.exportDesk;
+      var focusQ = document.activeElement && document.activeElement.id === 'god-q';
+      var caret = focusQ ? document.activeElement.selectionStart : null;
       view.innerHTML =
         '<div class="topbar"><div><h1>' + esc(title) + '</h1>' +
         '<p>Материалы раздела.</p></div>' +
@@ -240,11 +272,12 @@
           '<button type="button" class="btn btn-ghost" id="god-import">Загрузить контент</button>' : '') +
         (addHref ? '<a class="btn btn-primary" href="' + addHref + '">Добавить</a>' : '') +
         '</div></div>' +
+        archiveBar(list) +
         (list.length
           ? '<div class="god-grid">' + list.map(function (it) {
             return card(hrefOf(it), imgOf(it), titleOf(it), metaOf(it));
           }).join('') + '</div>'
-          : '<div class="panel"><div class="empty">Загрузка</div></div>');
+          : '<div class="panel"><div class="empty">' + (info && !info.loading ? 'Ничего не найдено' : 'Загрузка') + '</div></div>');
 
       var expBtn = document.getElementById('god-export');
       if (expBtn) expBtn.onclick = function () { AdminDesk.exportDesk(); };
@@ -252,11 +285,33 @@
       if (impBtn) impBtn.onclick = function () {
         AdminDesk.importDesk(ctx, confirm('OK — добавить к текущему контенту.\nОтмена — заменить весь контент файлом.') ? 'merge' : 'replace');
       };
+
+      var qEl = document.getElementById('god-q');
+      if (qEl) {
+        if (focusQ) {
+          qEl.focus();
+          try { qEl.setSelectionRange(caret, caret); } catch (e) { /* noop */ }
+        }
+        var timer = null;
+        qEl.oninput = function () {
+          query = qEl.value;
+          clearTimeout(timer);
+          timer = setTimeout(function () {
+            AdminDesk.loadArchive(type, draw, { q: query });
+            draw();
+          }, 350);
+        };
+      }
+      var moreBtn = document.getElementById('god-more');
+      if (moreBtn) moreBtn.onclick = function () { AdminDesk.loadArchive(type, draw, { more: true }); draw(); };
+      var allBtn = document.getElementById('god-all');
+      if (allBtn) allBtn.onclick = function () { AdminDesk.loadArchive(type, draw, { all: true }); draw(); };
+      var retryBtn = document.getElementById('god-retry');
+      if (retryBtn) retryBtn.onclick = function () { AdminDesk.loadArchive(type, draw, { more: true }); draw(); };
     }
 
     draw();
-    if (type === 'news' && window.AdminDesk && AdminDesk.loadArchive) AdminDesk.loadArchive('news', draw);
-    if (type === 'article' && window.AdminDesk && AdminDesk.loadArchive) AdminDesk.loadArchive('article', draw);
+    if (isArchive && window.AdminDesk && AdminDesk.loadArchive) AdminDesk.loadArchive(type, draw);
     if (type === 'photo' && window.AdminDesk && AdminDesk.loadSeed) AdminDesk.loadSeed(draw);
   }
 

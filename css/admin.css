@@ -231,6 +231,11 @@ button, input, select, textarea {
   font-style: normal; font-family: var(--ff); font-size: 14px; color: var(--stone-500); font-weight: 700;
 }
 .god-band-head a { font-weight: 700; font-size: 14px; text-decoration: none; }
+.archive-bar { margin-bottom: 14px; display: grid; gap: 10px; }
+.archive-bar-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.archive-status { color: var(--stone-500); font-size: 13px; }
+.archive-bar-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
 .god-rail, .god-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));

@@ -303,7 +303,8 @@
     return [];
   }
 
-  function mergedList(type) {
+  function mergedList(type, q) {
+    q = String(q || '').trim().toLowerCase();
     var byId = {};
     var site = (type === 'news' || type === 'article') ? (archiveCache[type] || []) : siteItems(type);
     site.forEach(function (x) {
@@ -321,6 +322,10 @@
       var key = String(x.slug || x.id);
       if (seen[key]) return false;
       seen[key] = 1;
+      if (q) {
+        var hay = ((x.title || '') + ' ' + (x.excerpt || '') + ' ' + (x.author || '') + ' ' + (x.slug || '')).toLowerCase();
+        if (hay.indexOf(q) === -1) return false;
+      }
       return true;
     }).sort(function (a, b) {
       /* Только дата публикации — правки не должны поднимать материал наверх */
@@ -381,17 +386,102 @@
     };
   }
 
-  function loadArchive(type, done) {
+  /* Архив на сервере отдаёт по 50 материалов за запрос. Держим постраничное
+     состояние, чтобы в списке можно было дойти до самых старых публикаций. */
+  var PAGE = 50;
+  var archiveState = { news: null, article: null };
+
+  function stateOf(type) {
+    if (!archiveState[type]) archiveState[type] = { q: '', page: 0, total: null, loading: false, error: false };
+    return archiveState[type];
+  }
+
+  function archiveInfo(type) {
+    var st = stateOf(type);
+    var loaded = (archiveCache[type] || []).length;
+    return {
+      q: st.q,
+      loaded: loaded,
+      total: st.total,
+      loading: st.loading,
+      error: st.error,
+      hasMore: st.total == null ? loaded === 0 || loaded >= st.page * PAGE : loaded < st.total,
+    };
+  }
+
+  function mergeArchive(type, items) {
+    var byId = {};
+    (archiveCache[type] || []).forEach(function (x) { byId[String(x.id)] = x; });
+    items.forEach(function (x) { byId[String(x.id)] = x; });
+    archiveCache[type] = Object.keys(byId).map(function (k) { return byId[k]; });
+  }
+
+  /* opts.q — новый поиск (сброс), opts.more — следующая страница, opts.all — до конца. */
+  function loadArchive(type, done, opts) {
+    opts = opts || {};
+    done = done || function () {};
     if (!window.AdminApi || !AdminApi.getArticles) {
       done([]);
       return;
     }
-    AdminApi.getArticles({ category: type === 'news' ? 'news' : 'columns', limit: 50, page: 1 })
+    var st = stateOf(type);
+    st.waiters = st.waiters || [];
+    st.seq = st.seq || 0;
+    var q = opts.q != null ? String(opts.q).trim() : st.q;
+    if (q !== st.q) {
+      /* Новый поиск: сбрасываем кеш, ответ старого запроса будет проигнорирован */
+      st.q = q;
+      st.page = 0;
+      st.total = null;
+      st.seq++;
+      st.loading = false;
+      archiveCache[type] = [];
+    }
+    if (st.loading) {
+      /* Запрос уже в пути — отрисуем всех, кто ждёт, когда он вернётся */
+      st.waiters.push(done);
+      return;
+    }
+    if (!opts.more && !opts.all && st.page > 0) {
+      done(archiveCache[type]);
+      return;
+    }
+    st.loading = true;
+    st.error = false;
+    var seq = st.seq;
+    var nextPage = st.page + 1;
+    function finish() {
+      var list = archiveCache[type] || [];
+      var w = st.waiters.splice(0);
+      done(list);
+      w.forEach(function (fn) { try { fn(list); } catch (e) { /* noop */ } });
+    }
+    AdminApi.getArticles({ category: type === 'news' ? 'news' : 'columns', q: st.q || '', limit: PAGE, page: nextPage })
       .then(function (pack) {
-        archiveCache[type] = ((pack && pack.items) || []).map(function (a) { return mapArchive(a, type); });
-        done(archiveCache[type]);
+        if (seq !== st.seq) return;
+        var items = ((pack && pack.items) || []).map(function (a) { return mapArchive(a, type); });
+        st.page = nextPage;
+        mergeArchive(type, items);
+        /* Postgres отдаёт COUNT строкой — приводим к числу */
+        var total = pack && pack.total != null ? Number(pack.total) : NaN;
+        if (isFinite(total) && total >= 0) st.total = total;
+        /* Неполная страница — архив кончился, дальше листать нечего */
+        if (items.length < PAGE) st.total = archiveCache[type].length;
+        st.loading = false;
+        var more = items.length === PAGE && (st.total == null || archiveCache[type].length < st.total);
+        if (opts.all && more && nextPage < 200) {
+          finish();
+          loadArchive(type, done, { all: true });
+          return;
+        }
+        finish();
       })
-      .catch(function () { done(archiveCache[type] || []); });
+      .catch(function () {
+        if (seq !== st.seq) return;
+        st.loading = false;
+        st.error = true;
+        finish();
+      });
   }
 
   function hideItem(type, id) {
@@ -1715,6 +1805,7 @@
     mediaSrc: mediaSrc,
     loadSeed: loadSeed,
     loadArchive: loadArchive,
+    archiveInfo: archiveInfo,
     mergedList: mergedList,
     allPhotos: allPhotos,
     portalHref: portalHref,
