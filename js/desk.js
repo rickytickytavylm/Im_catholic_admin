@@ -68,8 +68,76 @@
     }
   }
 
-  function write(data) {
-    localStorage.setItem(KEY, JSON.stringify(data));
+  function isQuota(err) {
+    return !!(err && (err.name === 'QuotaExceededError' || err.name === 'NS_ERROR_DOM_QUOTA_REACHED' || err.code === 22));
+  }
+
+  function stripHeavy(rec, hard) {
+    if (!rec || typeof rec !== 'object') return;
+    ['cover', 'image', 'photo'].forEach(function (f) {
+      if (typeof rec[f] === 'string' && rec[f].indexOf('data:') === 0) rec[f] = '';
+    });
+    if (typeof rec.contentHtml === 'string') {
+      rec.contentHtml = rec.contentHtml.replace(/\ssrc="data:[^"]+"/gi, '');
+    }
+    if (hard && typeof rec.body === 'string' && rec.body.length > 4000) rec.body = rec.body.slice(0, 4000);
+  }
+
+  function compactDesk(data, keepId, hard) {
+    Object.keys(emptyState()).forEach(function (key) {
+      (data[key] || []).forEach(function (rec) {
+        if (!rec) return;
+        var keep = keepId && (String(rec.id) === String(keepId) || String(rec.slug || '') === String(keepId));
+        if (keep && !hard) return;
+        stripHeavy(rec, hard);
+      });
+    });
+  }
+
+  function write(data, keepId) {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(data));
+      return;
+    } catch (e) {
+      if (!isQuota(e)) throw e;
+    }
+    compactDesk(data, keepId, false);
+    try {
+      localStorage.setItem(KEY, JSON.stringify(data));
+      return;
+    } catch (e2) {
+      if (!isQuota(e2)) throw e2;
+    }
+    compactDesk(data, keepId, true);
+    try {
+      localStorage.setItem(KEY, JSON.stringify(data));
+    } catch (e3) {
+      throw new Error('Браузер переполнен фотографиями. Снимите тяжёлые обложки или фото авторов и сохраните снова.');
+    }
+  }
+
+  function shrinkImage(dataUrl, maxSide, quality, done) {
+    if (!dataUrl || dataUrl.indexOf('data:image') !== 0) {
+      done(dataUrl);
+      return;
+    }
+    var img = new Image();
+    img.onload = function () {
+      var w = img.width || 1;
+      var h = img.height || 1;
+      var scale = Math.min(1, (maxSide || 1200) / Math.max(w, h));
+      var canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(w * scale));
+      canvas.height = Math.max(1, Math.round(h * scale));
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      try {
+        done(canvas.toDataURL('image/jpeg', quality || 0.74));
+      } catch (e) {
+        done(dataUrl);
+      }
+    };
+    img.onerror = function () { done(dataUrl); };
+    img.src = dataUrl;
   }
 
   function uid(prefix) {
@@ -298,7 +366,7 @@
     if (i === -1) list.unshift(item);
     else list[i] = item;
     data[key] = list;
-    write(data);
+    write(data, item.id || item.slug);
     return item;
   }
 
@@ -312,7 +380,7 @@
       : type === 'guides' ? 'guides'
       : 'churchDays';
     data[key] = (data[key] || []).filter(function (x) { return String(x.id) !== String(id); });
-    write(data);
+    write(data, id);
   }
 
   function renderHub(ctx) {
@@ -378,8 +446,12 @@
       '<button type="button" class="btn btn-primary" id="desk-pub">Опубликовать</button>' +
       '</div></div>' +
       '<div class="panel form-grid desk-form">' + body + '</div>';
-    document.getElementById('desk-draft').onclick = function () { onSave('draft'); };
-    document.getElementById('desk-pub').onclick = function () { onPublish(); };
+    document.getElementById('desk-draft').onclick = function () {
+      try { onSave('draft'); } catch (e) { ctx.toast(e.message || 'Не удалось сохранить', true); }
+    };
+    document.getElementById('desk-pub').onclick = function () {
+      try { onPublish(); } catch (e) { ctx.toast(e.message || 'Не удалось опубликовать', true); }
+    };
     if (onDelete) document.getElementById('desk-del').onclick = onDelete;
   }
 
@@ -691,8 +763,12 @@
     });
     drawPubPreview();
 
-    document.getElementById('desk-draft').onclick = function () { saveArticle(ctx, item, type, 'draft'); };
-    document.getElementById('desk-pub').onclick = function () { saveArticle(ctx, item, type, 'published'); };
+    document.getElementById('desk-draft').onclick = function () {
+      try { saveArticle(ctx, item, type, 'draft'); } catch (e) { ctx.toast(e.message || 'Не удалось сохранить', true); }
+    };
+    document.getElementById('desk-pub').onclick = function () {
+      try { saveArticle(ctx, item, type, 'published'); } catch (e) { ctx.toast(e.message || 'Не удалось опубликовать', true); }
+    };
     var delBtn = document.getElementById('desk-del');
     if (delBtn) delBtn.onclick = function () {
       if (confirm(isNews ? 'Снять новость с публикации?' : 'Снять статью с публикации?')) {
@@ -884,11 +960,13 @@
           var f = input.files && input.files[0];
           if (!f) return;
           var reader = new FileReader();
-          reader.onload = function () {
-            document.execCommand('insertHTML', false, '<figure class="rte-figure"><img src="' + esc(reader.result) + '" alt="" /></figure>');
+        reader.onload = function () {
+          shrinkImage(reader.result, 1400, 0.76, function (src) {
+            document.execCommand('insertHTML', false, '<figure class="rte-figure"><img src="' + esc(src) + '" alt="" /></figure>');
             if (onChange) onChange();
-          };
-          reader.readAsDataURL(f);
+          });
+        };
+        reader.readAsDataURL(f);
           input.value = '';
         };
         input.click();
@@ -907,14 +985,16 @@
       if (!f) return;
       var reader = new FileReader();
       reader.onload = function () {
-        var cover = document.getElementById('d-cover');
-        if (cover) cover.value = reader.result;
-        var frame = document.getElementById('d-cover-frame');
-        if (frame) {
-          frame.classList.remove('is-empty');
-          frame.innerHTML = '<img src="' + reader.result + '" alt="" />';
-        }
-        if (onChange) onChange();
+        shrinkImage(reader.result, 1400, 0.76, function (src) {
+          var cover = document.getElementById('d-cover');
+          if (cover) cover.value = src;
+          var frame = document.getElementById('d-cover-frame');
+          if (frame) {
+            frame.classList.remove('is-empty');
+            frame.innerHTML = '<img src="' + src + '" alt="" />';
+          }
+          if (onChange) onChange();
+        });
       };
       reader.readAsDataURL(f);
     };
@@ -931,7 +1011,9 @@
     var excerptPlain = htmlToText(lead);
     var author = type === 'article' ? findAuthor(val('d-author-slug') || val('d-author-q')) : null;
     var slug = val('d-slug') || slugify(title);
-    var next = Object.assign({}, item, {
+    var next;
+    try {
+    next = Object.assign({}, item, {
       kind: type === 'news' ? 'news' : 'article',
       title: title,
       slug: slug,
@@ -974,6 +1056,9 @@
       ctx.toast('В редакции сохранено, на сайт не ушло: ' + (e.message || e), true);
       ctx.go(type === 'news' ? 'news' : 'articles');
     });
+    } catch (e) {
+      ctx.toast(e.message || 'Не удалось сохранить', true);
+    }
   }
 
   function renderEventForm(ctx, id) {
@@ -1004,21 +1089,25 @@
   function saveEvent(ctx, item, status) {
     var title = val('d-title');
     if (!title) { ctx.toast('Укажите название', true); return; }
-    upsert('event', Object.assign({}, item, {
-      title: title,
-      category: val('d-cat'),
-      date: val('d-date') || todayIso(),
-      endDate: val('d-end'),
-      time: val('d-time'),
-      city: val('d-city'),
-      venue: val('d-venue'),
-      place: val('d-place'),
-      desc: val('d-desc'),
-      href: val('d-href'),
-      status: status,
-    }));
-    ctx.toast(status === 'published' ? 'Опубликовано' : 'Черновик сохранён');
-    ctx.go('afisha');
+    try {
+      upsert('event', Object.assign({}, item, {
+        title: title,
+        category: val('d-cat'),
+        date: val('d-date') || todayIso(),
+        endDate: val('d-end'),
+        time: val('d-time'),
+        city: val('d-city'),
+        venue: val('d-venue'),
+        place: val('d-place'),
+        desc: val('d-desc'),
+        href: val('d-href'),
+        status: status,
+      }));
+      ctx.toast(status === 'published' ? 'Опубликовано' : 'Черновик сохранён');
+      ctx.go('afisha');
+    } catch (e) {
+      ctx.toast(e.message || 'Не удалось сохранить', true);
+    }
   }
 
   function renderAudioForm(ctx, id) {
@@ -1365,7 +1454,10 @@
         if (!f) return;
         var reader = new FileReader();
         reader.onload = function () {
-          document.getElementById('d-photo-url').value = reader.result;
+          shrinkImage(reader.result, 640, 0.78, function (src) {
+            var hidden = document.getElementById('d-photo-url');
+            if (hidden) hidden.value = src;
+          });
         };
         reader.readAsDataURL(f);
       };
@@ -1420,17 +1512,21 @@
   }
 
   function saveAuthor(ctx, item, status) {
-    upsert('authors', Object.assign({}, item, {
-      id: item.slug || item.id,
-      slug: item.slug || item.id,
-      name: val('d-title'),
-      role: val('d-role'),
-      bio: val('d-bio'),
-      photo: val('d-photo-url') || item.photo || '',
-      status: status,
-    }));
-    ctx.toast(status === 'published' ? 'Сохранено' : 'Черновик сохранён');
-    ctx.go('authors');
+    try {
+      upsert('authors', Object.assign({}, item, {
+        id: item.slug || item.id,
+        slug: item.slug || item.id,
+        name: val('d-title'),
+        role: val('d-role'),
+        bio: val('d-bio'),
+        photo: val('d-photo-url') || item.photo || '',
+        status: status,
+      }));
+      ctx.toast(status === 'published' ? 'Сохранено' : 'Черновик сохранён');
+      ctx.go('authors');
+    } catch (e) {
+      ctx.toast(e.message || 'Не удалось сохранить автора', true);
+    }
   }
 
   var LIST_MAP = { news: 'news', articles: 'article', afisha: 'event', audio: 'audio', video: 'video', 'church-day': 'church-day' };
@@ -1456,7 +1552,7 @@
     if (i === -1) list.unshift(item);
     else list[i] = Object.assign({}, list[i], item);
     data.guides = list;
-    write(data);
+    write(data, item.id || item.nodeId);
     return item;
   }
 
