@@ -15,7 +15,7 @@
     super: {
       id: 'super',
       title: 'Супер-администратор',
-      nav: ['dashboard', 'publish', 'news', 'articles', 'church', 'spirit', 'afisha', 'audio', 'video', 'church-day', 'materials', 'pages', 'taxonomy', 'authors', 'library', 'media', 'photographers', 'photo-moderation', 'users', 'logs', 'settings'],
+      nav: ['dashboard', 'publish', 'news', 'articles', 'cycles', 'church', 'spirit', 'afisha', 'audio', 'video', 'church-day', 'materials', 'pages', 'taxonomy', 'authors', 'library', 'media', 'photographers', 'photo-moderation', 'users', 'logs', 'settings'],
       canPublish: true,
       canModerate: true,
       canManageUsers: true,
@@ -33,7 +33,7 @@
     chief: {
       id: 'chief',
       title: 'Главный редактор',
-      nav: ['dashboard', 'publish', 'news', 'articles', 'church', 'spirit', 'afisha', 'audio', 'video', 'church-day', 'materials', 'pages', 'taxonomy', 'authors', 'library', 'media', 'photographers', 'photo-moderation', 'users', 'logs'],
+      nav: ['dashboard', 'publish', 'news', 'articles', 'cycles', 'church', 'spirit', 'afisha', 'audio', 'video', 'church-day', 'materials', 'pages', 'taxonomy', 'authors', 'library', 'media', 'photographers', 'photo-moderation', 'users', 'logs'],
       canPublish: true,
       canModerate: true,
       canManageUsers: false,
@@ -51,7 +51,7 @@
     rubric_editor: {
       id: 'rubric_editor',
       title: 'Редактор рубрики',
-      nav: ['dashboard', 'publish', 'news', 'articles', 'afisha', 'materials'],
+      nav: ['dashboard', 'publish', 'news', 'articles', 'cycles', 'afisha', 'materials'],
       canPublish: true,
       canModerate: true,
       canManageUsers: false,
@@ -67,7 +67,7 @@
     author: {
       id: 'author',
       title: 'Автор',
-      nav: ['dashboard', 'publish', 'news', 'articles', 'materials'],
+      nav: ['dashboard', 'publish', 'news', 'articles', 'cycles', 'materials'],
       canPublish: false,
       canModerate: false,
       canManageUsers: false,
@@ -288,7 +288,7 @@
     if (id === 'photostock' || id === 'library') id = 'media';
     if (id === 'page-editor') id = 'pages';
     if (id === 'photographer-edit') id = 'photographers';
-    if (id === 'publish' || id === 'news' || id === 'articles' || id === 'audio' || id === 'video' || id === 'afisha' || id === 'church-day' || id === 'authors' || id === 'church' || id === 'spirit') {
+    if (id === 'publish' || id === 'news' || id === 'articles' || id === 'cycles' || id === 'audio' || id === 'video' || id === 'afisha' || id === 'church-day' || id === 'authors' || id === 'church' || id === 'spirit') {
       var n = roleOf(user).nav;
       if (n.indexOf(id) !== -1 || n.indexOf('publish') !== -1 || n.indexOf('materials') !== -1) return true;
     }

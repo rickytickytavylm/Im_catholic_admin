@@ -160,6 +160,9 @@
         band('Фотосток', '#media', ph.slice(0, 12).map(function (it) {
           return card('#media', it.url || it.thumb, it.title || (it.tags || []).slice(0, 2).join(', ') || 'Фото', (it.tags || []).slice(0, 3).join(' · '));
         }).join(''), ph.length) +
+        band('Циклы', '#cycles', ((window.AdminDesk && AdminDesk.mergedList) ? AdminDesk.mergedList('cycle') : []).slice(0, 8).map(function (it) {
+          return card('#cycles/' + encodeURIComponent(it.id || it.slug), it.cover || it.image || 'assets/cards/articles-spirituality.webp', it.title, ((it.items || []).length ? it.items.length + ' статей' : it.subtitle || ''));
+        }).join('')) +
         band('Авторы', '#authors', authors.slice(0, 8).map(function (it) {
           return card('#authors/' + encodeURIComponent(it.slug || it.id), it.photo, it.name, it.role || '');
         }).join(''), authors.length) +
@@ -190,6 +193,7 @@
       if (type === 'video') return videoItems();
       if (type === 'church-day') return dayItems();
       if (type === 'authors') return authorItems();
+      if (type === 'cycle') return (window.AdminDesk && AdminDesk.mergedList) ? AdminDesk.mergedList('cycle') : [];
       if (type === 'photo') return photos();
       if (type === 'church') return guideCards(window.YakGuides && YakGuides.church, 'church');
       if (type === 'spirit') return guideCards(window.YakGuides && YakGuides.spirit, 'spirit');
@@ -203,6 +207,7 @@
       if (type === 'video') return '#video/' + encodeURIComponent(it.id);
       if (type === 'church-day') return '#church-day/' + encodeURIComponent(it.id || it.date);
       if (type === 'authors') return '#authors/' + encodeURIComponent(it.slug || it.id);
+      if (type === 'cycle') return '#cycles/' + encodeURIComponent(it.id || it.slug);
       if (type === 'church') return '#church/' + encodeURIComponent(it.id);
       if (type === 'spirit') return '#spirit/' + encodeURIComponent(it.id);
       return '#media';
@@ -213,6 +218,7 @@
       if (type === 'audio') return it.cover || 'assets/cards/articles-sermons.webp';
       if (type === 'photo') return it.url || it.thumb;
       if (type === 'authors') return it.photo;
+      if (type === 'cycle') return it.cover || it.image;
       if (type === 'church' || type === 'spirit') return it.image;
       if (type === 'church-day') return 'assets/cards/spirit-liturgy.webp';
       return it.image || it.cover || 'assets/cards/articles-spirituality.webp';
@@ -223,6 +229,7 @@
       if (type === 'event') return (it.date || '') + (it.city ? ' · ' + it.city : '');
       if (type === 'photo') return (it.tags || []).slice(0, 4).join(' · ');
       if (type === 'authors') return it.role || '';
+      if (type === 'cycle') return ((it.items || []).length ? (it.items.length + ' статей') : '') + (it.subtitle ? ' · ' + it.subtitle : '');
       if (type === 'church' || type === 'spirit') return it.sub || '';
       if (type === 'church-day') return it.date || '';
       return it.excerpt || it.date || '';

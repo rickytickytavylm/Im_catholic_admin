@@ -41,6 +41,7 @@
     { id: 'interview', title: 'Интервью' },
     { id: 'svidetelstva', title: 'Свидетельства' },
     { id: 'propovedi', title: 'Проповеди' },
+    { id: 'music', title: 'Музыка' },
   ];
 
   var EVENT_CATS = [
@@ -53,7 +54,7 @@
   ];
 
   function emptyState() {
-    return { articles: [], events: [], audio: [], video: [], churchDays: [], authors: [], guides: [], authorLinks: [], photographers: [], videoChannels: [] };
+    return { articles: [], events: [], audio: [], video: [], churchDays: [], authors: [], guides: [], authorLinks: [], photographers: [], videoChannels: [], cycles: [] };
   }
 
   var archiveCache = { news: [], article: [] };
@@ -266,6 +267,7 @@
     if (type === 'video') return data.video;
     if (type === 'church-day') return data.churchDays;
     if (type === 'authors') return data.authors || [];
+    if (type === 'cycle') return data.cycles || [];
     return [];
   }
 
@@ -298,6 +300,11 @@
     if (type === 'authors' && window.YakAuthors) {
       return (YakAuthors || []).map(function (a) {
         return Object.assign({ status: 'published', source: 'site', id: a.slug }, a);
+      });
+    }
+    if (type === 'cycle') {
+      return ((window.YakCycles && YakCycles.ALL) || []).map(function (c) {
+        return Object.assign({ status: 'published', source: 'site' }, c);
       });
     }
     return [];
@@ -381,6 +388,8 @@
       authorSlugs: a.authorSlugs || (a.authorSlug ? [a.authorSlug] : []),
       category: slugs[0],
       rubrics: slugs,
+      cycleSlug: a.cycleSlug || a.cycle_slug || '',
+      cycleOrder: a.cycleOrder || a.cycle_order || 0,
       status: 'published',
       source: 'site',
     };
@@ -498,13 +507,14 @@
       : type === 'video' ? 'video'
       : type === 'authors' ? 'authors'
       : type === 'guides' ? 'guides'
+      : type === 'cycle' ? 'cycles'
       : 'churchDays';
     var list = data[key] || [];
     item.updatedAt = new Date().toISOString();
     if (!item.createdAt) item.createdAt = item.updatedAt;
     var i = list.findIndex(function (x) {
       if (String(x.id) === String(item.id)) return true;
-      if (item.slug && x.slug && String(x.slug) === String(item.slug) && (key === 'articles' || key === 'authors')) return true;
+      if (item.slug && x.slug && String(x.slug) === String(item.slug) && (key === 'articles' || key === 'authors' || key === 'cycles')) return true;
       return false;
     });
     list = list.filter(function (x, idx) {
@@ -530,6 +540,7 @@
       : type === 'video' ? 'video'
       : type === 'authors' ? 'authors'
       : type === 'guides' ? 'guides'
+      : type === 'cycle' ? 'cycles'
       : 'churchDays';
     data[key] = (data[key] || []).filter(function (x) { return String(x.id) !== String(id); });
     write(data, id);
@@ -874,7 +885,13 @@
         '<div id="d-author-chip" class="author-chip-wrap"></div>' +
         '<div class="author-search" id="d-author-search">' +
         '<input class="input" id="d-author-q" placeholder="Автор — найти по имени" autocomplete="off" />' +
-        '<div class="author-suggest" id="d-author-suggest" hidden></div></div>') +
+        '<div class="author-suggest" id="d-author-suggest" hidden></div></div>' +
+        '<input type="hidden" id="d-cycle-slug" value="' + esc(item.cycleSlug || item.cycleId || '') + '" />' +
+        '<div id="d-cycle-chip" class="author-chip-wrap"></div>' +
+        '<div class="author-search" id="d-cycle-search">' +
+        '<input class="input" id="d-cycle-q" placeholder="Цикл — не обязательно" autocomplete="off" />' +
+        '<div class="author-suggest" id="d-cycle-suggest" hidden></div></div>' +
+        '<input class="input" id="d-cycle-order" type="number" min="1" placeholder="Номер в цикле" value="' + esc(item.cycleOrder || '') + '" />') +
       '<input class="input" id="d-date" type="date" value="' + esc((item.date || todayIso()).slice(0, 10)) + '" />' +
       '</div></div>' +
       '<div class="rte lead-rte">' +
@@ -895,6 +912,7 @@
       '<button type="button" data-act="link" title="Ссылка">Ссылка</button>' +
       '<span class="rte-sep"></span>' +
       '<button type="button" data-act="image" title="Фото в текст">Фото</button>' +
+      '<button type="button" data-act="caption" title="Подпись к фото">Подпись</button>' +
       '</div>' +
       '<div class="rte-body" id="d-body" contenteditable="true" data-placeholder="Текст"></div>' +
       '<input type="file" id="d-inline-file" accept="image/*" hidden />' +
@@ -911,7 +929,10 @@
     mountLeadRTE(leadEl, function () { drawPubPreview(); });
     bindCoverFile(function () { drawPubPreview(); });
     bindSlugField(!!slug);
-    if (!isNews) bindAuthorChip(currentAuthor);
+    if (!isNews) {
+      bindAuthorChip(currentAuthor);
+      bindCycleChip(item.cycleSlug || item.cycleId || '');
+    }
     ['d-title', 'd-date'].forEach(function (fid) {
       var el = document.getElementById(fid);
       if (el) el.addEventListener('input', drawPubPreview);
@@ -1021,6 +1042,93 @@
     });
   }
 
+  function catalogCycles() {
+    var byId = {};
+    ((window.YakCycles && YakCycles.ALL) || []).forEach(function (c) {
+      if (c && c.id) byId[c.id] = Object.assign({ status: 'published', source: 'site' }, c);
+    });
+    (read().cycles || []).forEach(function (c) {
+      if (!c || !c.id) return;
+      byId[c.id] = Object.assign({}, byId[c.id] || {}, c);
+    });
+    return Object.keys(byId).map(function (k) { return byId[k]; }).filter(function (c) {
+      return !c.status || c.status === 'published';
+    });
+  }
+
+  function findCycle(id) {
+    id = String(id || '').trim().toLowerCase();
+    if (!id) return null;
+    var list = catalogCycles();
+    for (var i = 0; i < list.length; i++) {
+      if (String(list[i].id).toLowerCase() === id || String(list[i].slug || '').toLowerCase() === id) return list[i];
+    }
+    return null;
+  }
+
+  function paintCycleChip(cycle) {
+    var box = document.getElementById('d-cycle-chip');
+    var hidden = document.getElementById('d-cycle-slug');
+    var search = document.getElementById('d-cycle-search');
+    var suggest = document.getElementById('d-cycle-suggest');
+    var order = document.getElementById('d-cycle-order');
+    if (!box) return;
+    if (hidden) hidden.value = cycle ? (cycle.id || '') : '';
+    if (suggest) { suggest.hidden = true; suggest.innerHTML = ''; }
+    if (order) order.hidden = !cycle;
+    if (!cycle) {
+      box.innerHTML = '';
+      if (search) search.hidden = false;
+      return;
+    }
+    if (search) search.hidden = true;
+    box.innerHTML =
+      '<div class="author-chip">' +
+      '<span class="author-chip-name"><strong>' + esc(cycle.title) + '</strong>' +
+      '<small>Цикл' + ((cycle.items || []).length ? ' · ' + (cycle.items || []).length : '') + '</small></span>' +
+      '<button type="button" class="author-chip-x" id="d-cycle-clear">Снять</button></div>';
+    var clear = document.getElementById('d-cycle-clear');
+    if (clear) clear.onclick = function () {
+      var q = document.getElementById('d-cycle-q');
+      if (q) { q.value = ''; q.focus(); }
+      paintCycleChip(null);
+    };
+  }
+
+  function bindCycleChip(initialId) {
+    var q = document.getElementById('d-cycle-q');
+    var suggest = document.getElementById('d-cycle-suggest');
+    if (!q || !suggest) return;
+    if (initialId) paintCycleChip(findCycle(initialId));
+    else paintCycleChip(null);
+    function show(list) {
+      if (!list.length) {
+        suggest.hidden = true;
+        suggest.innerHTML = '';
+        return;
+      }
+      suggest.hidden = false;
+      suggest.innerHTML = list.map(function (c) {
+        return '<button type="button" class="author-suggest-item" data-id="' + esc(c.id) + '">' +
+          '<span>' + esc(c.title) + '</span></button>';
+      }).join('');
+      suggest.querySelectorAll('[data-id]').forEach(function (btn) {
+        btn.onclick = function () { paintCycleChip(findCycle(btn.getAttribute('data-id'))); };
+      });
+    }
+    q.addEventListener('input', function () {
+      var t = q.value.trim().toLowerCase();
+      var all = catalogCycles();
+      if (!t) { show(all.slice(0, 8)); return; }
+      show(all.filter(function (c) {
+        return (c.title || '').toLowerCase().indexOf(t) !== -1 || String(c.id).toLowerCase().indexOf(t) !== -1;
+      }).slice(0, 8));
+    });
+    q.addEventListener('focus', function () {
+      if (!val('d-cycle-slug')) show(catalogCycles().slice(0, 8));
+    });
+  }
+
   function drawPubPreview() {
     var el = document.getElementById('d-preview');
     if (!el) return;
@@ -1083,7 +1191,48 @@
     };
   }
 
+  function figureHtml(src, caption) {
+    return (
+      '<figure class="rte-figure">' +
+      '<img src="' + esc(src) + '" alt="' + esc(caption || '') + '" />' +
+      '<figcaption class="rte-caption" data-placeholder="Подпись к фото">' + esc(caption || '') + '</figcaption>' +
+      '</figure>'
+    );
+  }
+
+  function ensureFigures(root) {
+    if (!root) return;
+    [].forEach.call(root.querySelectorAll('img'), function (img) {
+      var fig = img.closest('figure');
+      if (!fig) {
+        fig = document.createElement('figure');
+        fig.className = 'rte-figure';
+        img.parentNode.insertBefore(fig, img);
+        fig.appendChild(img);
+      }
+      if (!fig.querySelector('figcaption')) {
+        var cap = document.createElement('figcaption');
+        cap.className = 'rte-caption';
+        cap.setAttribute('data-placeholder', 'Подпись к фото');
+        cap.textContent = img.getAttribute('alt') || '';
+        fig.appendChild(cap);
+      }
+    });
+  }
+
+  function captionOfSelection(root) {
+    var fig = null;
+    var sel = window.getSelection && window.getSelection();
+    if (sel && sel.anchorNode) {
+      var node = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentNode;
+      if (node && root.contains(node)) fig = node.closest && node.closest('figure');
+    }
+    if (!fig) fig = root.querySelector('figure:focus-within') || root.querySelector('figure');
+    return fig ? fig.querySelector('figcaption') : null;
+  }
+
   function mountDeskRTE(el, onChange) {
+    ensureFigures(el);
     el.addEventListener('paste', function (e) {
       e.preventDefault();
       var html = (e.clipboardData && (e.clipboardData.getData('text/html') || e.clipboardData.getData('text/plain'))) || '';
@@ -1092,9 +1241,25 @@
       else box.innerHTML = '<p>' + esc(html).replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br>') + '</p>';
       box.querySelectorAll('script,style').forEach(function (n) { n.remove(); });
       document.execCommand('insertHTML', false, box.innerHTML);
+      ensureFigures(el);
       if (onChange) onChange();
     });
     el.addEventListener('input', function () { if (onChange) onChange(); });
+    el.addEventListener('keydown', function (e) {
+      var cap = e.target.closest && e.target.closest('figcaption');
+      if (cap && e.key === 'Enter') {
+        e.preventDefault();
+        var fig = cap.closest('figure');
+        var p = document.createElement('p');
+        p.innerHTML = '<br>';
+        if (fig && fig.parentNode) fig.parentNode.insertBefore(p, fig.nextSibling);
+        var range = document.createRange();
+        range.setStart(p, 0);
+        range.collapse(true);
+        var sel = window.getSelection();
+        if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+      }
+    });
     var bar = document.getElementById('d-rte-bar');
     if (!bar) return;
     bar.onclick = function (e) {
@@ -1111,6 +1276,17 @@
         var href = prompt('Ссылка', 'https://');
         if (href) document.execCommand('createLink', false, href);
       }
+      if (act === 'caption') {
+        ensureFigures(el);
+        var capEl = captionOfSelection(el);
+        if (!capEl) { if (onChange) onChange(); return; }
+        var next = prompt('Подпись к фото', capEl.textContent || '');
+        if (next != null) {
+          capEl.textContent = next;
+          var img = capEl.parentNode && capEl.parentNode.querySelector('img');
+          if (img) img.setAttribute('alt', next);
+        }
+      }
       if (act === 'image') {
         var input = document.getElementById('d-inline-file');
         if (!input) return;
@@ -1120,7 +1296,9 @@
           var reader = new FileReader();
         reader.onload = function () {
           shrinkImage(reader.result, 1400, 0.76, function (src) {
-            document.execCommand('insertHTML', false, '<figure class="rte-figure"><img src="' + esc(src) + '" alt="" /></figure>');
+            var caption = prompt('Подпись к фото — можно оставить пустой', '') || '';
+            document.execCommand('insertHTML', false, figureHtml(src, caption));
+            ensureFigures(el);
             if (onChange) onChange();
           });
         };
@@ -1188,11 +1366,14 @@
       author: author ? author.name : (val('d-author') || (ctx.session && ctx.session.name) || ''),
       authorSlug: author ? author.slug : '',
       authorSlugs: author ? [author.slug] : [],
+      cycleSlug: type === 'article' ? (val('d-cycle-slug') || '') : '',
+      cycleOrder: type === 'article' ? (parseInt(val('d-cycle-order'), 10) || 0) : 0,
       status: status,
       source: 'desk',
     });
     if (status === 'published') ensureNumericId(next);
     upsert(type, next);
+    if (type === 'article') syncArticleToCycle(next);
     if (author && status === 'published') {
       linkAuthor(author.slug, {
         slug: slug,
@@ -1209,6 +1390,8 @@
     ctx.toast('Отправляем на сайт…');
     publishToArchive(next, type).then(function () {
       upsert(type, next);
+      if (type === 'article' && next.cycleSlug) return publishCycles(catalogCycles()).catch(function () {});
+    }).then(function () {
       ctx.toast('Опубликовано на сайте');
       ctx.go(type === 'news' ? 'news' : 'articles');
     }).catch(function (e) {
@@ -1688,10 +1871,276 @@
     }
   }
 
-  var LIST_MAP = { news: 'news', articles: 'article', afisha: 'event', audio: 'audio', video: 'video', 'church-day': 'church-day' };
+  var CYCLES_PAGE_ID = 1900000001;
+  var CYCLES_PAGE_SLUG = 'yak-cycles-data';
+
+  function syncArticleToCycle(article) {
+    if (!article || !article.slug) return;
+    var want = String(article.cycleSlug || '').trim();
+    var order = parseInt(article.cycleOrder, 10) || 0;
+    catalogCycles().forEach(function (c) {
+      var items = (c.items || []).filter(function (it) { return it && String(it.slug) !== String(article.slug); });
+      if (want && (String(c.id) === want || String(c.slug || '') === want)) {
+        items.push({ slug: article.slug, title: article.title, order: order || items.length + 1 });
+        items.sort(function (a, b) { return (Number(a.order) || 0) - (Number(b.order) || 0); });
+      }
+      var changed = items.length !== (c.items || []).length ||
+        (want && (String(c.id) === want || String(c.slug || '') === want));
+      if (changed) upsert('cycle', Object.assign({}, c, { items: items, status: c.status || 'published' }));
+    });
+  }
+
+  function publishCycles(list) {
+    if (!window.AdminApi || !AdminApi.upsertArchive || !AdminApi.token || !AdminApi.token()) {
+      return Promise.reject(new Error('нет ключа сервера'));
+    }
+    return AdminApi.upsertArchive({
+      articles: [{
+        id: CYCLES_PAGE_ID,
+        slug: CYCLES_PAGE_SLUG,
+        title: 'Циклы редакции',
+        date: todayIso(),
+        modified: new Date().toISOString(),
+        author: '',
+        categories: [],
+        categorySlugs: ['day-by-day'],
+        excerpt: '',
+        contentHtml: '<p></p>',
+        contentText: JSON.stringify(list || catalogCycles()),
+        source: 'desk-cycles',
+      }],
+    });
+  }
+
+  function loadPortalCycles(done) {
+    if (window.YakCycles) { done(); return; }
+    var s = document.createElement('script');
+    s.src = PORTAL + 'js/cycles-data.js?v=2026090901';
+    s.onload = function () { done(); };
+    s.onerror = function () { done(); };
+    document.head.appendChild(s);
+  }
+
+  function renderCycleForm(ctx, id) {
+    loadPortalCycles(function () { paintCycleForm(ctx, id); });
+  }
+
+  function paintCycleForm(ctx, id) {
+    var isNew = !id || id === 'new';
+    var item = isNew
+      ? { id: '', title: '', slug: '', authorSlug: '', cover: '', intro: '', introHtml: '', items: [], status: 'draft' }
+      : (getItem('cycle', id) || findCycle(id));
+    if (!item) { ctx.toast('Цикл не найден', true); ctx.go('cycles'); return; }
+    var currentAuthor = findAuthor(item.authorSlug || (item.authorSlugs && item.authorSlugs[0]));
+    var cover = item.cover || item.image || '';
+    var items = (item.items || []).map(function (it, i) {
+      return { slug: it.slug, title: it.title || it.slug, order: it.order || (i + 1) };
+    });
+
+    ctx.viewEl.innerHTML =
+      '<div class="post-editor">' +
+      '<div class="post-editor-bar">' +
+      '<a class="btn btn-ghost" href="#cycles">К списку</a>' +
+      '<div class="post-editor-bar-actions">' +
+      '<a class="btn btn-ghost" href="' + portalHref('cycle.html?id=' + encodeURIComponent(item.id || 'new')) + '" target="_blank" rel="noopener">На сайте</a>' +
+      (isNew ? '' : '<button type="button" class="btn btn-ghost" id="desk-del">Снять</button>') +
+      '<button type="button" class="btn btn-ghost" id="desk-draft">Черновик</button>' +
+      '<button type="button" class="btn btn-primary" id="desk-pub">Опубликовать</button>' +
+      '</div></div>' +
+      '<div class="pub-layout">' +
+      '<div class="post-main panel">' +
+      '<input class="editor-title" id="d-title" value="' + esc(item.title || '') + '" placeholder="Название цикла" />' +
+      '<div class="slug-quiet"><span>Адрес</span><span class="slug-path">/<input id="d-slug" value="' + esc(item.id || item.slug || '') + '" spellcheck="false" /></span></div>' +
+      '<div class="pub-meta">' +
+      '<div class="pub-cover">' +
+      '<div class="cover-frame' + (cover ? '' : ' is-empty') + '" id="d-cover-frame">' +
+      (cover ? '<img src="' + esc(mediaSrc(cover)) + '" alt="" />' : '<span>Обложка</span>') +
+      '</div>' +
+      '<input type="hidden" id="d-cover" value="' + esc(cover) + '" />' +
+      '<button type="button" class="btn btn-ghost" id="d-cover-up">Фото</button>' +
+      '<input type="file" id="d-file" accept="image/*" hidden /></div>' +
+      '<div class="pub-meta-col">' +
+      '<input type="hidden" id="d-author-slug" value="' + esc((currentAuthor && currentAuthor.slug) || item.authorSlug || '') + '" />' +
+      '<div id="d-author-chip" class="author-chip-wrap"></div>' +
+      '<div class="author-search" id="d-author-search">' +
+      '<input class="input" id="d-author-q" placeholder="Автор цикла" autocomplete="off" />' +
+      '<div class="author-suggest" id="d-author-suggest" hidden></div></div>' +
+      '</div></div>' +
+      '<div class="rte">' +
+      '<div class="rte-bar" id="d-rte-bar">' +
+      '<button type="button" data-cmd="bold">Ж</button>' +
+      '<button type="button" data-cmd="italic">К</button>' +
+      '<button type="button" data-block="h2">H2</button>' +
+      '<button type="button" data-block="quote">« »</button>' +
+      '<button type="button" data-act="link">Ссылка</button>' +
+      '<span class="rte-sep"></span>' +
+      '<button type="button" data-act="image">Фото</button>' +
+      '<button type="button" data-act="caption">Подпись</button>' +
+      '</div>' +
+      '<div class="rte-body" id="d-body" contenteditable="true" data-placeholder="Вступительное слово цикла"></div>' +
+      '<input type="file" id="d-inline-file" accept="image/*" hidden />' +
+      '</div>' +
+      '<div class="cycle-arts panel" style="margin-top:16px">' +
+      '<h3>Статьи цикла</h3>' +
+      '<div class="author-search">' +
+      '<input class="input" id="d-art-q" placeholder="Добавить статью — поиск по названию" autocomplete="off" />' +
+      '<div class="author-suggest" id="d-art-suggest" hidden></div></div>' +
+      '<div id="d-art-list" class="cycle-art-list"></div>' +
+      '</div></div></div></div>';
+
+    var bodyEl = document.getElementById('d-body');
+    bodyEl.innerHTML = item.introHtml || (item.intro ? '<p>' + esc(item.intro) + '</p>' : '');
+    mountDeskRTE(bodyEl, function () {});
+    bindCoverFile(function () {});
+    bindSlugField(!!(item.id || item.slug));
+    bindAuthorChip(currentAuthor);
+
+    function drawItems() {
+      var box = document.getElementById('d-art-list');
+      if (!box) return;
+      if (!items.length) {
+        box.innerHTML = '<p class="hint-note">Пока пусто — найдите статью сверху.</p>';
+        return;
+      }
+      items.sort(function (a, b) { return (Number(a.order) || 0) - (Number(b.order) || 0); });
+      box.innerHTML = items.map(function (it, i) {
+        return '<div class="cycle-art-row" data-i="' + i + '">' +
+          '<input class="input cycle-art-num" type="number" min="1" value="' + esc(it.order || (i + 1)) + '" />' +
+          '<span>' + esc(it.title) + '<small> /' + esc(it.slug) + '</small></span>' +
+          '<button type="button" class="btn btn-ghost cycle-art-x">Убрать</button></div>';
+      }).join('');
+      box.querySelectorAll('.cycle-art-num').forEach(function (inp) {
+        inp.onchange = function () {
+          var i = parseInt(inp.closest('.cycle-art-row').getAttribute('data-i'), 10);
+          items[i].order = parseInt(inp.value, 10) || (i + 1);
+        };
+      });
+      box.querySelectorAll('.cycle-art-x').forEach(function (btn) {
+        btn.onclick = function () {
+          var i = parseInt(btn.closest('.cycle-art-row').getAttribute('data-i'), 10);
+          items.splice(i, 1);
+          drawItems();
+        };
+      });
+    }
+    drawItems();
+
+    var aq = document.getElementById('d-art-q');
+    var asg = document.getElementById('d-art-suggest');
+    function showArts(list) {
+      if (!asg) return;
+      if (!list.length) { asg.hidden = true; asg.innerHTML = ''; return; }
+      asg.hidden = false;
+      asg.innerHTML = list.map(function (a) {
+        return '<button type="button" class="author-suggest-item" data-slug="' + esc(a.slug || a.id) + '" data-title="' + esc(a.title || '') + '">' +
+          '<span>' + esc(a.title) + '</span></button>';
+      }).join('');
+      asg.querySelectorAll('[data-slug]').forEach(function (btn) {
+        btn.onclick = function () {
+          var slug = btn.getAttribute('data-slug');
+          if (items.some(function (x) { return String(x.slug) === slug; })) return;
+          items.push({ slug: slug, title: btn.getAttribute('data-title') || slug, order: items.length + 1 });
+          aq.value = '';
+          asg.hidden = true;
+          drawItems();
+        };
+      });
+    }
+    function searchArts(q) {
+      var local = mergedList('article', q).slice(0, 8);
+      if (!q || !window.AdminApi || !AdminApi.getArticles) { showArts(local); return; }
+      AdminApi.getArticles({ category: 'columns', q: q, limit: 20, page: 1 }).then(function (pack) {
+        var extra = ((pack && pack.items) || []).map(function (a) {
+          return { slug: a.slug || String(a.id), title: a.title };
+        });
+        var seen = {};
+        var out = [];
+        local.concat(extra).forEach(function (a) {
+          var k = String(a.slug || '');
+          if (!k || seen[k]) return;
+          seen[k] = 1;
+          out.push(a);
+        });
+        showArts(out.slice(0, 8));
+      }).catch(function () { showArts(local); });
+    }
+    if (aq) {
+      var timer = null;
+      aq.addEventListener('input', function () {
+        clearTimeout(timer);
+        timer = setTimeout(function () { searchArts(aq.value.trim()); }, 250);
+      });
+      aq.addEventListener('focus', function () { searchArts(aq.value.trim()); });
+    }
+
+    function collect(status) {
+      var title = val('d-title');
+      if (!title) { ctx.toast('Укажите название цикла', true); return null; }
+      var slug = val('d-slug') || slugify(title);
+      var author = findAuthor(val('d-author-slug') || val('d-author-q'));
+      var html = bodyEl ? bodyEl.innerHTML : '';
+      items.forEach(function (it, i) { it.order = it.order || (i + 1); });
+      items.sort(function (a, b) { return (Number(a.order) || 0) - (Number(b.order) || 0); });
+      return {
+        id: slug,
+        slug: slug,
+        title: title,
+        subtitle: author ? ('Авторский цикл ' + author.name) : (item.subtitle || 'Авторский цикл'),
+        authorSlug: author ? author.slug : (item.authorSlug || ''),
+        authorSlugs: author ? [author.slug] : (item.authorSlugs || []),
+        cover: val('d-cover'),
+        image: val('d-cover'),
+        intro: htmlToText(html).slice(0, 400),
+        introHtml: html,
+        items: items.map(function (it) { return { slug: it.slug, title: it.title, order: it.order }; }),
+        status: status,
+        source: 'desk',
+      };
+    }
+
+    document.getElementById('desk-draft').onclick = function () {
+      var next = collect('draft');
+      if (!next) return;
+      try { upsert('cycle', next); ctx.toast('Черновик сохранён'); ctx.go('cycles'); }
+      catch (e) { ctx.toast(e.message || 'Не удалось сохранить', true); }
+    };
+    document.getElementById('desk-pub').onclick = function () {
+      var next = collect('published');
+      if (!next) return;
+      try {
+        upsert('cycle', next);
+        next.items.forEach(function (it, i) {
+          var art = getItem('article', it.slug);
+          if (art) {
+            art.cycleSlug = next.id;
+            art.cycleOrder = it.order || (i + 1);
+            upsert('article', art);
+          }
+        });
+        ctx.toast('Отправляем на сайт…');
+        publishCycles(catalogCycles()).then(function () {
+          ctx.toast('Цикл опубликован');
+          ctx.go('cycles');
+        }).catch(function (e) {
+          ctx.toast('В редакции сохранено, на сайт не ушло: ' + (e.message || e), true);
+          ctx.go('cycles');
+        });
+      } catch (e) { ctx.toast(e.message || 'Не удалось сохранить', true); }
+    };
+    var delBtn = document.getElementById('desk-del');
+    if (delBtn) delBtn.onclick = function () {
+      if (!confirm('Снять цикл с публикации? Статьи останутся.')) return;
+      upsert('cycle', Object.assign({}, item, { status: 'hidden', id: item.id || item.slug }));
+      ctx.toast('Снято');
+      ctx.go('cycles');
+    };
+  }
+
+  var LIST_MAP = { news: 'news', articles: 'article', afisha: 'event', audio: 'audio', video: 'video', 'church-day': 'church-day', cycles: 'cycle' };
   var FORM_MAP = {
     news: renderNewsForm,
     articles: renderArticleForm,
+    cycles: renderCycleForm,
     afisha: renderEventForm,
     audio: renderAudioForm,
     video: renderVideoForm,
@@ -1788,6 +2237,12 @@
     if (name === 'authors') {
       if (!id && window.AdminGod) AdminGod.paintSection(ctx, 'authors', 'Авторы', '');
       else renderAuthors(ctx, id);
+      return true;
+    }
+    if (name === 'cycles') {
+      if (!id && window.AdminGod) {
+        loadPortalCycles(function () { AdminGod.paintSection(ctx, 'cycle', 'Циклы', '#cycles/new'); });
+      } else renderCycleForm(ctx, id);
       return true;
     }
     if (LIST_MAP[name]) {

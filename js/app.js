@@ -24,6 +24,7 @@
     { id: 'dashboard', title: 'Обзор', group: 'Сайт' },
     { id: 'news', title: 'Новости', group: 'Сайт' },
     { id: 'articles', title: 'Статьи', group: 'Сайт' },
+    { id: 'cycles', title: 'Циклы', group: 'Сайт' },
     { id: 'church', title: 'О Церкви', group: 'Сайт' },
     { id: 'spirit', title: 'Духовная жизнь', group: 'Сайт' },
     { id: 'afisha', title: 'Афиша', group: 'Сайт' },
