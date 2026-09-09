@@ -42,7 +42,21 @@
     { id: 'svidetelstva', title: 'Свидетельства' },
     { id: 'propovedi', title: 'Проповеди' },
     { id: 'music', title: 'Музыка' },
+    { id: 'puteshestviya', title: 'Путешествия' },
   ];
+
+  function articleCats() {
+    var extra = listTopics().filter(function (t) { return t.slug; }).map(function (t) {
+      return { id: t.slug, title: t.title };
+    });
+    var seen = {};
+    ARTICLE_CATS.forEach(function (c) { seen[c.id] = 1; });
+    return ARTICLE_CATS.concat(extra.filter(function (c) {
+      if (seen[c.id]) return false;
+      seen[c.id] = 1;
+      return true;
+    }));
+  }
 
   var EVENT_CATS = [
     { id: 'concert', title: 'Концерт' },
@@ -54,7 +68,7 @@
   ];
 
   function emptyState() {
-    return { articles: [], events: [], audio: [], video: [], churchDays: [], authors: [], guides: [], authorLinks: [], photographers: [], videoChannels: [], cycles: [] };
+    return { articles: [], events: [], audio: [], video: [], churchDays: [], authors: [], guides: [], authorLinks: [], photographers: [], videoChannels: [], cycles: [], topics: [] };
   }
 
   var archiveCache = { news: [], article: [] };
@@ -186,6 +200,19 @@
   function esc(s) {
     return String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function pad2(n) {
+    return (n < 10 ? '0' : '') + n;
+  }
+
+  function pubDate(value, fallback) {
+    var s = String(value || '').trim();
+    var iso = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return iso[1] + '-' + iso[2] + '-' + iso[3];
+    var ru = s.match(/(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})/);
+    if (ru) return ru[3] + '-' + pad2(Number(ru[2])) + '-' + pad2(Number(ru[1]));
+    return fallback || '';
   }
 
   function todayIso() {
@@ -382,7 +409,7 @@
       contentHtml: a.contentHtml || '',
       cover: a.image || a.cover || '',
       image: a.image || a.cover || '',
-      date: String(a.date || '').slice(0, 10),
+      date: pubDate(a.date, ''),
       author: a.author || '',
       authorSlug: a.authorSlug || '',
       authorSlugs: a.authorSlugs || (a.authorSlug ? [a.authorSlug] : []),
@@ -759,6 +786,34 @@
     openArchiveForm(ctx, 'article', id, function (item) { paintPublicationForm(ctx, item, false, 'article'); });
   }
 
+  function genitiveFirst(w) {
+    if (/ий$/i.test(w)) return w.replace(/ий$/i, 'ия');
+    if (/[аео]й$/i.test(w)) return w.replace(/й$/i, 'я');
+    if (/а$/i.test(w)) return /[гкхжшщч]$/i.test(w.slice(0, -1)) ? w.slice(0, -1) + 'и' : w.slice(0, -1) + 'ы';
+    if (/я$/i.test(w)) return w.slice(0, -1) + 'и';
+    if (/ь$/i.test(w)) return w.slice(0, -1) + 'я';
+    if (/[бвгджзклмнпрстфхцчшщ]$/i.test(w)) return w + 'а';
+    return w;
+  }
+
+  function genitiveLast(w) {
+    if (/ский$|цкий$/i.test(w)) return w.replace(/ий$/i, 'ого');
+    if (/ой$|ый$|ий$/i.test(w)) return w.replace(/(ой|ый|ий)$/i, 'ого');
+    if (/ова$|ева$|ина$|ына$/i.test(w)) return w.slice(0, -1) + 'ой';
+    if (/ая$/i.test(w)) return w.replace(/ая$/i, 'ой');
+    if (/[ое]в$|[иы]н$/i.test(w)) return w + 'а';
+    return w;
+  }
+
+  function genitiveName(name) {
+    var parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return '';
+    if (parts.length === 1) return genitiveLast(parts[0]);
+    return parts.map(function (w, i) {
+      return i === parts.length - 1 ? genitiveLast(w) : genitiveFirst(w);
+    }).join(' ');
+  }
+
   function slugify(s) {
     if (window.AdminStore && AdminStore.slugify) return AdminStore.slugify(s);
     return String(s || '').toLowerCase().replace(/[^a-z0-9а-яё]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'item';
@@ -803,7 +858,7 @@
   }
 
   function rubricTitle(id) {
-    var all = NEWS_CATS.concat(ARTICLE_CATS);
+    var all = NEWS_CATS.concat(articleCats());
     for (var i = 0; i < all.length; i++) if (all[i].id === id) return all[i].title;
     return id;
   }
@@ -902,7 +957,7 @@
 
   function paintPublicationForm(ctx, item, isNew, type) {
     var isNews = type === 'news';
-    var cats = isNews ? NEWS_CATS : ARTICLE_CATS;
+    var cats = isNews ? NEWS_CATS : articleCats();
     var back = isNews ? 'news' : 'articles';
     var portal = isNews ? 'archive.html?category=news' : 'articles.html';
     var cover = item.cover || item.image || '';
@@ -947,7 +1002,7 @@
         '<input class="input" id="d-cycle-q" placeholder="Цикл — не обязательно" autocomplete="off" />' +
         '<div class="author-suggest" id="d-cycle-suggest" hidden></div></div>' +
         '<input class="input" id="d-cycle-order" type="number" min="1" placeholder="Номер в цикле" value="' + esc(item.cycleOrder || '') + '" />') +
-      '<input class="input" id="d-date" type="date" value="' + esc((item.date || todayIso()).slice(0, 10)) + '" />' +
+      '<input class="input" id="d-date" type="date" value="' + esc(pubDate(item.date, todayIso())) + '" />' +
       '</div></div>' +
       '<div class="rte lead-rte">' +
       '<div class="rte-bar" id="d-lead-bar">' +
@@ -1191,7 +1246,7 @@
     var body = document.getElementById('d-body');
     var author = findAuthor(val('d-author-slug'));
     var rubs = selectedRubrics().map(function (id) {
-      var all = NEWS_CATS.concat(ARTICLE_CATS);
+      var all = NEWS_CATS.concat(articleCats());
       for (var i = 0; i < all.length; i++) if (all[i].id === id) return all[i].title;
       return id;
     }).filter(Boolean);
@@ -1429,7 +1484,7 @@
         slug: slug,
         category: rubrics[0],
         rubrics: rubrics,
-        date: val('d-date') || String(item.date || '').slice(0, 10) || todayIso(),
+        date: pubDate(val('d-date'), pubDate(item.date, item.id && item.id !== 'new' ? '' : todayIso())) || todayIso(),
         excerpt: excerptPlain || htmlToText(html).slice(0, 220),
         excerptHtml: lead,
         body: htmlToText(html),
@@ -2013,6 +2068,8 @@
   var AUTHORS_PAGE_SLUG = 'yak-authors-data';
   var PHOTO_PAGE_ID = 1900000003;
   var PHOTO_PAGE_SLUG = 'yak-photostock-data';
+  var TOPICS_PAGE_ID = 1900000004;
+  var TOPICS_PAGE_SLUG = 'yak-topics-data';
 
   function publishAuthors() {
     if (!window.AdminApi || !AdminApi.upsertArchive || !AdminApi.token || !AdminApi.token()) {
@@ -2043,6 +2100,60 @@
         contentHtml: '<p></p>',
         contentText: JSON.stringify(list),
         source: 'desk-authors',
+      }],
+    });
+  }
+
+  function listTopics() {
+    return (read().topics || []).filter(function (t) { return t && t.title; });
+  }
+
+  function upsertTopic(topic) {
+    var data = read();
+    data.topics = data.topics || [];
+    var i = data.topics.findIndex(function (t) {
+      return t && (String(t.id) === String(topic.id) || (topic.slug && t.slug === topic.slug));
+    });
+    topic.id = topic.id || uid('topic');
+    topic.slug = topic.slug || (topic.q ? '' : slugify(topic.title));
+    if (i === -1) data.topics.unshift(topic);
+    else data.topics[i] = Object.assign({}, data.topics[i], topic);
+    write(data);
+    return topic;
+  }
+
+  function deleteTopic(id) {
+    var data = read();
+    data.topics = (data.topics || []).filter(function (t) { return String(t.id) !== String(id); });
+    write(data);
+  }
+
+  function publishTopics() {
+    if (!window.AdminApi || !AdminApi.upsertArchive || !AdminApi.token || !AdminApi.token()) {
+      return Promise.reject(new Error('нет ключа сервера'));
+    }
+    var list = listTopics().map(function (t) {
+      return {
+        title: t.title,
+        slug: t.slug || '',
+        q: t.q || '',
+        note: t.note || '',
+      };
+    });
+    return AdminApi.upsertArchive({
+      articles: [{
+        id: TOPICS_PAGE_ID,
+        slug: TOPICS_PAGE_SLUG,
+        title: 'Темы раздела Статьи',
+        date: todayIso(),
+        modified: new Date().toISOString(),
+        author: '',
+        categories: [],
+        categorySlugs: ['day-by-day'],
+        excerpt: '',
+        contentHtml: '<p></p>',
+        contentText: JSON.stringify(list),
+        source: 'desk-topics',
       }],
     });
   }
@@ -2320,7 +2431,7 @@
         id: slug,
         slug: slug,
         title: title,
-        subtitle: author ? ('Авторский цикл ' + author.name) : (item.subtitle || 'Авторский цикл'),
+        subtitle: author ? ('Авторский цикл ' + genitiveName(author.name)) : (item.subtitle || 'Авторский цикл'),
         authorSlug: author ? author.slug : (item.authorSlug || ''),
         authorSlugs: author ? [author.slug] : (item.authorSlugs || []),
         cover: val('d-cover'),
@@ -2504,6 +2615,10 @@
     allPhotos: allPhotos,
     uploadDataUrl: uploadDataUrl,
     publishPhotostock: publishPhotostock,
+    listTopics: listTopics,
+    upsertTopic: upsertTopic,
+    deleteTopic: deleteTopic,
+    publishTopics: publishTopics,
     portalHref: portalHref,
     read: read,
     upsertGuide: upsertGuide,

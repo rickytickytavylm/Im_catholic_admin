@@ -80,7 +80,10 @@
       .catch(function () {});
   }
 
-  Promise.all([nukeSw(), nukeCaches()]).then(function () {
+  var seen = '';
+  try { seen = localStorage.getItem(KEY) || ''; } catch (e) {}
+  var firstOfBuild = !seen || seen !== EMBEDDED;
+  (firstOfBuild ? Promise.all([nukeSw(), nukeCaches()]) : Promise.resolve()).then(function () {
     stampWhenReady(EMBEDDED);
     try { if (EMBEDDED) localStorage.setItem(KEY, EMBEDDED); } catch (e) {}
     return checkRemote();

@@ -6,6 +6,9 @@
 
   var session = AdminAuth.requireAuth();
   if (!session) return;
+  if (session.token && window.AdminConfig && !AdminConfig.ADMIN_TOKEN) {
+    AdminAuth.saveAdminToken(session.token);
+  }
 
   var role = AdminAuth.roleOf(session);
   var viewEl = document.getElementById('view');
@@ -33,6 +36,7 @@
     { id: 'media', title: 'Фотосток', group: 'Сайт' },
     { id: 'church-day', title: 'День Церкви', group: 'Сайт' },
     { id: 'authors', title: 'Авторы', group: 'Люди' },
+    { id: 'taxonomy', title: 'Рубрики и темы', group: 'Сайт' },
     { id: 'photographers', title: 'Фотографы', group: 'Люди' },
     { id: 'photo-moderation', title: 'Модерация фото', group: 'Люди' },
     { id: 'my-page', title: 'Моя страница', group: 'Люди' },
@@ -43,7 +47,7 @@
     { id: 'page-editor', title: 'Редактор страницы', hidden: true },
     { id: 'editor', title: 'Редактор', hidden: true },
     { id: 'photographer-edit', title: 'Карточка фотографа', hidden: true },
-    { id: 'taxonomy', title: 'Рубрики и теги', hidden: true },
+    { id: 'taxonomy-legacy', title: 'Рубрики и теги', hidden: true },
     { id: 'library', title: 'Библиотека', hidden: true },
     { id: 'users', title: 'Пользователи', hidden: true },
     { id: 'logs', title: 'Журнал', hidden: true },
@@ -391,10 +395,26 @@
   }
 
   function syncServerPill() {
-    var p = document.getElementById('server-pill-2');
-    if (!p) return;
-    p.textContent = AdminApi.token() ? 'Сайт на связи' : 'Локально';
-    p.className = 'server-pill ' + (AdminApi.token() ? 'on' : 'off');
+    var p = document.getElementById('server-pill-2') || document.getElementById('server-pill');
+    if (p) {
+      p.textContent = AdminApi.token() ? 'Сайт на связи' : 'Нет ключа';
+      p.className = 'server-pill ' + (AdminApi.token() ? 'on' : 'off');
+    }
+    var bar = document.getElementById('token-warn');
+    if (AdminApi.token()) {
+      if (bar) bar.hidden = true;
+      return;
+    }
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'token-warn';
+      bar.className = 'hint-note';
+      bar.style.cssText = 'margin:0;padding:10px 16px;background:#f3e0c8;border-bottom:1px solid var(--line)';
+      var main = document.querySelector('.main');
+      if (main) main.insertBefore(bar, main.firstChild);
+    }
+    bar.hidden = false;
+    bar.innerHTML = 'Публикация на сайт выключена: в этом браузере нет ключа сервера. Откройте <a href="#settings">Настройки</a> и вставьте ключ — один раз на устройство. Без него «Опубликовать» пишет «нет ключа», а правки остаются только здесь.';
   }
 
   /* ---------- Materials ---------- */
@@ -1631,11 +1651,16 @@
       return;
     }
     viewEl.innerHTML =
-      '<div class="topbar"><div><h1>Категории и теги</h1><p>Рубрики и метки портала.</p></div>' +
+      '<div class="topbar"><div><h1>Рубрики и темы</h1><p>Темы на странице «Статьи» и метки, по которым материал туда попадает.</p></div>' +
       '<div class="topbar-actions">' +
+      '<button type="button" class="btn btn-ghost" id="btn-add-topic">+ Тема</button>' +
       '<button type="button" class="btn btn-ghost" id="btn-add-cat">+ Категория</button>' +
       '<button type="button" class="btn btn-primary" id="btn-add-tag">+ Тег</button>' +
       '</div></div>' +
+      '<div class="panel" style="margin-bottom:14px"><div class="panel-head"><h2>Темы на странице «Статьи»</h2></div>' +
+      '<p class="hint-note">Slug темы поставьте статье галочкой в рубриках — карточка темы начнёт её собирать. Либо укажите поисковую фразу, если тега ещё нет.</p>' +
+      '<div class="table-wrap"><table class="data"><thead><tr>' +
+      '<th>Название</th><th>Slug / поиск</th><th></th></tr></thead><tbody id="tax-topics"></tbody></table></div></div>' +
       '<div class="panel" style="margin-bottom:14px"><div class="panel-head"><h2>Категории / рубрики</h2></div>' +
       '<div class="table-wrap"><table class="data"><thead><tr>' +
       '<th>Название</th><th>Slug</th><th>URL</th><th></th></tr></thead><tbody id="tax-cats"></tbody></table></div></div>' +
@@ -1725,6 +1750,57 @@
       });
     }
 
+    function paintTopics() {
+      var box = document.getElementById('tax-topics');
+      if (!box || !window.AdminDesk || !AdminDesk.listTopics) return;
+      var rows = AdminDesk.listTopics();
+      box.innerHTML = rows.map(function (t) {
+        return (
+          '<tr><td><strong>' + esc(t.title) + '</strong></td>' +
+          '<td><code>' + esc(t.slug || t.q || '—') + '</code></td>' +
+          '<td class="row-actions">' +
+          '<button type="button" class="btn btn-ghost" data-topic-edit="' + esc(t.id) + '">Изменить</button>' +
+          '<button type="button" class="btn btn-danger" data-topic-del="' + esc(t.id) + '">Удалить</button></td></tr>'
+        );
+      }).join('') || '<tr><td colspan="3" class="empty">Пока стоят темы по умолчанию с сайта. Добавьте свои — они заменят список.</td></tr>';
+      box.querySelectorAll('[data-topic-edit]').forEach(function (btn) {
+        btn.onclick = function () {
+          var cur = rows.filter(function (x) { return String(x.id) === btn.getAttribute('data-topic-edit'); })[0];
+          if (!cur) return;
+          var title = prompt('Название темы', cur.title);
+          if (!title) return;
+          var slug = prompt('Slug рубрики (или пусто)', cur.slug || '');
+          var q = prompt('Поиск, если слага ещё нет', cur.q || '');
+          AdminDesk.upsertTopic({ id: cur.id, title: title, slug: slug || '', q: q || '' });
+          AdminDesk.publishTopics().then(function () { toast('Тема на сайте'); }).catch(function (e) {
+            toast('Сохранено здесь. На сайт: ' + (e.message || 'нет ключа'), true);
+          });
+          paintTopics();
+        };
+      });
+      box.querySelectorAll('[data-topic-del]').forEach(function (btn) {
+        btn.onclick = function () {
+          if (!confirm('Убрать тему со страницы Статей?')) return;
+          AdminDesk.deleteTopic(btn.getAttribute('data-topic-del'));
+          AdminDesk.publishTopics().catch(function () {});
+          paintTopics();
+        };
+      });
+    }
+
+    document.getElementById('btn-add-topic').onclick = function () {
+      if (!window.AdminDesk || !AdminDesk.upsertTopic) { toast('Нет модуля тем', true); return; }
+      var title = prompt('Название темы на странице «Статьи»');
+      if (!title) return;
+      var slug = prompt('Slug — его же отметить у статьи в рубриках', AdminStore.slugify(title));
+      var q = prompt('Или поисковая фраза, если слага нет', '');
+      AdminDesk.upsertTopic({ title: title, slug: slug || '', q: q || '' });
+      AdminDesk.publishTopics().then(function () { toast('Тема добавлена на сайт'); }).catch(function (e) {
+        toast('Тема сохранена здесь. На сайт: ' + (e.message || 'нет ключа'), true);
+      });
+      paintTopics();
+    };
+
     document.getElementById('btn-add-cat').onclick = function () {
       var name = prompt('Название категории');
       if (!name) return;
@@ -1752,6 +1828,7 @@
     };
     document.getElementById('tag-kind-filter').onchange = paintTags;
     document.getElementById('tag-q').oninput = paintTags;
+    paintTopics();
     paintCats();
     paintTags();
   }
@@ -1784,26 +1861,29 @@
 
   function renderSettings() {
     viewEl.innerHTML =
-      '<div class="topbar"><div><h1>Настройки</h1><p>Подключение к серверу и доступ редакции.</p></div></div>' +
-      '<div class="panel">' +
-      '<p class="hint-note">Чтобы новые статьи и правки старых попали на сайт для всех, нужен ключ доступа к серверу. Без него публикация остаётся только в этом браузере.</p>' +
-      '<details class="dev-box"><summary>Подключение сервера</summary>' +
-      '<div class="form-grid">' +
+      '<div class="topbar"><div><h1>Настройки</h1><p>Ключ нужен, чтобы «Опубликовать» ушло на сайт, а не осталось в телефоне.</p></div></div>' +
+      '<div class="panel form-grid">' +
+      '<p class="hint-note">Ключ хранится в этом браузере. На новом телефоне или после очистки кэша его надо вставить снова. VPN тут ни при чём.</p>' +
       '<label>Адрес сервера архива<input class="input" id="set-api" value="' + esc(AdminConfig.API_BASE || '') + '" /></label>' +
-      '<label>Ключ доступа<input class="input" id="set-token" value="' + esc(AdminConfig.ADMIN_TOKEN || '') + '" type="password" /></label>' +
-      '<button type="button" class="btn btn-primary" id="set-save">Сохранить</button>' +
-      '</div></details></div>';
+      '<label>Ключ доступа<input class="input" id="set-token" value="' + esc(AdminConfig.ADMIN_TOKEN || '') + '" type="password" autocomplete="off" /></label>' +
+      '<button type="button" class="btn btn-primary" id="set-save">Сохранить ключ</button>' +
+      '</div>';
     var save = document.getElementById('set-save');
     if (save) save.onclick = function () {
       var api = document.getElementById('set-api').value.trim();
       var token = document.getElementById('set-token').value.trim();
       try {
         localStorage.setItem('yak_admin_api_override', api);
-        localStorage.setItem('yak_admin_token', token);
         AdminConfig.API_BASE = api;
-        AdminConfig.ADMIN_TOKEN = token;
-        toast('Сохранено');
-        checkServer();
+        if (AdminAuth.saveAdminToken) AdminAuth.saveAdminToken(token);
+        else {
+          localStorage.setItem('yak_admin_token', token);
+          AdminConfig.ADMIN_TOKEN = token;
+        }
+        session.token = token;
+        toast(token ? 'Ключ сохранён в этом браузере' : 'Ключ снят');
+        syncServerPill();
+        if (typeof checkServer === 'function') checkServer();
       } catch (e) {
         toast('Ошибка сохранения', true);
       }

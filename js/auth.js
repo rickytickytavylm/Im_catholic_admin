@@ -175,13 +175,17 @@
   }
 
   function setSession(user) {
+    var token = '';
+    try { token = user.token || localStorage.getItem('yak_admin_token') || ''; } catch (e) {}
     writeJson(SESSION_KEY, {
       email: user.email,
       name: user.name,
       role: user.role,
       rubrics: user.rubrics || null,
+      token: token || '',
       at: Date.now(),
     });
+    if (token) saveAdminToken(token);
   }
 
   /** Режим без паролей: сразу супер-админ */
