@@ -35,7 +35,7 @@
   function uploadPhoto(dataUrl, folder) {
     if (window.AdminDesk && AdminDesk.uploadDataUrl) return AdminDesk.uploadDataUrl(dataUrl, folder || 'photostock');
     if (!dataUrl || String(dataUrl).indexOf('data:') !== 0) return Promise.resolve(dataUrl || '');
-    if (!window.AdminApi || !AdminApi.uploadMedia || !AdminApi.token || !AdminApi.token()) {
+    if (!window.AdminApi || !AdminApi.uploadMedia) {
       return Promise.resolve(dataUrl);
     }
     return AdminApi.uploadMedia({ dataUrl: dataUrl, folder: folder || 'photostock' }).then(function (pack) {

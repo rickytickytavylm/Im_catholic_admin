@@ -367,10 +367,6 @@
   function loadServerStats() {
     var box = document.getElementById('server-stats');
     if (!box) return;
-    if (!AdminApi.token()) {
-      box.innerHTML = '<div class="panel-head"><h2>Системная сводка</h2></div><div class="empty">Укажите ADMIN_TOKEN в настройках или на экране входа, чтобы читать /api/admin/*.</div>';
-      return;
-    }
     Promise.all([
       AdminApi.getAdminAnalytics().catch(function (e) { return { error: e.message }; }),
       AdminApi.getArchiveStats().catch(function () { return null; }),
@@ -395,26 +391,8 @@
   }
 
   function syncServerPill() {
-    var p = document.getElementById('server-pill-2') || document.getElementById('server-pill');
-    if (p) {
-      p.textContent = AdminApi.token() ? 'Сайт на связи' : 'Нет ключа';
-      p.className = 'server-pill ' + (AdminApi.token() ? 'on' : 'off');
-    }
     var bar = document.getElementById('token-warn');
-    if (AdminApi.token()) {
-      if (bar) bar.hidden = true;
-      return;
-    }
-    if (!bar) {
-      bar = document.createElement('div');
-      bar.id = 'token-warn';
-      bar.className = 'hint-note';
-      bar.style.cssText = 'margin:0;padding:10px 16px;background:#f3e0c8;border-bottom:1px solid var(--line)';
-      var main = document.querySelector('.main');
-      if (main) main.insertBefore(bar, main.firstChild);
-    }
-    bar.hidden = false;
-    bar.innerHTML = 'Публикация на сайт выключена: в этом браузере нет ключа сервера. Откройте <a href="#settings">Настройки</a> и вставьте ключ — один раз на устройство. Без него «Опубликовать» пишет «нет ключа», а правки остаются только здесь.';
+    if (bar) bar.hidden = true;
   }
 
   /* ---------- Materials ---------- */
@@ -677,7 +655,7 @@
   }
 
   function maybePushToServer(mat) {
-    if (!AdminApi.token() || !mat) return;
+    if (!mat) return;
     if (mat.rubric === 'pages' || mat.kind === 'page') {
       toast('Архивные страницы не публикуются на портал — используйте раздел «Страницы»');
       return;
@@ -1254,8 +1232,8 @@
   function uploadImageDataUrl(dataUrl, folder) {
     if (window.AdminDesk && AdminDesk.uploadDataUrl) return AdminDesk.uploadDataUrl(dataUrl, folder || 'photostock');
     if (!dataUrl || String(dataUrl).indexOf('data:') !== 0) return Promise.resolve(dataUrl || '');
-    if (!window.AdminApi || !AdminApi.uploadMedia || !AdminApi.token || !AdminApi.token()) {
-      return Promise.reject(new Error('нет ключа сервера — фото останется только в этом браузере'));
+    if (!window.AdminApi || !AdminApi.uploadMedia) {
+      return Promise.reject(new Error('нет соединения с сервером — фото останется только в этом браузере'));
     }
     return AdminApi.uploadMedia({ dataUrl: dataUrl, folder: folder || 'photostock' }).then(function (pack) {
       if (!pack || !pack.url) throw new Error('сервер не вернул ссылку на фото');
@@ -1773,7 +1751,7 @@
           var q = prompt('Поиск, если слага ещё нет', cur.q || '');
           AdminDesk.upsertTopic({ id: cur.id, title: title, slug: slug || '', q: q || '' });
           AdminDesk.publishTopics().then(function () { toast('Тема на сайте'); }).catch(function (e) {
-            toast('Сохранено здесь. На сайт: ' + (e.message || 'нет ключа'), true);
+            toast('Сохранено здесь. На сайт: ' + (e.message || 'нет связи'), true);
           });
           paintTopics();
         };
@@ -1796,7 +1774,7 @@
       var q = prompt('Или поисковая фраза, если слага нет', '');
       AdminDesk.upsertTopic({ title: title, slug: slug || '', q: q || '' });
       AdminDesk.publishTopics().then(function () { toast('Тема добавлена на сайт'); }).catch(function (e) {
-        toast('Тема сохранена здесь. На сайт: ' + (e.message || 'нет ключа'), true);
+        toast('Тема сохранена здесь. На сайт: ' + (e.message || 'нет связи'), true);
       });
       paintTopics();
     };
@@ -1861,28 +1839,18 @@
 
   function renderSettings() {
     viewEl.innerHTML =
-      '<div class="topbar"><div><h1>Настройки</h1><p>Ключ нужен, чтобы «Опубликовать» ушло на сайт, а не осталось в телефоне.</p></div></div>' +
+      '<div class="topbar"><div><h1>Настройки</h1><p>На тестах ключ не нужен: «Опубликовать» сразу идёт на сервер.</p></div></div>' +
       '<div class="panel form-grid">' +
-      '<p class="hint-note">Ключ хранится в этом браузере. На новом телефоне или после очистки кэша его надо вставить снова. VPN тут ни при чём.</p>' +
       '<label>Адрес сервера архива<input class="input" id="set-api" value="' + esc(AdminConfig.API_BASE || '') + '" /></label>' +
-      '<label>Ключ доступа<input class="input" id="set-token" value="' + esc(AdminConfig.ADMIN_TOKEN || '') + '" type="password" autocomplete="off" /></label>' +
-      '<button type="button" class="btn btn-primary" id="set-save">Сохранить ключ</button>' +
+      '<button type="button" class="btn btn-primary" id="set-save">Сохранить</button>' +
       '</div>';
     var save = document.getElementById('set-save');
     if (save) save.onclick = function () {
       var api = document.getElementById('set-api').value.trim();
-      var token = document.getElementById('set-token').value.trim();
       try {
         localStorage.setItem('yak_admin_api_override', api);
         AdminConfig.API_BASE = api;
-        if (AdminAuth.saveAdminToken) AdminAuth.saveAdminToken(token);
-        else {
-          localStorage.setItem('yak_admin_token', token);
-          AdminConfig.ADMIN_TOKEN = token;
-        }
-        session.token = token;
-        toast(token ? 'Ключ сохранён в этом браузере' : 'Ключ снят');
-        syncServerPill();
+        toast('Адрес сервера сохранён');
         if (typeof checkServer === 'function') checkServer();
       } catch (e) {
         toast('Ошибка сохранения', true);

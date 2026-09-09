@@ -1,7 +1,7 @@
 /**
  * HTTP-клиент к основному серверу Fides.
  * CORS: сервер отдаёт Access-Control-Allow-Origin: * — браузерные запросы с file:// /
- * localhost работают. Для админ-операций нужен заголовок x-admin-token.
+ * localhost работают. На время тестов сервер принимает запись без ключа.
  */
 (function (global) {
   'use strict';
@@ -137,7 +137,7 @@
     return get('/api/admin/users?' + q);
   }
 
-  /** Batch upsert архива (нужен ADMIN_TOKEN) */
+  /** Batch upsert архива */
   function upsertArchive(payload) {
     return send('POST', '/api/admin/archive/ruscatholic/upsert', payload);
   }

@@ -884,8 +884,8 @@
 
   function uploadDataUrl(dataUrl, folder) {
     if (!dataUrl || dataUrl.indexOf('data:') !== 0) return Promise.resolve(dataUrl || '');
-    if (!window.AdminApi || !AdminApi.uploadMedia || !AdminApi.token || !AdminApi.token()) {
-      return Promise.reject(new Error('нет ключа сервера — фото останется только в этом браузере'));
+    if (!window.AdminApi || !AdminApi.uploadMedia) {
+      return Promise.reject(new Error('нет соединения с сервером — фото останется только в этом браузере'));
     }
     return AdminApi.uploadMedia({ dataUrl: dataUrl, folder: folder || 'covers' }).then(function (pack) {
       if (!pack || !pack.url) throw new Error('сервер не вернул ссылку на фото');
@@ -916,9 +916,6 @@
   function publishToArchive(item, type) {
     if (!window.AdminApi || !AdminApi.upsertArchive) {
       return Promise.reject(new Error('нет соединения с сервером'));
-    }
-    if (!AdminApi.token || !AdminApi.token()) {
-      return Promise.reject(new Error('нет ключа сервера. Настройки → ключ доступа'));
     }
     var slugs = (item.rubrics || []).slice();
     if (type === 'news' && slugs.indexOf('news') === -1) slugs.unshift('news');
@@ -2072,8 +2069,8 @@
   var TOPICS_PAGE_SLUG = 'yak-topics-data';
 
   function publishAuthors() {
-    if (!window.AdminApi || !AdminApi.upsertArchive || !AdminApi.token || !AdminApi.token()) {
-      return Promise.reject(new Error('нет ключа сервера'));
+    if (!window.AdminApi || !AdminApi.upsertArchive) {
+      return Promise.reject(new Error('нет соединения с сервером'));
     }
     var list = (read().authors || []).filter(function (a) {
       return a && (!a.status || a.status === 'published');
@@ -2129,8 +2126,8 @@
   }
 
   function publishTopics() {
-    if (!window.AdminApi || !AdminApi.upsertArchive || !AdminApi.token || !AdminApi.token()) {
-      return Promise.reject(new Error('нет ключа сервера'));
+    if (!window.AdminApi || !AdminApi.upsertArchive) {
+      return Promise.reject(new Error('нет соединения с сервером'));
     }
     var list = listTopics().map(function (t) {
       return {
@@ -2197,8 +2194,8 @@
   }
 
   function publishPhotostock() {
-    if (!window.AdminApi || !AdminApi.upsertArchive || !AdminApi.token || !AdminApi.token()) {
-      return Promise.reject(new Error('нет ключа сервера'));
+    if (!window.AdminApi || !AdminApi.upsertArchive) {
+      return Promise.reject(new Error('нет соединения с сервером'));
     }
     var photos = ((window.AdminStore && AdminStore.listPhotos()) || []).map(slimPhoto).filter(Boolean);
     var photographers = ((window.AdminStore && AdminStore.listPhotographers()) || []).map(slimPhotographer).filter(Boolean);
@@ -2237,8 +2234,8 @@
   }
 
   function publishCycles(list) {
-    if (!window.AdminApi || !AdminApi.upsertArchive || !AdminApi.token || !AdminApi.token()) {
-      return Promise.reject(new Error('нет ключа сервера'));
+    if (!window.AdminApi || !AdminApi.upsertArchive) {
+      return Promise.reject(new Error('нет соединения с сервером'));
     }
     return AdminApi.upsertArchive({
       articles: [{
