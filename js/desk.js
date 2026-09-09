@@ -803,6 +803,37 @@
     return httpUrl(item.cover) || httpUrl(item.image) || httpUrl(item.imageOriginal) || '';
   }
 
+  function uploadDataUrl(dataUrl, folder) {
+    if (!dataUrl || dataUrl.indexOf('data:') !== 0) return Promise.resolve(dataUrl || '');
+    if (!window.AdminApi || !AdminApi.uploadMedia || !AdminApi.token || !AdminApi.token()) {
+      return Promise.reject(new Error('нет ключа сервера — фото останется только в этом браузере'));
+    }
+    return AdminApi.uploadMedia({ dataUrl: dataUrl, folder: folder || 'covers' }).then(function (pack) {
+      if (!pack || !pack.url) throw new Error('сервер не вернул ссылку на фото');
+      return pack.url;
+    });
+  }
+
+  function hoistHtmlImages(html, folder) {
+    html = String(html || '');
+    var found = [];
+    html.replace(/src="(data:image[^"]+)"/g, function (_m, src) {
+      if (found.indexOf(src) === -1) found.push(src);
+      return _m;
+    });
+    if (!found.length) return Promise.resolve(html);
+    var i = 0;
+    function next() {
+      if (i >= found.length) return Promise.resolve(html);
+      var src = found[i++];
+      return uploadDataUrl(src, folder).then(function (url) {
+        html = html.split(src).join(url);
+        return next();
+      });
+    }
+    return next();
+  }
+
   function publishToArchive(item, type) {
     if (!window.AdminApi || !AdminApi.upsertArchive) {
       return Promise.reject(new Error('нет соединения с сервером'));
@@ -826,7 +857,7 @@
         excerpt: item.excerptHtml || item.excerpt || '',
         contentHtml: item.contentHtml || '',
         contentText: item.body || '',
-        image: httpCover(item) || item.imageOriginal || undefined,
+        image: httpCover(item) || undefined,
         source: 'desk',
       }],
     });
@@ -1344,63 +1375,78 @@
     var bodyEl = document.getElementById('d-body');
     var html = bodyEl ? bodyEl.innerHTML : '';
     var lead = leadHtml();
-    var excerptPlain = htmlToText(lead);
     var author = type === 'article' ? findAuthor(val('d-author-slug') || val('d-author-q')) : null;
     var slug = val('d-slug') || slugify(title);
-    var next;
-    try {
-    next = Object.assign({}, item, {
-      kind: type === 'news' ? 'news' : 'article',
-      title: title,
-      slug: slug,
-      category: rubrics[0],
-      rubrics: rubrics,
-      date: val('d-date') || String(item.date || '').slice(0, 10) || todayIso(),
-      excerpt: excerptPlain || htmlToText(html).slice(0, 220),
-      excerptHtml: lead,
-      body: htmlToText(html),
-      contentHtml: html,
-      cover: val('d-cover'),
-      image: val('d-cover'),
-      imageOriginal: httpUrl(val('d-cover')) || item.imageOriginal || httpUrl(item.image) || httpUrl(item.cover) || '',
-      author: author ? author.name : (val('d-author') || (ctx.session && ctx.session.name) || ''),
-      authorSlug: author ? author.slug : '',
-      authorSlugs: author ? [author.slug] : [],
-      cycleSlug: type === 'article' ? (val('d-cycle-slug') || '') : '',
-      cycleOrder: type === 'article' ? (parseInt(val('d-cycle-order'), 10) || 0) : 0,
-      status: status,
-      source: 'desk',
-    });
-    if (status === 'published') ensureNumericId(next);
-    upsert(type, next);
-    if (type === 'article') syncArticleToCycle(next);
-    if (author && status === 'published') {
-      linkAuthor(author.slug, {
-        slug: slug,
+    var coverNow = val('d-cover');
+
+    var ready = Promise.resolve({ cover: coverNow, html: html, lead: lead });
+    if (status === 'published' && (String(coverNow).indexOf('data:') === 0 || /src="data:image/.test(html + lead))) {
+      ctx.toast('Сохраняем фото на сервер…');
+      ready = uploadDataUrl(coverNow, 'covers')
+        .then(function (cover) {
+          return hoistHtmlImages(html, 'inline').then(function (h) {
+            return hoistHtmlImages(lead, 'inline').then(function (l) {
+              return { cover: cover, html: h, lead: l };
+            });
+          });
+        });
+    }
+
+    ready.then(function (pack) {
+      html = pack.html;
+      lead = pack.lead;
+      if (pack.cover && document.getElementById('d-cover')) document.getElementById('d-cover').value = pack.cover;
+      if (bodyEl) bodyEl.innerHTML = html;
+      var excerptPlain = htmlToText(lead);
+      var next = Object.assign({}, item, {
+        kind: type === 'news' ? 'news' : 'article',
         title: title,
-        date: next.date,
-        excerpt: next.excerpt,
+        slug: slug,
+        category: rubrics[0],
+        rubrics: rubrics,
+        date: val('d-date') || String(item.date || '').slice(0, 10) || todayIso(),
+        excerpt: excerptPlain || htmlToText(html).slice(0, 220),
+        excerptHtml: lead,
+        body: htmlToText(html),
+        contentHtml: html,
+        cover: pack.cover,
+        image: pack.cover,
+        imageOriginal: httpUrl(pack.cover) || item.imageOriginal || '',
+        author: author ? author.name : (val('d-author') || (ctx.session && ctx.session.name) || ''),
+        authorSlug: author ? author.slug : '',
+        authorSlugs: author ? [author.slug] : [],
+        cycleSlug: type === 'article' ? (val('d-cycle-slug') || '') : '',
+        cycleOrder: type === 'article' ? (parseInt(val('d-cycle-order'), 10) || 0) : 0,
+        status: status,
+        source: 'desk',
       });
-    }
-    if (status !== 'published') {
-      ctx.toast('Черновик сохранён');
-      ctx.go(type === 'news' ? 'news' : 'articles');
-      return;
-    }
-    ctx.toast('Отправляем на сайт…');
-    publishToArchive(next, type).then(function () {
+      if (status === 'published') ensureNumericId(next);
       upsert(type, next);
-      if (type === 'article' && next.cycleSlug) return publishCycles(catalogCycles()).catch(function () {});
-    }).then(function () {
-      ctx.toast('Опубликовано на сайте');
-      ctx.go(type === 'news' ? 'news' : 'articles');
+      if (type === 'article') syncArticleToCycle(next);
+      if (author && status === 'published') {
+        linkAuthor(author.slug, {
+          slug: slug,
+          title: title,
+          date: next.date,
+          excerpt: next.excerpt,
+        });
+      }
+      if (status !== 'published') {
+        ctx.toast('Черновик сохранён');
+        ctx.go(type === 'news' ? 'news' : 'articles');
+        return;
+      }
+      ctx.toast('Отправляем на сайт…');
+      return publishToArchive(next, type).then(function () {
+        upsert(type, next);
+        if (type === 'article' && next.cycleSlug) return publishCycles(catalogCycles()).catch(function () {});
+      }).then(function () {
+        ctx.toast('Опубликовано на сайте');
+        ctx.go(type === 'news' ? 'news' : 'articles');
+      });
     }).catch(function (e) {
-      ctx.toast('В редакции сохранено, на сайт не ушло: ' + (e.message || e), true);
-      ctx.go(type === 'news' ? 'news' : 'articles');
-    });
-    } catch (e) {
       ctx.toast(e.message || 'Не удалось сохранить', true);
-    }
+    });
   }
 
   function renderEventForm(ctx, id) {
@@ -1854,25 +1900,72 @@
   }
 
   function saveAuthor(ctx, item, status) {
-    try {
+    var photo = val('d-photo-url') || item.photo || '';
+    var ready = status === 'published' && String(photo).indexOf('data:') === 0
+      ? (ctx.toast('Сохраняем фото на сервер…'), uploadDataUrl(photo, 'authors'))
+      : Promise.resolve(photo);
+    ready.then(function (url) {
+      if (url && document.getElementById('d-photo-url')) document.getElementById('d-photo-url').value = url;
       upsert('authors', Object.assign({}, item, {
         id: item.slug || item.id,
         slug: item.slug || item.id,
         name: val('d-title'),
         role: val('d-role'),
         bio: val('d-bio'),
-        photo: val('d-photo-url') || item.photo || '',
+        photo: url,
         status: status,
       }));
-      ctx.toast(status === 'published' ? 'Сохранено' : 'Черновик сохранён');
-      ctx.go('authors');
-    } catch (e) {
+      if (status !== 'published') {
+        ctx.toast('Черновик сохранён');
+        ctx.go('authors');
+        return;
+      }
+      return publishAuthors().then(function () {
+        ctx.toast('Автор сохранён на сайте');
+        ctx.go('authors');
+      });
+    }).catch(function (e) {
       ctx.toast(e.message || 'Не удалось сохранить автора', true);
-    }
+    });
   }
 
   var CYCLES_PAGE_ID = 1900000001;
   var CYCLES_PAGE_SLUG = 'yak-cycles-data';
+  var AUTHORS_PAGE_ID = 1900000002;
+  var AUTHORS_PAGE_SLUG = 'yak-authors-data';
+
+  function publishAuthors() {
+    if (!window.AdminApi || !AdminApi.upsertArchive || !AdminApi.token || !AdminApi.token()) {
+      return Promise.reject(new Error('нет ключа сервера'));
+    }
+    var list = (read().authors || []).filter(function (a) {
+      return a && (!a.status || a.status === 'published');
+    }).map(function (a) {
+      return {
+        slug: a.slug || a.id,
+        name: a.name || '',
+        role: a.role || '',
+        bio: a.bio || '',
+        photo: httpUrl(a.photo) ? a.photo : '',
+      };
+    });
+    return AdminApi.upsertArchive({
+      articles: [{
+        id: AUTHORS_PAGE_ID,
+        slug: AUTHORS_PAGE_SLUG,
+        title: 'Авторы редакции',
+        date: todayIso(),
+        modified: new Date().toISOString(),
+        author: '',
+        categories: [],
+        categorySlugs: ['day-by-day'],
+        excerpt: '',
+        contentHtml: '<p></p>',
+        contentText: JSON.stringify(list),
+        source: 'desk-authors',
+      }],
+    });
+  }
 
   function syncArticleToCycle(article) {
     if (!article || !article.slug) return;
@@ -2107,7 +2200,12 @@
     document.getElementById('desk-pub').onclick = function () {
       var next = collect('published');
       if (!next) return;
-      try {
+      var afterCover = String(next.cover || '').indexOf('data:') === 0
+        ? (ctx.toast('Сохраняем фото на сервер…'), uploadDataUrl(next.cover, 'cycles'))
+        : Promise.resolve(next.cover);
+      afterCover.then(function (url) {
+        next.cover = url;
+        next.image = url;
         upsert('cycle', next);
         next.items.forEach(function (it, i) {
           var art = getItem('article', it.slug);
@@ -2118,14 +2216,13 @@
           }
         });
         ctx.toast('Отправляем на сайт…');
-        publishCycles(catalogCycles()).then(function () {
-          ctx.toast('Цикл опубликован');
-          ctx.go('cycles');
-        }).catch(function (e) {
-          ctx.toast('В редакции сохранено, на сайт не ушло: ' + (e.message || e), true);
-          ctx.go('cycles');
-        });
-      } catch (e) { ctx.toast(e.message || 'Не удалось сохранить', true); }
+        return publishCycles(catalogCycles());
+      }).then(function () {
+        ctx.toast('Цикл опубликован');
+        ctx.go('cycles');
+      }).catch(function (e) {
+        ctx.toast(e.message || 'Не удалось сохранить', true);
+      });
     };
     var delBtn = document.getElementById('desk-del');
     if (delBtn) delBtn.onclick = function () {

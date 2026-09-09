@@ -179,6 +179,7 @@
     getAdminEvents: getAdminEvents,
     getAdminUsers: getAdminUsers,
     upsertArchive: upsertArchive,
+    uploadMedia: function (body) { return send('POST', '/api/admin/media/upload', body); },
     createNews: createNews,
     updateNews: updateNews,
     deleteNews: deleteNews,
