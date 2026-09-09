@@ -689,6 +689,30 @@
     return el ? sanitizeLead(el.innerHTML || '') : '';
   }
 
+  function bioToEditorHtml(bio) {
+    if (!bio) return '';
+    if (hasMarkup(bio)) return sanitizeLead(bio);
+    var parts = String(bio).split(/\n\s*\n/);
+    if (parts.length === 1 && /\n/.test(bio)) parts = String(bio).split(/\n/);
+    return parts.map(function (p) {
+      var t = String(p || '').trim();
+      return t ? '<p>' + linkifyPlain(t) + '</p>' : '';
+    }).join('');
+  }
+
+  function bioHtml() {
+    var el = document.getElementById('d-bio');
+    if (!el) return '';
+    var box = document.createElement('div');
+    box.innerHTML = el.innerHTML || '';
+    box.querySelectorAll('div').forEach(function (d) {
+      var p = document.createElement('p');
+      while (d.firstChild) p.appendChild(d.firstChild);
+      d.parentNode.replaceChild(p, d);
+    });
+    return sanitizeLead(box.innerHTML);
+  }
+
   function openArchiveForm(ctx, type, id, renderFn) {
     var desk = deskRecord(type, id);
     var cached = desk || getItem(type, id);
@@ -1189,8 +1213,9 @@
       '<div class="guide-body">' + ((body && body.innerHTML) || '') + '</div>';
   }
 
-  function mountLeadRTE(el, onChange) {
+  function mountLeadRTE(el, onChange, barId) {
     if (!el) return;
+    try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (e) {}
     el.addEventListener('paste', function (e) {
       e.preventDefault();
       var html = (e.clipboardData && (e.clipboardData.getData('text/html') || e.clipboardData.getData('text/plain'))) || '';
@@ -1202,7 +1227,7 @@
       if (onChange) onChange();
     });
     el.addEventListener('input', function () { if (onChange) onChange(); });
-    var bar = document.getElementById('d-lead-bar');
+    var bar = document.getElementById(barId || 'd-lead-bar');
     if (!bar) return;
     bar.onclick = function (e) {
       var btn = e.target.closest('button');
@@ -1837,7 +1862,16 @@
         field('Имя', 'd-title', item.name) +
         field('Адрес карточки', 'd-slug', item.slug, 'text', isNew ? 'placeholder="появится из имени"' : '') +
         field('Роль', 'd-role', item.role) +
-        field('Биография', 'd-bio', item.bio, 'textarea') +
+        '<div class="field"><label>Описание</label>' +
+        '<div class="rte lead-rte">' +
+        '<div class="rte-bar" id="d-bio-bar">' +
+        '<button type="button" data-cmd="bold" title="Жирный">Ж</button>' +
+        '<button type="button" data-cmd="italic" title="Курсив">К</button>' +
+        '<button type="button" data-act="link" title="Ссылка">Ссылка</button>' +
+        '</div>' +
+        '<div class="rte-body excerpt-input" id="d-bio" contenteditable="true" data-placeholder="Абзацы и ссылки сохранятся"></div>' +
+        '</div>' +
+        '<p class="hint-note">Enter — новый абзац. Выделите текст и нажмите «Ссылка».</p></div>' +
         '<div class="field"><label>Фото</label><input class="input" type="file" id="d-photo" accept="image/*" />' +
         '<input type="hidden" id="d-photo-url" value="' + esc(item.photo || '') + '" />' +
         (item.photo ? '<img src="' + esc(item.photo) + '" alt="" style="width:72px;height:72px;border-radius:50%;object-fit:cover;margin-top:8px" />' : '') +
@@ -1853,6 +1887,11 @@
         null,
         item.slug ? 'author.html?slug=' + encodeURIComponent(item.slug) : ''
       );
+      var bioEl = document.getElementById('d-bio');
+      if (bioEl) {
+        bioEl.innerHTML = bioToEditorHtml(item.bio);
+        mountLeadRTE(bioEl, null, 'd-bio-bar');
+      }
       var titleEl = document.getElementById('d-title');
       var slugEl = document.getElementById('d-slug');
       if (isNew && titleEl && slugEl) {
@@ -1950,7 +1989,7 @@
         slug: slug,
         name: name,
         role: val('d-role'),
-        bio: val('d-bio'),
+        bio: bioHtml() || val('d-bio'),
         photo: url,
         status: status,
       }));
