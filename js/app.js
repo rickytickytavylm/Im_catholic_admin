@@ -1200,6 +1200,140 @@
     return session.role !== 'librarian' || role.canManageDocs;
   }
 
+  function photographerSelectHtml(selectedId) {
+    var rows = (AdminStore.listPhotographers() || []).slice().sort(function (a, b) {
+      return String(a.name || '').localeCompare(String(b.name || ''), 'ru');
+    });
+    return '<option value="">— выбрать фотографа —</option>' + rows.map(function (p) {
+      var sel = (p.id === selectedId || p.slug === selectedId) ? ' selected' : '';
+      return '<option value="' + esc(p.id) + '"' + sel + '>' + esc(p.name || p.slug) + '</option>';
+    }).join('');
+  }
+
+  function applyPhotographer(item, phId) {
+    var ph = phId ? AdminStore.getPhotographer(phId) : null;
+    if (!ph && phId) {
+      ph = (AdminStore.listPhotographers() || []).filter(function (p) { return p.slug === phId || p.id === phId; })[0];
+    }
+    if (!ph) {
+      item.photographerId = '';
+      item.photographerSlug = '';
+      item.photographerTag = '';
+      return item;
+    }
+    item.photographerId = ph.id;
+    item.photographerSlug = ph.slug;
+    item.photographerName = ph.name;
+    item.photographerTag = ph.tagSlug || (ph.slug + '-photos');
+    var tag = item.photographerTag;
+    item.tags = (item.tags || []).filter(function (t) { return t && t !== tag; });
+    if (tag) item.tags.unshift(tag);
+    return item;
+  }
+
+  function uploadImageDataUrl(dataUrl, folder) {
+    if (window.AdminDesk && AdminDesk.uploadDataUrl) return AdminDesk.uploadDataUrl(dataUrl, folder || 'photostock');
+    if (!dataUrl || String(dataUrl).indexOf('data:') !== 0) return Promise.resolve(dataUrl || '');
+    if (!window.AdminApi || !AdminApi.uploadMedia || !AdminApi.token || !AdminApi.token()) {
+      return Promise.reject(new Error('нет ключа сервера — фото останется только в этом браузере'));
+    }
+    return AdminApi.uploadMedia({ dataUrl: dataUrl, folder: folder || 'photostock' }).then(function (pack) {
+      if (!pack || !pack.url) throw new Error('сервер не вернул ссылку на фото');
+      return pack.url;
+    });
+  }
+
+  function syncPhotostock(okMsg) {
+    if (!window.AdminDesk || !AdminDesk.publishPhotostock) return Promise.resolve();
+    return AdminDesk.publishPhotostock().then(function () {
+      if (okMsg) toast(okMsg);
+    }).catch(function (e) {
+      toast((okMsg || 'Сохранено локально') + '. На сайт не ушло: ' + (e.message || 'нет связи'), true);
+    });
+  }
+
+  function resolvePhotoItem(id) {
+    var item = AdminStore.getMedia(id);
+    if (item) return Object.assign({}, item);
+    var all = window.AdminDesk && AdminDesk.allPhotos ? AdminDesk.allPhotos() : [];
+    var hit = all.filter(function (p) { return String(p.id) === String(id); })[0];
+    if (!hit) return null;
+    return Object.assign({ kind: 'image', status: hit.status || 'approved' }, hit);
+  }
+
+  function canTunePhoto(item) {
+    return !!(item && (canEditMediaItem(item) || role.canModerateMedia || role.photostockFull));
+  }
+
+  function openPhotoEditor(item, isNew) {
+    var box = document.getElementById('photo-edit-box');
+    if (!box) return;
+    var draft = Object.assign({
+      id: isNew ? AdminStore.uid('media') : item.id,
+      kind: 'image',
+      title: '',
+      url: '',
+      tags: [],
+      status: session.role === 'photographer' ? 'pending' : 'approved',
+      ownerEmail: session.email,
+      ownerName: session.name,
+    }, item || {});
+    var fileUrl = '';
+    box.hidden = false;
+    box.innerHTML =
+      '<div class="panel" style="margin-bottom:14px">' +
+      '<div class="panel-head"><h2>' + (isNew ? 'Новое фото' : 'Редактировать фото') + '</h2></div>' +
+      '<div class="form-grid">' +
+      '<label>Название<input class="input" id="pe-title" value="' + esc(draft.title || '') + '" /></label>' +
+      '<label>Фотограф<select class="select" id="pe-ph">' + photographerSelectHtml(draft.photographerId || draft.photographerSlug) + '</select></label>' +
+      '<label>Теги через запятую<input class="input" id="pe-tags" value="' + esc((draft.tags || []).join(', ')) + '" placeholder="храм, месса, москва" /></label>' +
+      '<label>Файл<input class="input" type="file" id="pe-file" accept="image/*" /></label>' +
+      (draft.url
+        ? '<p class="hint-note">Сейчас в стоке: ' + (String(draft.url).indexOf('data:') === 0 ? 'файл только в этом браузере — при сохранении уйдёт на сервер' : esc(String(draft.url).slice(0, 96))) + '</p>'
+        : '') +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+      '<button type="button" class="btn btn-primary" id="pe-save">Сохранить</button>' +
+      '<button type="button" class="btn btn-ghost" id="pe-cancel">Отмена</button>' +
+      '</div></div></div>';
+
+    document.getElementById('pe-file').onchange = function (e) {
+      var f = e.target.files && e.target.files[0];
+      if (!f) return;
+      if (f.size > 5 * 1024 * 1024) { toast('Файл тяжелее 5 Мб', true); return; }
+      readFileAsDataUrl(f).then(function (url) { fileUrl = url; toast('Файл выбран'); });
+    };
+    document.getElementById('pe-cancel').onclick = function () {
+      box.hidden = true;
+      box.innerHTML = '';
+    };
+    document.getElementById('pe-save').onclick = function () {
+      var title = (document.getElementById('pe-title').value || '').trim() || draft.title || 'Фото';
+      var tags = (document.getElementById('pe-tags').value || '').split(',').map(function (t) { return t.trim(); }).filter(Boolean);
+      var phId = document.getElementById('pe-ph').value;
+      var next = applyPhotographer(Object.assign({}, draft, { title: title, tags: tags }), phId);
+      var raw = fileUrl || next.url;
+      if (isNew && !raw) { toast('Выберите файл', true); return; }
+      toast('Сохраняем…');
+      var ready = (raw && String(raw).indexOf('data:') === 0)
+        ? uploadImageDataUrl(raw, 'photostock')
+        : Promise.resolve(raw);
+      ready.then(function (url) {
+        next.url = url;
+        next.thumb = url;
+        if (!next.createdAt) next.createdAt = new Date().toISOString();
+        AdminStore.upsertMedia(next, session.email);
+        box.hidden = true;
+        box.innerHTML = '';
+        return syncPhotostock(isNew ? 'Фото добавлено в сток' : 'Фото обновлено');
+      }).then(function () {
+        renderMedia();
+      }).catch(function (e) {
+        toast(e.message || 'Не удалось сохранить фото', true);
+      });
+    };
+    try { box.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
+  }
+
   function renderMedia() {
     if (session.role === 'librarian') mediaTab = 'documents';
     else if (session.role === 'photographer' || session.role === 'photo_editor') mediaTab = mediaTab === 'documents' && !canSeeDocuments() ? 'images' : mediaTab;
@@ -1221,8 +1355,9 @@
       (showDocs ? '<button type="button" class="tab' + (mediaTab === 'documents' ? ' active' : '') + '" data-tab="documents">Документы</button>' : '') +
       '</div>' +
       (mediaTab === 'images'
-        ? '<p class="hint-note">На портал попадают только одобренные снимки.</p>'
+        ? '<p class="hint-note">На портал попадают одобренные снимки. Новое фото — с привязкой к фотографу и тегами. Уже добавленные можно править.</p>'
         : '<p class="hint-note">Каталог документов библиотеки.</p>') +
+      '<div id="photo-edit-box" hidden></div>' +
       '<div class="panel" id="media-panel"></div>';
 
     document.querySelectorAll('#media-tabs [data-tab]').forEach(function (btn) {
@@ -1259,7 +1394,7 @@
       '<div class="photo-grid" id="photo-grid"></div>';
 
     var addBtn = document.getElementById('btn-add-image');
-    if (addBtn) addBtn.onclick = function () { openAddImageDialog(); };
+    if (addBtn) addBtn.onclick = function () { openPhotoEditor({}, true); };
 
     function paint() {
       var q = (document.getElementById('media-q').value || '').toLowerCase();
@@ -1273,7 +1408,7 @@
           /* photographer can browse all but edit own — keep list visible */
         }
         if (q) {
-          var hay = (p.title + ' ' + (p.tags || []).join(' ') + ' ' + (p.ownerName || '')).toLowerCase();
+          var hay = ((p.title || '') + ' ' + (p.tags || []).join(' ') + ' ' + (p.ownerName || '') + ' ' + (p.photographerName || '')).toLowerCase();
           if (hay.indexOf(q) === -1) return false;
         }
         return true;
@@ -1281,18 +1416,18 @@
 
       var grid = document.getElementById('photo-grid');
       grid.innerHTML = rows.map(function (p) {
-        var canEdit = canEditMediaItem(p);
+        var canEdit = canTunePhoto(p);
         var canModerate = role.canModerateMedia || role.photostockFull;
         return (
           '<article class="photo-card" data-id="' + esc(p.id) + '">' +
           '<div class="ph"' + (srcOf(p) ? ' style="background-image:url(\'' + esc(srcOf(p)).replace(/'/g, '%27') + '\')"' : '') + '></div>' +
           '<div class="in"><strong>' + esc(p.title) + '</strong>' +
           '<div class="tags">' + esc((p.tags || []).join(', ') || 'без тегов') + '</div>' +
+          '<small style="color:var(--stone-500)">Фотограф: ' + esc(p.photographerName || '—') + '</small>' +
           '<small style="color:var(--stone-500)">Кто добавил: ' + esc(p.ownerName || p.ownerEmail || '—') + '</small>' +
           '<div>' + badgeForMediaStatus(p.status || 'approved') + '</div>' +
           '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">' +
-          (canEdit || canModerate ? '<button type="button" class="btn btn-ghost" data-ph="tags">Теги</button>' : '') +
-          (canEdit ? '<button type="button" class="btn btn-ghost" data-ph="url">URL / файл</button>' : '') +
+          (canEdit ? '<button type="button" class="btn btn-ghost" data-ph="edit">Теги и фотограф</button>' : '') +
           (canModerate && p.status === 'pending' ? '<button type="button" class="btn btn-primary" data-ph="approve">Одобрить</button>' : '') +
           (canModerate && p.status === 'pending' ? '<button type="button" class="btn btn-danger" data-ph="reject">Отклонить</button>' : '') +
           ((canModerate || (canEdit && p.ownerEmail === session.email)) ? '<button type="button" class="btn btn-danger" data-ph="del">Удалить</button>' : '') +
@@ -1304,41 +1439,34 @@
         btn.addEventListener('click', function () {
           var card = btn.closest('.photo-card');
           var id = card.getAttribute('data-id');
-          var item = AdminStore.getMedia(id);
+          var item = resolvePhotoItem(id);
           if (!item) return;
           var act = btn.getAttribute('data-ph');
-          if (act === 'tags') {
-            if (!(canEditMediaItem(item) || role.canModerateMedia || role.photostockFull)) return;
-            var tags = prompt('Теги через запятую', (item.tags || []).join(', '));
-            if (tags == null) return;
-            item.tags = tags.split(',').map(function (t) { return t.trim(); }).filter(Boolean);
-            AdminStore.upsertMedia(item, session.email);
-            toast('Теги обновлены');
-            photos = AdminStore.listPhotos();
-            paint();
-          } else if (act === 'url') {
-            if (!canEditMediaItem(item)) return;
-            pickMediaSource(item);
+          if (act === 'edit') {
+            if (!canTunePhoto(item)) return;
+            openPhotoEditor(item, false);
           } else if (act === 'approve') {
             item.status = 'approved';
             AdminStore.upsertMedia(item, session.email);
-            toast('Одобрено');
-            photos = AdminStore.listPhotos();
-            paint();
+            syncPhotostock('Одобрено').then(function () {
+              photos = window.AdminDesk ? AdminDesk.allPhotos() : AdminStore.listPhotos();
+              paint();
+            });
           } else if (act === 'reject') {
             item.status = 'rejected';
             AdminStore.upsertMedia(item, session.email);
             toast('Отклонено');
-            photos = AdminStore.listPhotos();
+            photos = window.AdminDesk ? AdminDesk.allPhotos() : AdminStore.listPhotos();
             paint();
           } else if (act === 'del') {
             var mayDel = role.canModerateMedia || role.photostockFull || item.ownerEmail === session.email;
             if (!mayDel) return;
             if (!confirm('Удалить файл?')) return;
             AdminStore.deleteMedia(id, session.email);
-            toast('Удалено');
-            photos = AdminStore.listPhotos();
-            paint();
+            syncPhotostock('Удалено').then(function () {
+              photos = window.AdminDesk ? AdminDesk.allPhotos() : AdminStore.listPhotos();
+              paint();
+            });
           }
         });
       });
@@ -1350,24 +1478,7 @@
   }
 
   function openAddImageDialog() {
-    var title = prompt('Название фото', 'Новое фото');
-    if (!title) return;
-    var isPhotographer = session.role === 'photographer';
-    var item = {
-      id: AdminStore.uid('media'),
-      kind: 'image',
-      title: title,
-      url: '',
-      ownerEmail: session.email,
-      ownerName: session.name,
-      status: isPhotographer ? 'pending' : 'approved',
-      tags: [],
-      format: '',
-      section: '',
-    };
-    AdminStore.upsertMedia(item, session.email);
-    toast(isPhotographer ? 'Добавлено в очередь модерации' : 'Изображение добавлено');
-    pickMediaSource(AdminStore.getMedia(item.id), true);
+    openPhotoEditor({}, true);
   }
 
   function pickMediaSource(item, afterAdd) {

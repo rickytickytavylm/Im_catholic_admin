@@ -1804,17 +1804,38 @@
     }
   }
 
+  function uniqueAuthorSlug(base, except) {
+    var slug = slugify(base) || 'author';
+    var exceptKey = String(except || '').toLowerCase();
+    var list = catalogAuthors();
+    function taken(s) {
+      var key = String(s || '').toLowerCase();
+      return list.some(function (a) {
+        var as = String(a.slug || a.id || '').toLowerCase();
+        return as === key && as !== exceptKey;
+      });
+    }
+    if (!taken(slug)) return slug;
+    var n = 2;
+    while (taken(slug + '-' + n)) n += 1;
+    return slug + '-' + n;
+  }
+
   function renderAuthors(ctx, id) {
-    if (id && id !== 'new') {
-      var baked = (window.YakAuthors || []).filter(function (a) { return a.slug === id || a.id === id; })[0] || {};
-      var item = Object.assign({}, baked, getItem('authors', id) || { id: id, slug: id });
+    var isNew = id === 'new';
+    if (id) {
+      var baked = isNew ? {} : ((window.YakAuthors || []).filter(function (a) { return a.slug === id || a.id === id; })[0] || {});
+      var item = isNew
+        ? { id: '', slug: '', name: '', role: '', bio: '', photo: '', recent: [], status: 'draft' }
+        : Object.assign({}, baked, getItem('authors', id) || { id: id, slug: id });
       var linked = (item.recent || []).slice();
       (read().authorLinks || []).forEach(function (l) {
         if (l.authorSlug === item.slug && !linked.some(function (p) { return p.slug === l.slug; })) linked.unshift(l);
       });
       composeShell(
-        ctx, item.name || 'Автор', 'authors',
+        ctx, isNew ? 'Новый автор' : (item.name || 'Автор'), 'authors',
         field('Имя', 'd-title', item.name) +
+        field('Адрес карточки', 'd-slug', item.slug, 'text', isNew ? 'placeholder="появится из имени"' : '') +
         field('Роль', 'd-role', item.role) +
         field('Биография', 'd-bio', item.bio, 'textarea') +
         '<div class="field"><label>Фото</label><input class="input" type="file" id="d-photo" accept="image/*" />' +
@@ -1830,8 +1851,22 @@
         function (status) { saveAuthor(ctx, item, status); },
         function () { saveAuthor(ctx, item, 'published'); },
         null,
-        'author.html?slug=' + encodeURIComponent(item.slug || id)
+        item.slug ? 'author.html?slug=' + encodeURIComponent(item.slug) : ''
       );
+      var titleEl = document.getElementById('d-title');
+      var slugEl = document.getElementById('d-slug');
+      if (isNew && titleEl && slugEl) {
+        titleEl.addEventListener('input', function () {
+          if (!slugEl.dataset.touched) slugEl.value = slugify(titleEl.value);
+          item.slug = slugEl.value;
+          item.id = item.slug;
+        });
+        slugEl.addEventListener('input', function () {
+          slugEl.dataset.touched = '1';
+          item.slug = slugEl.value;
+          item.id = item.slug;
+        });
+      }
       var pubs = catalogPubs();
       document.getElementById('d-pub-list').innerHTML = pubs.slice(0, 400).map(function (p) {
         return '<option value="' + esc(p.slug) + '">' + esc(p.title) + '</option>';
@@ -1884,7 +1919,8 @@
     }
     var items = mergedList('authors');
     ctx.viewEl.innerHTML =
-      '<div class="topbar"><div><h1>Авторы</h1><p>Карточки, описания и привязка публикаций.</p></div></div>' +
+      '<div class="topbar"><div><h1>Авторы</h1><p>Карточки, описания и привязка публикаций.</p></div>' +
+      '<div class="topbar-actions"><a class="btn btn-primary" href="#authors/new">Добавить автора</a></div></div>' +
       '<div class="panel">' +
       (items.length
         ? '<div class="list-stack">' + items.map(function (a) {
@@ -1900,6 +1936,9 @@
   }
 
   function saveAuthor(ctx, item, status) {
+    var name = val('d-title');
+    if (!name) { ctx.toast('Укажите имя', true); return; }
+    var slug = uniqueAuthorSlug(val('d-slug') || slugify(name), item.slug || item.id);
     var photo = val('d-photo-url') || item.photo || '';
     var ready = status === 'published' && String(photo).indexOf('data:') === 0
       ? (ctx.toast('Сохраняем фото на сервер…'), uploadDataUrl(photo, 'authors'))
@@ -1907,9 +1946,9 @@
     ready.then(function (url) {
       if (url && document.getElementById('d-photo-url')) document.getElementById('d-photo-url').value = url;
       upsert('authors', Object.assign({}, item, {
-        id: item.slug || item.id,
-        slug: item.slug || item.id,
-        name: val('d-title'),
+        id: slug,
+        slug: slug,
+        name: name,
         role: val('d-role'),
         bio: val('d-bio'),
         photo: url,
@@ -1933,6 +1972,8 @@
   var CYCLES_PAGE_SLUG = 'yak-cycles-data';
   var AUTHORS_PAGE_ID = 1900000002;
   var AUTHORS_PAGE_SLUG = 'yak-authors-data';
+  var PHOTO_PAGE_ID = 1900000003;
+  var PHOTO_PAGE_SLUG = 'yak-photostock-data';
 
   function publishAuthors() {
     if (!window.AdminApi || !AdminApi.upsertArchive || !AdminApi.token || !AdminApi.token()) {
@@ -1963,6 +2004,68 @@
         contentHtml: '<p></p>',
         contentText: JSON.stringify(list),
         source: 'desk-authors',
+      }],
+    });
+  }
+
+  function slimPhoto(p) {
+    if (!p || !p.id) return null;
+    var url = p.url || p.thumb || '';
+    if (!url || String(url).indexOf('data:') === 0) return null;
+    if (p.status && p.status !== 'approved') return null;
+    return {
+      id: p.id,
+      url: url,
+      thumb: p.thumb || url,
+      title: p.title || '',
+      tags: p.tags || [],
+      photographerId: p.photographerId || '',
+      photographerSlug: p.photographerSlug || '',
+      photographerName: p.photographerName || p.ownerName || '',
+      photographerTag: p.photographerTag || '',
+      status: 'approved',
+      createdAt: p.createdAt || p.updatedAt || '',
+      license: p.license || 'CC BY 4.0',
+    };
+  }
+
+  function slimPhotographer(p) {
+    if (!p || !(p.id || p.slug)) return null;
+    var photo = httpUrl(p.photo) || (p.photo && String(p.photo).indexOf('data:') !== 0 ? p.photo : '');
+    return {
+      id: p.id || p.slug,
+      name: p.name || '',
+      slug: p.slug || '',
+      email: p.email || '',
+      photo: photo || '',
+      bio: p.bio || '',
+      social: p.social || {},
+      tagSlug: p.tagSlug || ((p.slug || '') + '-photos'),
+      createdAt: p.createdAt || '',
+      updatedAt: p.updatedAt || '',
+    };
+  }
+
+  function publishPhotostock() {
+    if (!window.AdminApi || !AdminApi.upsertArchive || !AdminApi.token || !AdminApi.token()) {
+      return Promise.reject(new Error('нет ключа сервера'));
+    }
+    var photos = ((window.AdminStore && AdminStore.listPhotos()) || []).map(slimPhoto).filter(Boolean);
+    var photographers = ((window.AdminStore && AdminStore.listPhotographers()) || []).map(slimPhotographer).filter(Boolean);
+    return AdminApi.upsertArchive({
+      articles: [{
+        id: PHOTO_PAGE_ID,
+        slug: PHOTO_PAGE_SLUG,
+        title: 'Фотосток редакции',
+        date: todayIso(),
+        modified: new Date().toISOString(),
+        author: '',
+        categories: [],
+        categorySlugs: ['day-by-day'],
+        excerpt: '',
+        contentHtml: '<p></p>',
+        contentText: JSON.stringify({ photographers: photographers, photos: photos }),
+        source: 'desk-photostock',
       }],
     });
   }
@@ -2332,7 +2435,7 @@
       return true;
     }
     if (name === 'authors') {
-      if (!id && window.AdminGod) AdminGod.paintSection(ctx, 'authors', 'Авторы', '');
+      if (!id && window.AdminGod) AdminGod.paintSection(ctx, 'authors', 'Авторы', '#authors/new');
       else renderAuthors(ctx, id);
       return true;
     }
@@ -2360,6 +2463,8 @@
     archiveInfo: archiveInfo,
     mergedList: mergedList,
     allPhotos: allPhotos,
+    uploadDataUrl: uploadDataUrl,
+    publishPhotostock: publishPhotostock,
     portalHref: portalHref,
     read: read,
     upsertGuide: upsertGuide,

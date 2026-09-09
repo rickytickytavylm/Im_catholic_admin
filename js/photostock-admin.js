@@ -32,6 +32,29 @@
     });
   }
 
+  function uploadPhoto(dataUrl, folder) {
+    if (window.AdminDesk && AdminDesk.uploadDataUrl) return AdminDesk.uploadDataUrl(dataUrl, folder || 'photostock');
+    if (!dataUrl || String(dataUrl).indexOf('data:') !== 0) return Promise.resolve(dataUrl || '');
+    if (!window.AdminApi || !AdminApi.uploadMedia || !AdminApi.token || !AdminApi.token()) {
+      return Promise.resolve(dataUrl);
+    }
+    return AdminApi.uploadMedia({ dataUrl: dataUrl, folder: folder || 'photostock' }).then(function (pack) {
+      return (pack && pack.url) || dataUrl;
+    });
+  }
+
+  function pushStock(toast, ok) {
+    if (!window.AdminDesk || !AdminDesk.publishPhotostock) {
+      if (ok) toast(ok);
+      return Promise.resolve();
+    }
+    return AdminDesk.publishPhotostock().then(function () {
+      if (ok) toast(ok);
+    }).catch(function (e) {
+      toast((ok || 'Сохранено') + '. На сайт не ушло: ' + (e.message || 'нет связи'), true);
+    });
+  }
+
   function canManageCards(session, role) {
     return !!(role.canManagePhotographers || session.role === 'super' || session.role === 'chief' || session.role === 'photo_editor');
   }
@@ -176,35 +199,44 @@
       var name = document.getElementById('ph-name').value.trim();
       if (!name) { toast('Укажите имя', true); return; }
       var slug = document.getElementById('ph-slug').value.trim() || AdminStore.slugify(name);
-      ph.name = name;
-      ph.slug = slug;
-      ph.tagSlug = slug + '-photos';
-      ph.email = document.getElementById('ph-email').value.trim();
-      ph.photo = photoData;
-      ph.bio = document.getElementById('ph-bio').value.trim();
-      ph.social = {
-        vk: document.getElementById('ph-vk').value.trim(),
-        tg: document.getElementById('ph-tg').value.trim(),
-        max: document.getElementById('ph-max').value.trim(),
-        pinterest: document.getElementById('ph-pin').value.trim(),
-        site: document.getElementById('ph-site').value.trim(),
-      };
-      AdminStore.upsertPhotographer(ph, session.email);
-      try {
-        var desk = JSON.parse(localStorage.getItem('yak_desk') || '{}');
-        desk.photographers = desk.photographers || [];
-        var found = false;
-        desk.photographers.forEach(function (row, i) {
-          if (row.id === ph.id || row.slug === ph.slug) {
-            desk.photographers[i] = ph;
-            found = true;
-          }
-        });
-        if (!found) desk.photographers.unshift(ph);
-        localStorage.setItem('yak_desk', JSON.stringify(desk));
-      } catch (e) {}
-      toast('Сохранено. Карточка доступна на портале.');
-      go('photographers');
+      toast('Сохраняем карточку…');
+      var ready = (photoData && String(photoData).indexOf('data:') === 0)
+        ? uploadPhoto(photoData, 'photographers')
+        : Promise.resolve(photoData);
+      ready.then(function (url) {
+        ph.name = name;
+        ph.slug = slug;
+        ph.tagSlug = slug + '-photos';
+        ph.email = document.getElementById('ph-email').value.trim();
+        ph.photo = url;
+        ph.bio = document.getElementById('ph-bio').value.trim();
+        ph.social = {
+          vk: document.getElementById('ph-vk').value.trim(),
+          tg: document.getElementById('ph-tg').value.trim(),
+          max: document.getElementById('ph-max').value.trim(),
+          pinterest: document.getElementById('ph-pin').value.trim(),
+          site: document.getElementById('ph-site').value.trim(),
+        };
+        AdminStore.upsertPhotographer(ph, session.email);
+        try {
+          var desk = JSON.parse(localStorage.getItem('yak_desk') || '{}');
+          desk.photographers = desk.photographers || [];
+          var found = false;
+          desk.photographers.forEach(function (row, i) {
+            if (row.id === ph.id || row.slug === ph.slug) {
+              desk.photographers[i] = ph;
+              found = true;
+            }
+          });
+          if (!found) desk.photographers.unshift(ph);
+          localStorage.setItem('yak_desk', JSON.stringify(desk));
+        } catch (e) {}
+        return pushStock(toast, 'Сохранено. Карточка на сайте.');
+      }).then(function () {
+        go('photographers');
+      }).catch(function (e) {
+        toast(e.message || 'Не удалось сохранить карточку', true);
+      });
     };
 
     function paintWorks() {
@@ -221,29 +253,35 @@
     var works = document.getElementById('ph-works');
     if (works) works.onchange = function () {
       var files = [].slice.call(works.files || []);
+      var chain = Promise.resolve();
       files.forEach(function (file) {
         if (file.size > MAX_BYTES) return;
-        readFile(file).then(function (url) {
-          AdminStore.upsertMedia({
-            id: AdminStore.uid('media'),
-            kind: 'image',
-            title: file.name,
-            url: url,
-            thumb: url,
-            status: 'approved',
-            photographerId: ph.id,
-            photographerSlug: ph.slug,
-            photographerName: ph.name,
-            photographerTag: ph.tagSlug || (ph.slug + '-photos'),
-            tags: [ph.tagSlug || (ph.slug + '-photos')],
-            ownerEmail: session.email,
-            createdAt: new Date().toISOString(),
-          }, session.email);
-          paintWorks();
+        chain = chain.then(function () {
+          return readFile(file).then(function (dataUrl) {
+            return uploadPhoto(dataUrl, 'photostock').then(function (url) {
+              AdminStore.upsertMedia({
+                id: AdminStore.uid('media'),
+                kind: 'image',
+                title: file.name,
+                url: url,
+                thumb: url,
+                status: 'approved',
+                photographerId: ph.id,
+                photographerSlug: ph.slug,
+                photographerName: ph.name,
+                photographerTag: ph.tagSlug || (ph.slug + '-photos'),
+                tags: [ph.tagSlug || (ph.slug + '-photos')],
+                ownerEmail: session.email,
+                createdAt: new Date().toISOString(),
+              }, session.email);
+              paintWorks();
+            });
+          });
         });
       });
       works.value = '';
-      toast('Фото добавлены на карточку');
+      chain.then(function () { return pushStock(toast, 'Фото добавлены на карточку'); })
+        .catch(function (e) { toast(e.message || 'Не удалось загрузить фото', true); });
     };
   }
 
@@ -292,13 +330,11 @@
             if (tags == null) return;
             item.tags = tags.split(',').map(function (t) { return t.trim(); }).filter(Boolean);
             AdminStore.upsertMedia(item, session.email);
-            toast('Теги обновлены');
-            paint();
+            pushStock(toast, 'Теги обновлены').then(paint);
           } else if (act === 'ok') {
             item.status = 'approved';
             AdminStore.upsertMedia(item, session.email);
-            toast('Опубликовано');
-            paint();
+            pushStock(toast, 'Опубликовано').then(paint);
           } else if (act === 'del') {
             if (!confirm('Удалить фото?')) return;
             AdminStore.deleteMedia(id, session.email);
@@ -369,10 +405,8 @@
             var tags = prompt('Теги через запятую', (item.tags || []).join(', '));
             if (tags == null) return;
             item.tags = tags.split(',').map(function (t) { return t.trim(); }).filter(Boolean);
-            // повторная модерация не нужна
             AdminStore.upsertMedia(item, session.email);
-            toast('Теги сохранены');
-            paintOwnTable();
+            pushStock(toast, 'Теги сохранены').then(paintOwnTable);
           } else {
             if (!confirm('Удалить?')) return;
             AdminStore.deleteMedia(id, session.email);
@@ -459,10 +493,11 @@
               batch[idx].tags = tags;
               AdminStore.upsertMedia(batch[idx], session.email);
             });
-            toast('Отправлено на модерацию');
-            batch = [];
-            paintOwnTable();
-            panel.innerHTML = '<p class="hint-note">Отправлено на модерацию.</p>';
+            pushStock(toast, 'Отправлено на модерацию').then(function () {
+              batch = [];
+              paintOwnTable();
+              panel.innerHTML = '<p class="hint-note">Отправлено на модерацию.</p>';
+            });
           };
           return;
         }
@@ -470,27 +505,30 @@
         var file = files[i];
         panel.innerHTML = '<p class="hint-note">Загрузка… ' + (i + 1) + ' / ' + files.length + ' — ' + esc(file.name) + '</p>';
         readFile(file)
-          .then(function (url) {
-            var item = {
-              id: AdminStore.uid('media'),
-              kind: 'image',
-              title: file.name,
-              url: url,
-              ownerEmail: session.email,
-              ownerName: ph.name,
-              photographerId: ph.id,
-              photographerSlug: ph.slug,
-              photographerName: ph.name,
-              photographerTag: ph.tagSlug,
-              status: 'pending',
-              tags: [ph.tagSlug].filter(Boolean),
-              license: 'CC BY 4.0',
-              createdAt: new Date().toISOString(),
-            };
-            AdminStore.upsertMedia(item, session.email);
-            batch.push(item);
-            i += 1;
-            next();
+          .then(function (dataUrl) {
+            return uploadPhoto(dataUrl, 'photostock').then(function (url) {
+              var item = {
+                id: AdminStore.uid('media'),
+                kind: 'image',
+                title: file.name,
+                url: url,
+                thumb: url,
+                ownerEmail: session.email,
+                ownerName: ph.name,
+                photographerId: ph.id,
+                photographerSlug: ph.slug,
+                photographerName: ph.name,
+                photographerTag: ph.tagSlug,
+                status: 'pending',
+                tags: [ph.tagSlug].filter(Boolean),
+                license: 'CC BY 4.0',
+                createdAt: new Date().toISOString(),
+              };
+              AdminStore.upsertMedia(item, session.email);
+              batch.push(item);
+              i += 1;
+              next();
+            });
           })
           .catch(function () {
             toast('Ошибка чтения ' + file.name, true);
