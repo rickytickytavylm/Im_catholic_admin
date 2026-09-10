@@ -161,7 +161,7 @@
           return card('#media', it.url || it.thumb, it.title || (it.tags || []).slice(0, 2).join(', ') || 'Фото', (it.tags || []).slice(0, 3).join(' · '));
         }).join(''), ph.length) +
         band('Циклы', '#cycles', ((window.AdminDesk && AdminDesk.mergedList) ? AdminDesk.mergedList('cycle') : []).slice(0, 8).map(function (it) {
-          return card('#cycles/' + encodeURIComponent(it.id || it.slug), it.cover || it.image || 'assets/cards/articles-spirituality.webp', it.title, ((it.items || []).length ? it.items.length + ' статей' : it.subtitle || ''));
+          return card('#cycles/' + encodeURIComponent(it.id || it.slug), it.cover || it.image || 'assets/cards/articles-spirituality.webp', it.title, ((it.items || []).length ? it.items.length + ' материалов' : it.subtitle || ''));
         }).join('')) +
         band('Авторы', '#authors', authors.slice(0, 8).map(function (it) {
           return card('#authors/' + encodeURIComponent(it.slug || it.id), it.photo, it.name, it.role || '');
@@ -229,7 +229,7 @@
       if (type === 'event') return (it.date || '') + (it.city ? ' · ' + it.city : '');
       if (type === 'photo') return (it.tags || []).slice(0, 4).join(' · ');
       if (type === 'authors') return it.role || '';
-      if (type === 'cycle') return ((it.items || []).length ? (it.items.length + ' статей') : '') + (it.subtitle ? ' · ' + it.subtitle : '');
+      if (type === 'cycle') return ((it.items || []).length ? (it.items.length + ' материалов') : '') + (it.subtitle ? ' · ' + it.subtitle : '');
       if (type === 'church' || type === 'spirit') return it.sub || '';
       if (type === 'church-day') return it.date || '';
       return it.excerpt || it.date || '';

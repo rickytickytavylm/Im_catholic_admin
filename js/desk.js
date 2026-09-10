@@ -357,8 +357,11 @@
       if (seen[key]) return false;
       seen[key] = 1;
       if (q) {
-        var hay = ((x.title || '') + ' ' + (x.excerpt || '') + ' ' + (x.author || '') + ' ' + (x.slug || '')).toLowerCase();
-        if (hay.indexOf(q) === -1) return false;
+        var archiveQ = (type === 'news' || type === 'article') && archiveState[type] && String(archiveState[type].q || '').toLowerCase();
+        if (archiveQ !== q) {
+          var hay = ((x.title || '') + ' ' + (x.excerpt || '') + ' ' + (x.author || '') + ' ' + (x.slug || '')).toLowerCase();
+          if (hay.indexOf(q) === -1) return false;
+        }
       }
       return true;
     }).sort(function (a, b) {
@@ -397,11 +400,12 @@
       slugs = [typeof first === 'string' ? first : (first.slug || '')];
     }
     slugs = slugs.filter(Boolean);
-    if (!slugs.length) slugs = [type === 'news' ? 'news' : 'columns'];
+    var isPage = a.kind === 'page';
+    if (!slugs.length) slugs = [type === 'news' ? 'news' : (isPage ? 'page' : 'columns')];
     return {
       id: String(a.id || a.slug || ''),
       slug: a.slug || '',
-      kind: type === 'news' ? 'news' : 'article',
+      kind: type === 'news' ? 'news' : (isPage ? 'page' : 'article'),
       title: a.title || '',
       excerpt: a.excerpt || '',
       excerptHtml: a.excerptHtml || (hasMarkup(a.excerpt) ? a.excerpt : ''),
@@ -443,6 +447,33 @@
       error: st.error,
       hasMore: st.total == null ? loaded === 0 || loaded >= st.page * PAGE : loaded < st.total,
     };
+  }
+
+  function mergePacks(packs) {
+    var items = [];
+    var total = 0;
+    (packs || []).forEach(function (pack) {
+      items = items.concat((pack && pack.items) || []);
+      total += Number((pack && pack.total) || 0) || 0;
+    });
+    return { items: items, total: total };
+  }
+
+  function fetchArchivePage(type, page, q) {
+    q = String(q || '').trim();
+    if (type === 'news') {
+      return AdminApi.getArticles({ category: 'news', q: q, limit: PAGE, page: page });
+    }
+    if (q) {
+      return AdminApi.getArticles({ q: q, limit: PAGE, page: page });
+    }
+    return AdminApi.getArticles({ category: 'desk', q: '', limit: PAGE, page: page }).then(function (pack) {
+      if (pack && pack.items && pack.items.length) return pack;
+      return Promise.all([
+        AdminApi.getArticles({ category: 'columns', limit: PAGE, page: page }),
+        AdminApi.getArticles({ category: 'voices', limit: PAGE, page: page }),
+      ]).then(mergePacks);
+    });
   }
 
   function mergeArchive(type, items) {
@@ -492,25 +523,68 @@
       done(list);
       w.forEach(function (fn) { try { fn(list); } catch (e) { /* noop */ } });
     }
-    AdminApi.getArticles({ category: type === 'news' ? 'news' : 'columns', q: st.q || '', limit: PAGE, page: nextPage })
-      .then(function (pack) {
-        if (seq !== st.seq) return;
-        var items = ((pack && pack.items) || []).map(function (a) { return mapArchive(a, type); });
-        st.page = nextPage;
-        mergeArchive(type, items);
-        /* Postgres отдаёт COUNT строкой — приводим к числу */
-        var total = pack && pack.total != null ? Number(pack.total) : NaN;
-        if (isFinite(total) && total >= 0) st.total = total;
-        /* Неполная страница — архив кончился, дальше листать нечего */
+    var req = { q: st.q || '', limit: PAGE, page: nextPage };
+    if (type === 'news') req.category = 'news';
+    else if (st.q) req.category = '';
+    else req.category = 'desk';
+    function applyPack(pack) {
+      if (seq !== st.seq) return;
+      var items = ((pack && pack.items) || []).map(function (a) { return mapArchive(a, type); });
+      st.page = nextPage;
+      mergeArchive(type, items);
+      var total = pack && pack.total != null ? Number(pack.total) : NaN;
+      if (isFinite(total) && total >= 0) st.total = total;
         if (items.length < PAGE) st.total = archiveCache[type].length;
         st.loading = false;
-        var more = items.length === PAGE && (st.total == null || archiveCache[type].length < st.total);
-        if (opts.all && more && nextPage < 200) {
-          finish();
-          loadArchive(type, done, { all: true });
-          return;
-        }
+        var more = items.length >= PAGE && (st.total == null || archiveCache[type].length < st.total);
+      if (opts.all && more && nextPage < 200) {
         finish();
+        loadArchive(type, done, { all: true });
+        return;
+      }
+      finish();
+    }
+    function fetchDeskPack() {
+      var arts = AdminApi.getArticles(req);
+      if (type === 'article' && st.q && AdminApi.getPages) {
+        arts = Promise.all([
+          AdminApi.getArticles(req),
+          AdminApi.getPages({ q: st.q, limit: PAGE, page: nextPage }).catch(function () { return { items: [] }; }),
+        ]).then(function (pair) {
+          var a = pair[0] || {};
+          var p = pair[1] || {};
+          var pageItems = (p.items || p.pages || []).map(function (x) {
+            return Object.assign({}, x, { kind: 'page' });
+          });
+          return {
+            items: (a.items || []).concat(pageItems),
+            total: Number(a.total || 0) + Number(p.total || pageItems.length || 0),
+          };
+        });
+      }
+      return arts.then(function (pack) {
+        var got = ((pack && pack.items) || []).length;
+        if (type === 'article' && !st.q && req.category === 'desk' && nextPage === 1 && !got) {
+          return Promise.all([
+            AdminApi.getArticles({ category: 'columns', limit: PAGE, page: 1 }),
+            AdminApi.getArticles({ category: 'voices', limit: PAGE, page: 1 }),
+          ]).then(function (packs) {
+            var items = [];
+            var total = 0;
+            packs.forEach(function (p) {
+              items = items.concat((p && p.items) || []);
+              total += Number((p && p.total) || 0) || 0;
+            });
+            return { items: items, total: total };
+          });
+        }
+        return pack;
+      });
+    }
+    fetchDeskPack()
+      .then(function (pack) {
+        if (seq !== st.seq) return;
+        applyPack(pack);
       })
       .catch(function () {
         if (seq !== st.seq) return;
@@ -750,7 +824,10 @@
       else ctx.go(type === 'news' ? 'news' : 'articles');
       return;
     }
-    AdminApi.getArticle(id).then(function (a) {
+    var load = AdminApi.getArticle(id).catch(function () {
+      return AdminApi.getPage ? AdminApi.getPage(id) : Promise.reject(new Error('empty'));
+    });
+    load.then(function (a) {
       if (!a || !a.title) throw new Error('empty');
       var mapped = mapArchive(a, type);
       if (desk) mapped = Object.assign({}, mapped, desk, { source: 'desk' });
@@ -919,7 +996,11 @@
     }
     var slugs = (item.rubrics || []).slice();
     if (type === 'news' && slugs.indexOf('news') === -1) slugs.unshift('news');
-    if (type === 'article' && slugs.indexOf('columns') === -1) slugs.push('columns');
+    if (type === 'article' && slugs.indexOf('columns') === -1) {
+      var voices = { interview: 1, svidetelstva: 1, propovedi: 1 };
+      var isVoice = slugs.some(function (s) { return voices[s]; });
+      if (!isVoice) slugs.push('columns');
+    }
     return AdminApi.upsertArchive({
       articles: [{
         id: ensureNumericId(item),
@@ -2258,7 +2339,7 @@
   function loadPortalCycles(done) {
     if (window.YakCycles) { done(); return; }
     var s = document.createElement('script');
-    s.src = PORTAL + 'js/cycles-data.js?v=2026090901';
+    s.src = PORTAL + 'js/cycles-data.js?v=' + (window.YAK_BUILD || Date.now());
     s.onload = function () { done(); };
     s.onerror = function () { done(); };
     document.head.appendChild(s);
@@ -2324,9 +2405,9 @@
       '<input type="file" id="d-inline-file" accept="image/*" hidden />' +
       '</div>' +
       '<div class="cycle-arts panel" style="margin-top:16px">' +
-      '<h3>Статьи цикла</h3>' +
+      '<h3>Материалы цикла</h3>' +
       '<div class="author-search">' +
-      '<input class="input" id="d-art-q" placeholder="Добавить статью — поиск по названию" autocomplete="off" />' +
+      '<input class="input" id="d-art-q" placeholder="Статья, интервью, проповедь, свидетельство" autocomplete="off" />' +
       '<div class="author-suggest" id="d-art-suggest" hidden></div></div>' +
       '<div id="d-art-list" class="cycle-art-list"></div>' +
       '</div></div></div></div>';
@@ -2342,7 +2423,7 @@
       var box = document.getElementById('d-art-list');
       if (!box) return;
       if (!items.length) {
-        box.innerHTML = '<p class="hint-note">Пока пусто — найдите статью сверху.</p>';
+        box.innerHTML = '<p class="hint-note">Пока пусто — найдите материал сверху: статью, интервью, проповедь или свидетельство.</p>';
         return;
       }
       items.sort(function (a, b) { return (Number(a.order) || 0) - (Number(b.order) || 0); });
@@ -2368,6 +2449,19 @@
     }
     drawItems();
 
+    /* Цикл-хаб без сохранённого состава: берём ссылки из страницы цикла в нашей базе */
+    if (!items.length && item.hubSlug && window.YakCycles && YakCycles.hydrate) {
+      var hubBox = document.getElementById('d-art-list');
+      if (hubBox) hubBox.innerHTML = '<p class="hint-note">Загружаем состав цикла со страницы-хаба…</p>';
+      YakCycles.hydrate(item).then(function () {
+        if (items.length) return;
+        (item.items || []).forEach(function (it, i) {
+          items.push({ slug: it.slug, title: it.title || it.slug, order: it.order || (i + 1) });
+        });
+        drawItems();
+      });
+    }
+
     var aq = document.getElementById('d-art-q');
     var asg = document.getElementById('d-art-suggest');
     function showArts(list) {
@@ -2392,7 +2486,7 @@
     function searchArts(q) {
       var local = mergedList('article', q).slice(0, 8);
       if (!q || !window.AdminApi || !AdminApi.getArticles) { showArts(local); return; }
-      AdminApi.getArticles({ category: 'columns', q: q, limit: 20, page: 1 }).then(function (pack) {
+      AdminApi.getArticles({ q: q, limit: 20, page: 1 }).then(function (pack) {
         var extra = ((pack && pack.items) || []).map(function (a) {
           return { slug: a.slug || String(a.id), title: a.title };
         });
@@ -2435,6 +2529,8 @@
         image: val('d-cover'),
         intro: htmlToText(html).slice(0, 400),
         introHtml: html,
+        hubUrl: item.hubUrl || '',
+        hubSlug: item.hubSlug || '',
         items: items.map(function (it) { return { slug: it.slug, title: it.title, order: it.order }; }),
         status: status,
         source: 'desk',
