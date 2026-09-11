@@ -38,19 +38,25 @@
     { id: 'saints', title: 'Святые' },
     { id: 'bible', title: 'Библеистика' },
     { id: 'liturgy', title: 'Литургика' },
-    { id: 'interview', title: 'Интервью' },
-    { id: 'svidetelstva', title: 'Свидетельства' },
-    { id: 'propovedi', title: 'Проповеди' },
     { id: 'music', title: 'Музыка' },
     { id: 'puteshestviya', title: 'Путешествия' },
   ];
 
+  var VOICE_CATS = [
+    { id: 'interview', title: 'Интервью' },
+    { id: 'svidetelstva', title: 'Свидетельства' },
+    { id: 'propovedi', title: 'Проповеди' },
+  ];
+
   function articleCats() {
-    var extra = listTopics().filter(function (t) { return t.slug; }).map(function (t) {
+    var extra = listTopics().filter(function (t) {
+      return t.slug && t.slug !== 'voices' && t.slug !== 'news' && t.slug !== 'digest';
+    }).map(function (t) {
       return { id: t.slug, title: t.title };
     });
     var seen = {};
     ARTICLE_CATS.forEach(function (c) { seen[c.id] = 1; });
+    VOICE_CATS.forEach(function (c) { seen[c.id] = 1; });
     return ARTICLE_CATS.concat(extra.filter(function (c) {
       if (seen[c.id]) return false;
       seen[c.id] = 1;
@@ -357,8 +363,11 @@
       if (seen[key]) return false;
       seen[key] = 1;
       if (q) {
-        var archiveQ = (type === 'news' || type === 'article') && archiveState[type] && String(archiveState[type].q || '').toLowerCase();
-        if (archiveQ !== q) {
+        var hits = (type === 'news' || type === 'article') ? (archiveCache[type] || []) : [];
+        var fromServer = hits.some(function (a) {
+          return String(a.id) === String(x.id) || (x.slug && a.slug && a.slug === x.slug);
+        });
+        if (!fromServer) {
           var hay = ((x.title || '') + ' ' + (x.excerpt || '') + ' ' + (x.author || '') + ' ' + (x.slug || '')).toLowerCase();
           if (hay.indexOf(q) === -1) return false;
         }
@@ -935,7 +944,7 @@
   }
 
   function rubricTitle(id) {
-    var all = NEWS_CATS.concat(articleCats());
+    var all = NEWS_CATS.concat(articleCats()).concat(VOICE_CATS);
     for (var i = 0; i < all.length; i++) if (all[i].id === id) return all[i].title;
     return id;
   }
@@ -994,12 +1003,18 @@
     if (!window.AdminApi || !AdminApi.upsertArchive) {
       return Promise.reject(new Error('нет соединения с сервером'));
     }
-    var slugs = (item.rubrics || []).slice();
+    var slugs = (item.rubrics || []).slice().filter(function (s) { return s && s !== 'voices'; });
+    var voices = { interview: 1, svidetelstva: 1, propovedi: 1 };
+    var newsSlugs = { news: 1, digest: 1 };
+    var isVoice = slugs.some(function (s) { return voices[s]; });
     if (type === 'news' && slugs.indexOf('news') === -1) slugs.unshift('news');
-    if (type === 'article' && slugs.indexOf('columns') === -1) {
-      var voices = { interview: 1, svidetelstva: 1, propovedi: 1 };
-      var isVoice = slugs.some(function (s) { return voices[s]; });
-      if (!isVoice) slugs.push('columns');
+    if (isVoice) {
+      slugs = slugs.filter(function (s) { return !newsSlugs[s] && s !== 'columns'; });
+    } else if (type === 'article' && slugs.indexOf('columns') === -1) {
+      slugs.push('columns');
+    }
+    if (type === 'news') {
+      slugs = slugs.filter(function (s) { return !voices[s]; });
     }
     return AdminApi.upsertArchive({
       articles: [{
@@ -1058,7 +1073,13 @@
       '<div class="post-main panel">' +
       '<input class="editor-title" id="d-title" value="' + esc(item.title || '') + '" placeholder="' + (isNews ? 'Заголовок новости' : 'Заголовок статьи') + '" />' +
       '<div class="slug-quiet"><span>Адрес</span><span class="slug-path">/<input id="d-slug" value="' + esc(slug) + '" spellcheck="false" /></span></div>' +
-      '<div class="pub-rubrics">' + rubricChecks(cats, picked) + '</div>' +
+      '<div class="pub-rubrics">' +
+      (isNews
+        ? rubricChecks(cats, picked)
+        : '<div class="rubric-group"><strong>Статьи</strong>' + rubricChecks(articleCats(), picked) + '</div>' +
+          '<div class="rubric-group"><strong>Голоса</strong>' + rubricChecks(VOICE_CATS, picked) +
+          '<p class="hint-note">Интервью, проповедь и свидетельство живут в «Голосах», не в новостях.</p></div>') +
+      '</div>' +
       '<div class="pub-meta">' +
       '<div class="pub-cover">' +
       '<div class="cover-frame' + (cover ? '' : ' is-empty') + '" id="d-cover-frame">' +
@@ -1324,7 +1345,7 @@
     var body = document.getElementById('d-body');
     var author = findAuthor(val('d-author-slug'));
     var rubs = selectedRubrics().map(function (id) {
-      var all = NEWS_CATS.concat(articleCats());
+      var all = NEWS_CATS.concat(articleCats()).concat(VOICE_CATS);
       for (var i = 0; i < all.length; i++) if (all[i].id === id) return all[i].title;
       return id;
     }).filter(Boolean);

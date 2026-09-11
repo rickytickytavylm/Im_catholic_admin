@@ -482,7 +482,9 @@ table.data .title-link:hover { color: var(--accent); }
 }
 .post-editor-bar-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .pub-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 400px); gap: 18px; align-items: start; }
-.pub-rubrics { margin: 0 0 14px; }
+.pub-rubrics { margin: 0 0 14px; display: grid; gap: 12px; }
+.pub-rubrics .rubric-group strong { display: block; font-size: 12px; margin: 0 0 6px; color: var(--stone-700); }
+.pub-rubrics .hint-note { margin: 6px 0 0; font-size: 12px; color: var(--stone-500); }
 .pub-meta { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 12px; margin: 0 0 14px; align-items: start; }
 .pub-cover { display: grid; gap: 6px; }
 .pub-cover .cover-frame { aspect-ratio: 16 / 9; border-radius: 12px; }

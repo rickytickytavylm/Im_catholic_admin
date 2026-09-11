@@ -248,7 +248,8 @@
       var status;
       if (info.loading) status = 'Загружаю архив…';
       else if (info.error && !info.loaded) status = 'Сервер не ответил — показаны только локальные правки';
-      else if (info.total != null) status = 'Показано ' + list.length + ' из ' + info.total + (info.q ? ' по запросу «' + esc(info.q) + '»' : '');
+      else if (info.q) status = 'Найдено ' + list.length + ' по запросу «' + esc(info.q) + '»';
+      else if (info.total != null) status = 'Показано ' + list.length + ' из ' + info.total;
       else status = 'Показано ' + list.length;
       return (
         '<div class="panel archive-bar">' +
