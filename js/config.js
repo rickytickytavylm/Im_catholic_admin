@@ -27,6 +27,10 @@
     BRAND: 'ЯКатолик',
     APP_NAME: 'Редакция',
     API_BASE: String(override.API_BASE || params.api || storedApi || DEFAULT_API).replace(/\/$/, ''),
+    API_FALLBACKS: [
+      'https://fides.186-246-11-81.sslip.io',
+      'https://fides-at-ratioserver-production.up.railway.app',
+    ],
     ADMIN_TOKEN: override.ADMIN_TOKEN || params.token || storedToken || '',
     PORTAL_URL: override.PORTAL_URL || (
       /github\.io/i.test(location.host)

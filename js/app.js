@@ -186,18 +186,18 @@
 
   function checkServer() {
     var pill = document.getElementById('server-pill');
-    if (!pill || !window.AdminApi || !AdminApi.health) return;
-    AdminApi.health()
-      .then(function () {
-        pill.className = 'server-pill on';
-        pill.textContent = 'Сервер доступен';
-        pill.title = 'Публикация на портал доступна';
-      })
-      .catch(function () {
-        pill.className = 'server-pill off';
-        pill.textContent = 'Без сервера';
-        pill.title = 'Изменения сохраняются в редакции';
-      });
+    if (!pill || !window.AdminApi) return;
+    var run = AdminApi.connect ? AdminApi.connect() : AdminApi.health();
+    run.then(function () {
+      if (AdminApi.connect && AdminApi.connect.ok === false) throw new Error('offline');
+      pill.className = 'server-pill on';
+      pill.textContent = 'Сервер доступен';
+      pill.title = AdminApi.base ? AdminApi.base() : 'Публикация на портал доступна';
+    }).catch(function () {
+      pill.className = 'server-pill off';
+      pill.textContent = 'Нет связи';
+      pill.title = 'Если включён VPN — выключите и обновите страницу';
+    });
   }
 
   /* ---------- Dashboard ---------- */
@@ -713,7 +713,7 @@
       '<div class="topbar"><div><h1>Редактор</h1><p>Черновик сохраняется автоматически.</p></div>' +
       '<div class="topbar-actions">' +
       '<span class="autosave" id="autosave-state">Ожидание изменений</span>' +
-      '<a class="btn btn-ghost" href="#materials">Назад</a>' +
+      '<a class="btn btn-ghost btn-back" href="#materials">← Назад</a>' +
       '<button type="button" class="btn btn-primary" id="btn-save">Сохранить</button>' +
       '</div></div>' +
       ((mat.rubric === 'pages' || mat.kind === 'page')
@@ -940,7 +940,7 @@
     viewEl.innerHTML =
       '<div class="topbar"><div><h1>Страница</h1><p>Текст, обложка и публикация.</p></div>' +
       '<div class="topbar-actions">' +
-      '<a class="btn btn-ghost" href="#pages">Назад</a>' +
+      '<a class="btn btn-ghost btn-back" href="#pages">← Назад</a>' +
       '<button type="button" class="btn btn-ghost" id="pg-view">Смотреть на сайте</button>' +
       '<button type="button" class="btn btn-ghost" id="pg-draft">Сохранить черновик</button>' +
       '<button type="button" class="btn btn-primary" id="pg-publish">Опубликовать</button>' +
@@ -1973,6 +1973,19 @@
     viewEl.innerHTML =
       '<div class="topbar"><div><h1>Редакция</h1><p>Не удалось открыть раздел.</p></div></div>' +
       '<div class="panel"><p>' + esc(err && err.message ? err.message : err) + '</p></div>';
+  }
+  var netRetry = document.getElementById('net-retry');
+  if (netRetry) {
+    netRetry.onclick = function () {
+      if (!window.AdminApi || !AdminApi.connect) return;
+      AdminApi.connect._p = null;
+      netRetry.disabled = true;
+      AdminApi.connect().then(function () {
+        netRetry.disabled = false;
+        checkServer();
+        if (AdminApi.connect.ok) render();
+      });
+    };
   }
   try {
     checkServer();

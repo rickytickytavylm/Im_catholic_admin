@@ -25,6 +25,27 @@
     return 'background-image:url(\'' + u.replace(/'/g, '%27') + '\')';
   }
 
+  function loadingBox(text) {
+    return (
+      '<div class="yak-loading" role="status">' +
+      '<span class="yak-spin" aria-hidden="true"></span>' +
+      '<span>' + esc(text || 'Загрузка…') + '</span></div>'
+    );
+  }
+
+  function skelCards(n) {
+    var i;
+    var html = '';
+    for (i = 0; i < (n || 6); i++) {
+      html += '<div class="god-card yak-skel-card"><span class="god-thumb"></span><span class="god-copy"><strong></strong><small></small></span></div>';
+    }
+    return html;
+  }
+
+  function skelGrid(n) {
+    return '<div class="god-grid" aria-hidden="true">' + skelCards(n) + '</div>';
+  }
+
   function card(href, img, title, meta, wide) {
     return (
       '<a class="god-card' + (wide ? ' god-card--wide' : '') + '" href="' + href + '">' +
@@ -44,7 +65,7 @@
       '</div>' +
       (itemsHtml
         ? '<div class="god-rail">' + itemsHtml + '</div>'
-        : '<p class="god-miss">Не удалось загрузить раздел.</p>') +
+        : '<p class="god-miss">Пока пусто.</p>') +
       '</section>'
     );
   }
@@ -124,6 +145,10 @@
     function draw() {
       var news = newsItems();
       var arts = articleItems();
+      var newsInfo = window.AdminDesk && AdminDesk.archiveInfo ? AdminDesk.archiveInfo('news') : null;
+      var artsInfo = window.AdminDesk && AdminDesk.archiveInfo ? AdminDesk.archiveInfo('article') : null;
+      var newsBusy = !news.length && newsInfo && (newsInfo.loading || !newsInfo.loaded);
+      var artsBusy = !arts.length && artsInfo && (artsInfo.loading || !artsInfo.loaded);
       var vids = videoItems();
       var auds = audioItems();
       var evs = eventItems();
@@ -136,12 +161,12 @@
       view.innerHTML =
         '<div class="topbar"><div><h1>Обзор</h1>' +
         '<p>Все разделы портала.</p></div></div>' +
-        band('Новости', '#news', news.slice(0, 8).map(function (it) {
+        band('Новости', '#news', newsBusy ? skelCards(4) : news.slice(0, 8).map(function (it) {
           return card('#news/' + encodeURIComponent(it.id), it.image || it.cover || 'assets/cards/articles-spirituality.webp', it.title, it.date || it.excerpt);
-        }).join(''), news.length) +
-        band('Статьи', '#articles', arts.slice(0, 8).map(function (it) {
+        }).join(''), newsBusy ? null : news.length) +
+        band('Статьи', '#articles', artsBusy ? skelCards(4) : arts.slice(0, 8).map(function (it) {
           return card('#articles/' + encodeURIComponent(it.id), it.image || it.cover || 'assets/cards/articles-spirituality.webp', it.title, it.excerpt || it.date);
-        }).join(''), arts.length) +
+        }).join(''), artsBusy ? null : arts.length) +
         band('О Церкви', '#church', church.slice(0, 8).map(function (it) {
           return card('#church/' + encodeURIComponent(it.id), it.image, it.title, it.sub);
         }).join(''), church.length) +
@@ -246,7 +271,7 @@
       var info = archiveInfo();
       if (!info) return '';
       var status;
-      if (info.loading) status = 'Загружаю архив…';
+      if (info.loading) status = '<span class="yak-spin yak-spin--sm"></span> Загружаю архив…';
       else if (info.error && !info.loaded) status = 'Сервер не ответил — показаны только локальные правки';
       else if (info.q) status = 'Найдено ' + list.length + ' по запросу «' + esc(info.q) + '»';
       else if (info.total != null) status = 'Показано ' + list.length + ' из ' + info.total;
@@ -285,7 +310,9 @@
           ? '<div class="god-grid">' + list.map(function (it) {
             return card(hrefOf(it), imgOf(it), titleOf(it), metaOf(it));
           }).join('') + '</div>'
-          : '<div class="panel"><div class="empty">' + (info && !info.loading ? 'Ничего не найдено' : 'Загрузка') + '</div></div>');
+          : (info && !info.error && (info.loading || !info.loaded)
+            ? loadingBox('Загружаю материалы…') + skelGrid(6)
+            : '<div class="panel"><div class="empty">Ничего не найдено</div></div>'));
 
       var expBtn = document.getElementById('god-export');
       if (expBtn) expBtn.onclick = function () { AdminDesk.exportDesk(); };
@@ -336,7 +363,7 @@
     var desk = window.AdminDesk;
     ctx.viewEl.innerHTML =
       '<div class="topbar"><div><h1>' + esc(item.title) + '</h1><p>Карточка раздела.</p></div>' +
-      '<div class="topbar-actions"><a class="btn btn-ghost" href="#' + back + '">Назад</a>' +
+      '<div class="topbar-actions"><a class="btn btn-ghost btn-back" href="#' + back + '">← Назад</a>' +
       '<button type="button" class="btn btn-primary" id="god-save">Сохранить</button></div></div>' +
       '<div class="god-edit">' +
       '<div class="god-preview" style="' + thumbStyle(item.image) + '"></div>' +

@@ -10,6 +10,78 @@
     return (global.AdminConfig && global.AdminConfig.API_BASE) || '';
   }
 
+  function setBase(url) {
+    url = String(url || '').replace(/\/$/, '');
+    if (!url || !global.AdminConfig) return;
+    global.AdminConfig.API_BASE = url;
+    try { localStorage.setItem('yak_admin_api_override', url); } catch (e) {}
+  }
+
+  function candidates() {
+    var list = [];
+    var seen = {};
+    function add(u) {
+      u = String(u || '').replace(/\/$/, '');
+      if (!u || seen[u]) return;
+      seen[u] = 1;
+      list.push(u);
+    }
+    add(base());
+    ((global.AdminConfig && global.AdminConfig.API_FALLBACKS) || []).forEach(add);
+    return list;
+  }
+
+  function probe(url) {
+    var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 5000);
+    return fetch(url + '/health', {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      mode: 'cors',
+      credentials: 'omit',
+      signal: ctrl ? ctrl.signal : undefined,
+    }).then(function (res) {
+      clearTimeout(timer);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return url;
+    }).catch(function (err) {
+      clearTimeout(timer);
+      throw err;
+    });
+  }
+
+  function showNetBanner(on) {
+    var el = document.getElementById('net-banner');
+    if (!el) return;
+    el.hidden = !on;
+    document.body.classList.toggle('net-down', !!on);
+  }
+
+  function connect() {
+    if (connect._p) return connect._p;
+    var list = candidates();
+    connect._p = (function next(i) {
+      if (i >= list.length) {
+        connect.ok = false;
+        showNetBanner(true);
+        return Promise.resolve(base());
+      }
+      return probe(list[i]).then(function (url) {
+        setBase(url);
+        connect.ok = true;
+        showNetBanner(false);
+        return url;
+      }).catch(function () {
+        return next(i + 1);
+      });
+    })(0);
+    return connect._p;
+  }
+
+  function ready() {
+    return connect();
+  }
+
   function token() {
     return (global.AdminConfig && global.AdminConfig.ADMIN_TOKEN) || '';
   }
@@ -42,23 +114,27 @@
 
   function get(path, opts) {
     opts = opts || {};
-    return fetch(base() + path, {
-      method: 'GET',
-      headers: headers(opts.headers, false),
-      mode: 'cors',
-      credentials: 'omit',
-    }).then(parse);
+    return ready().then(function () {
+      return fetch(base() + path, {
+        method: 'GET',
+        headers: headers(opts.headers, false),
+        mode: 'cors',
+        credentials: 'omit',
+      }).then(parse);
+    });
   }
 
   function send(method, path, body, opts) {
     opts = opts || {};
-    return fetch(base() + path, {
-      method: method,
-      headers: headers(opts.headers, true),
-      mode: 'cors',
-      credentials: 'omit',
-      body: body == null ? undefined : JSON.stringify(body),
-    }).then(parse);
+    return ready().then(function () {
+      return fetch(base() + path, {
+        method: method,
+        headers: headers(opts.headers, true),
+        mode: 'cors',
+        credentials: 'omit',
+        body: body == null ? undefined : JSON.stringify(body),
+      }).then(parse);
+    });
   }
 
   /** Публичные чтения архива (без токена тоже ок) */
@@ -160,8 +236,12 @@
     });
   }
 
+  connect();
+
   global.AdminApi = {
     base: base,
+    setBase: setBase,
+    connect: connect,
     token: token,
     get: get,
     post: function (p, b) { return send('POST', p, b); },

@@ -143,7 +143,7 @@
 
     viewEl.innerHTML =
       '<div class="topbar"><div><h1>' + (isNew ? 'Новая карточка' : 'Карточка фотографа') + '</h1></div>' +
-      '<div class="topbar-actions"><a class="btn btn-ghost" href="#photographers">Назад</a>' +
+      '<div class="topbar-actions"><a class="btn btn-ghost btn-back" href="#photographers">← Назад</a>' +
       '<button type="button" class="btn btn-primary" id="ph-save">Сохранить</button></div></div>' +
       '<div class="panel form-grid">' +
       '<label>Имя и фамилия<input class="input" id="ph-name" value="' + esc(ph.name) + '" /></label>' +

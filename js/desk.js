@@ -712,7 +712,7 @@
     viewEl.innerHTML =
       '<div class="topbar"><div><h1>' + esc(title) + '</h1></div>' +
       '<div class="topbar-actions">' +
-      '<a class="btn btn-ghost" href="#' + back + '">Назад</a>' +
+      '<a class="btn btn-ghost btn-back" href="#' + back + '">← Назад</a>' +
       (portal ? '<a class="btn btn-ghost" href="' + portalHref(portal) + '" target="_blank" rel="noopener">На портале</a>' : '') +
       (onDelete ? '<button type="button" class="btn btn-ghost" id="desk-del">Снять</button>' : '') +
       '<button type="button" class="btn btn-ghost" id="desk-draft">Сохранить</button>' +
@@ -827,7 +827,7 @@
     var desk = deskRecord(type, id);
     var cached = desk || getItem(type, id);
     var hasText = cached && (cached.body || cached.contentHtml);
-    ctx.viewEl.innerHTML = '<div class="panel"><div class="empty">Загрузка полного текста</div></div>';
+    ctx.viewEl.innerHTML = '<div class="yak-loading yak-loading--page" role="status"><span class="yak-spin" aria-hidden="true"></span><span>Открываю материал…</span></div>';
     if (!window.AdminApi || !AdminApi.getArticle) {
       if (cached) renderFn(cached);
       else ctx.go(type === 'news' ? 'news' : 'articles');
@@ -1062,7 +1062,7 @@
     ctx.viewEl.innerHTML =
       '<div class="post-editor">' +
       '<div class="post-editor-bar">' +
-      '<a class="btn btn-ghost" href="#' + back + '">К списку</a>' +
+      '<a class="btn btn-ghost btn-back" href="#' + back + '">← Список</a>' +
       '<div class="post-editor-bar-actions">' +
       '<a class="btn btn-ghost" href="' + portalHref(portal) + '" target="_blank" rel="noopener">На сайте</a>' +
       (isNew ? '' : '<button type="button" class="btn btn-ghost" id="desk-del">Снять</button>') +
@@ -1831,7 +1831,7 @@
     ctx.viewEl.innerHTML =
       '<div class="topbar"><div><h1>День Церкви</h1><p>Литургический день: святой, чтение, молитва и цитата.</p></div>' +
       '<div class="topbar-actions">' +
-      '<a class="btn btn-ghost" href="#church-day">Назад</a>' +
+      '<a class="btn btn-ghost btn-back" href="#church-day">← Назад</a>' +
       '<a class="btn btn-ghost" href="' + portalHref('calendar.html') + '" target="_blank" rel="noopener">На портале</a>' +
       (isNew ? '' : '<button type="button" class="btn btn-ghost" id="desk-del">Снять</button>') +
       '<button type="button" class="btn btn-ghost" id="desk-draft">Сохранить черновик</button>' +
@@ -2385,7 +2385,7 @@
     ctx.viewEl.innerHTML =
       '<div class="post-editor">' +
       '<div class="post-editor-bar">' +
-      '<a class="btn btn-ghost" href="#cycles">К списку</a>' +
+      '<a class="btn btn-ghost btn-back" href="#cycles">← Список</a>' +
       '<div class="post-editor-bar-actions">' +
       '<a class="btn btn-ghost" href="' + portalHref('cycle.html?id=' + encodeURIComponent(item.id || 'new')) + '" target="_blank" rel="noopener">На сайте</a>' +
       (isNew ? '' : '<button type="button" class="btn btn-ghost" id="desk-del">Снять</button>') +

@@ -305,7 +305,7 @@
       '<div class="topbar"><div><h1>' + esc(item.title || 'Страница') + '</h1>' +
       '<p>' + esc(kindLabel(item.kind)) + (item.groupTitle ? ' · ' + esc(item.groupTitle) : '') + '</p></div>' +
       '<div class="topbar-actions">' +
-      '<a class="btn btn-ghost" href="#' + section + '">К разделу</a>' +
+      '<a class="btn btn-ghost btn-back" href="#' + section + '">← Раздел</a>' +
       '<a class="btn btn-ghost" href="' + portalBase() + portal + '" target="_blank" rel="noopener">На портале</a>' +
       '<button type="button" class="btn btn-ghost" id="g-draft">Сохранить черновик</button>' +
       '<button type="button" class="btn btn-primary" id="g-pub">Опубликовать</button>' +

@@ -240,7 +240,7 @@
     viewEl.innerHTML =
       '<div class="post-editor">' +
       '<div class="post-editor-bar">' +
-      '<a class="btn btn-ghost" href="#materials">Назад</a>' +
+      '<a class="btn btn-ghost btn-back" href="#materials">← Назад</a>' +
       '<span class="autosave" id="post-save-state">Черновик</span>' +
       '</div>' +
       '<div class="post-layout">' +
