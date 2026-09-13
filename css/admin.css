@@ -634,6 +634,7 @@ table.data .title-link:hover { color: var(--accent); }
 .rte-body:empty:before, .rte-body p:only-child:empty:before {
   content: attr(data-placeholder); color: var(--stone-500);
 }
+.rte-body u { text-decoration: underline; }
 .rte-body h2 { font-family: var(--serif); font-size: 28px; margin: 1.2em 0 .4em; }
 .rte-body h3 { font-family: var(--serif); font-size: 22px; margin: 1.1em 0 .35em; }
 .rte-body blockquote {

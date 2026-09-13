@@ -26,12 +26,34 @@
   }
 
   function slugify(s) {
+    if (window.AdminStore && AdminStore.slugify) return AdminStore.slugify(s);
+    var map = {
+      а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z',
+      и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r',
+      с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sch',
+      ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
+    };
     return String(s || '')
       .toLowerCase()
-      .replace(/ё/g, 'е')
-      .replace(/[^a-z0-9а-я]+/gi, '-')
+      .split('')
+      .map(function (ch) { return map[ch] != null ? map[ch] : ch; })
+      .join('')
+      .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
       .slice(0, 72) || ('lib-' + Date.now().toString(36));
+  }
+
+  function uniqueSlug(base, keepId) {
+    var slug = slugify(base);
+    var used = {};
+    allItems().forEach(function (it) {
+      if (!it || !it.id || it.id === keepId || it.status === 'hidden') return;
+      used[it.id] = true;
+    });
+    if (!used[slug]) return slug;
+    var n = 2;
+    while (used[slug + '-' + n]) n += 1;
+    return slug + '-' + n;
   }
 
   function todayIso() {
@@ -192,6 +214,7 @@
     var items = allItems().map(function (it) {
       var copy = Object.assign({}, it);
       delete copy.source;
+      delete copy._slugLocked;
       return copy;
     });
     var pack = {
@@ -380,13 +403,36 @@
             '</div>'
           : '') +
         '<input class="editor-title" id="lib-title-main" value="' + esc(church ? (item.titleOriginal || '') : (item.titleRu || '')) + '" placeholder="' + (church ? 'Оригинальное название' : 'Название на русском') + '" />' +
+        '<div class="field slug-row"><label>Адрес</label>' +
+        '<span class="slug-prefix">book.html?id=</span>' +
+        '<input class="input" id="lib-slug" value="' + esc(item.id || '') + '" placeholder="laudato-si" autocomplete="off" /></div>' +
         '<label class="field"><span>' + (church ? 'Русское название' : 'Оригинальное название') + '</span>' +
         '<input class="input" id="lib-title-alt" value="' + esc(church ? (item.titleRu || '') : (item.titleOriginal || '')) + '" /></label>' +
         '<label class="field"><span>Автор</span><input class="input" id="lib-author" value="' + esc(item.author || '') + '" placeholder="Как на карточке сайта. Клик ведёт на все книги автора." /></label>' +
         '<label class="field"><span>Аннотация</span><textarea class="textarea" id="lib-ann" rows="4">' + esc(item.annotation || '') + '</textarea></label>' +
         '<label class="field"><span>Текст на странице</span>' +
-        '<div class="rte lead-rte"><div class="rte-body" id="lib-text" contenteditable="true" data-placeholder="Можно выложить текст целиком, не только файл.">' +
-        (item.contentHtml || '') + '</div></div></label>' +
+        '<div class="rte">' +
+        '<div class="rte-bar" id="lib-rte-bar">' +
+        '<button type="button" data-block="p" title="Обычный абзац">Текст</button>' +
+        '<button type="button" data-block="h2" title="Заголовок">Заголовок</button>' +
+        '<button type="button" data-block="h3" title="Подзаголовок">Подзаголовок</button>' +
+        '<span class="rte-sep"></span>' +
+        '<button type="button" data-cmd="bold" title="Жирный">Жирный</button>' +
+        '<button type="button" data-cmd="italic" title="Курсив">Курсив</button>' +
+        '<button type="button" data-cmd="underline" title="Подчёркнутый">Подчёркнутый</button>' +
+        '<button type="button" data-block="quote" title="Цитата">Цитата</button>' +
+        '<button type="button" data-act="note" title="Сноска">Сноска</button>' +
+        '<span class="rte-sep"></span>' +
+        '<button type="button" data-cmd="insertUnorderedList" title="Список">Список</button>' +
+        '<button type="button" data-cmd="insertOrderedList" title="Нумерация">1. 2. 3.</button>' +
+        '<button type="button" data-act="link" title="Ссылка">Ссылка</button>' +
+        '<button type="button" data-act="image" title="Фото">Фото</button>' +
+        '</div>' +
+        '<div class="rte-body" id="lib-text" contenteditable="true" data-placeholder="Можно выложить текст целиком, не только файл. Вставка из Word и Docs сохраняет абзацы, списки и выделения.">' +
+        (item.contentHtml || '') + '</div>' +
+        '<input type="file" id="lib-inline-file" accept="image/*" hidden />' +
+        '</div>' +
+        '<p class="hint-note">Вставка из Word и Google Docs: абзацы, заголовки, списки, ссылки и выделения сохраняются.</p></label>' +
         '<div class="lib-dl-edit">' +
         '<h3>Файлы для скачивания</h3>' +
         '<div id="lib-files">' + filesHtml(downloads) + '</div>' +
@@ -496,7 +542,13 @@
       addedAt: item.addedAt || todayIso(),
       status: status,
     });
-    if (!next.id) next.id = slugify(next.titleOriginal || next.titleRu);
+    var rawSlug = val('lib-slug');
+    if (!isNew && item.id && (!rawSlug || rawSlug === item.id)) {
+      next.id = item.id;
+    } else {
+      next.id = uniqueSlug(rawSlug || next.titleOriginal || next.titleRu, item.id);
+    }
+    next._slugLocked = !!(document.getElementById('lib-slug') && document.getElementById('lib-slug').dataset.locked);
     return next;
   }
 
@@ -512,6 +564,9 @@
       : Promise.resolve();
     ctx.toast(status === 'published' ? 'Публикуем…' : 'Сохраняем…');
     return ready.then(function () {
+      return hoistHtmlImages(next.contentHtml).then(function (html) { next.contentHtml = html; });
+    }).then(function () {
+      if (item.id && item.id !== next.id) hideItem(item.id);
       upsertItem(next);
       if (status === 'published') return publishPack();
     }).then(function () {
@@ -522,7 +577,112 @@
     });
   }
 
+  function hoistHtmlImages(html) {
+    html = String(html || '');
+    var found = [];
+    html.replace(/src="(data:image[^"]+)"/g, function (_m, src) {
+      if (found.indexOf(src) === -1) found.push(src);
+      return _m;
+    });
+    if (!found.length || !window.AdminDesk || !AdminDesk.uploadDataUrl) return Promise.resolve(html);
+    var i = 0;
+    function next() {
+      if (i >= found.length) return Promise.resolve(html);
+      var src = found[i++];
+      return AdminDesk.uploadDataUrl(src, 'inline').then(function (url) {
+        html = html.split(src).join(url);
+        return next();
+      });
+    }
+    return next();
+  }
+
+  function sanitizePaste(raw) {
+    var box = document.createElement('div');
+    if (/<[a-z][\s\S]*>/i.test(raw)) box.innerHTML = raw;
+    else box.innerHTML = '<p>' + esc(raw).replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br>') + '</p>';
+    box.querySelectorAll('script,style,meta,link').forEach(function (n) { n.remove(); });
+    box.querySelectorAll('*').forEach(function (n) {
+      [].forEach.call(n.attributes, function (a) {
+        if (/^on/i.test(a.name)) n.removeAttribute(a.name);
+      });
+    });
+    box.querySelectorAll('h1').forEach(function (n) {
+      var h = document.createElement('h2');
+      h.innerHTML = n.innerHTML;
+      n.parentNode.replaceChild(h, n);
+    });
+    return box.innerHTML;
+  }
+
+  function mountLibRTE() {
+    var el = document.getElementById('lib-text');
+    var bar = document.getElementById('lib-rte-bar');
+    if (!el || !bar) return;
+    el.addEventListener('paste', function (e) {
+      e.preventDefault();
+      var html = (e.clipboardData && (e.clipboardData.getData('text/html') || e.clipboardData.getData('text/plain'))) || '';
+      document.execCommand('insertHTML', false, sanitizePaste(html));
+    });
+    bar.onclick = function (e) {
+      var btn = e.target.closest('button');
+      if (!btn) return;
+      el.focus();
+      var cmd = btn.getAttribute('data-cmd');
+      var block = btn.getAttribute('data-block');
+      var act = btn.getAttribute('data-act');
+      if (cmd) document.execCommand(cmd, false, null);
+      if (block === 'p' || block === 'h2' || block === 'h3') document.execCommand('formatBlock', false, block);
+      if (block === 'quote') {
+        document.execCommand('formatBlock', false, 'blockquote');
+        var q = el.querySelector('blockquote:not(.guide-quote)');
+        if (q) q.className = 'guide-quote';
+      }
+      if (act === 'note') {
+        document.execCommand('insertHTML', false, '<p class="guide-note">Пояснение для читателя</p>');
+      }
+      if (act === 'link') {
+        var href = prompt('Адрес ссылки', 'https://');
+        if (href) document.execCommand('createLink', false, href);
+      }
+      if (act === 'image') {
+        var input = document.getElementById('lib-inline-file');
+        if (!input) return;
+        input.onchange = function () {
+          var f = input.files && input.files[0];
+          if (!f) return;
+          var reader = new FileReader();
+          reader.onload = function () {
+            el.focus();
+            document.execCommand('insertHTML', false, '<figure class="rte-figure"><img src="' + esc(reader.result) + '" alt="" /></figure>');
+          };
+          reader.readAsDataURL(f);
+          input.value = '';
+        };
+        input.click();
+      }
+    };
+  }
+
+  function bindSlug(item, isNew) {
+    var title = document.getElementById('lib-title-main');
+    var slug = document.getElementById('lib-slug');
+    if (!title || !slug) return;
+    if (!isNew && item.id) slug.dataset.locked = '1';
+    if (item._slugLocked) slug.dataset.locked = '1';
+    if (isNew && !slug.value) slug.value = slugify(title.value);
+    title.addEventListener('input', function () {
+      if (!slug.dataset.locked) slug.value = slugify(title.value);
+    });
+    slug.addEventListener('input', function () { slug.dataset.locked = '1'; });
+    slug.addEventListener('blur', function () {
+      slug.value = slugify(slug.value || title.value);
+    });
+  }
+
   function bind(ctx, item, isNew, downloads, pickedThemes, draw) {
+    bindSlug(item, isNew);
+    mountLibRTE();
     var sec = document.getElementById('lib-section');
     if (sec) {
       sec.onchange = function () {
