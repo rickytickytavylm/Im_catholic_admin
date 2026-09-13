@@ -657,6 +657,9 @@ table.data .title-link:hover { color: var(--accent); }
   align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px;
 }
 .cycle-art-row small { display: block; color: var(--stone-500); font-size: 12px; }
+.lib-dl-edit { margin-top: 18px; }
+.lib-dl-edit h3 { margin: 0 0 10px; font-size: 15px; }
+.lib-dl-edit .cycle-art-row { grid-template-columns: 1fr auto; }
 .guide-live figcaption {
   margin: 6px 0 0; font-size: 12.5px; color: var(--stone-500);
 }

@@ -33,6 +33,7 @@
     { id: 'afisha', title: 'Афиша', group: 'Сайт' },
     { id: 'audio', title: 'Аудио', group: 'Сайт' },
     { id: 'video', title: 'Видео', group: 'Сайт' },
+    { id: 'library', title: 'Библиотека', group: 'Сайт' },
     { id: 'media', title: 'Фотосток', group: 'Сайт' },
     { id: 'church-day', title: 'День Церкви', group: 'Сайт' },
     { id: 'authors', title: 'Авторы', group: 'Люди' },
@@ -48,7 +49,6 @@
     { id: 'editor', title: 'Редактор', hidden: true },
     { id: 'photographer-edit', title: 'Карточка фотографа', hidden: true },
     { id: 'taxonomy-legacy', title: 'Рубрики и теги', hidden: true },
-    { id: 'library', title: 'Библиотека', hidden: true },
     { id: 'users', title: 'Пользователи', hidden: true },
     { id: 'logs', title: 'Журнал', hidden: true },
     { id: 'profile', title: 'Профиль', hidden: true },
@@ -162,7 +162,7 @@
         (item.id === 'materials' && r.name === 'editor') ||
         (item.id === 'pages' && r.name === 'page-editor') ||
         (item.id === 'photographers' && r.name === 'photographer-edit') ||
-        (item.id === 'media' && (r.name === 'photostock' || r.name === 'library'));
+        (item.id === 'media' && r.name === 'photostock');
       html += '<a href="#' + item.id + '" class="' + (active ? 'active' : '') + '">' + esc(item.title) + '</a>';
     });
     navEl.innerHTML = html;
@@ -273,13 +273,15 @@
         '<a class="btn btn-primary" href="#my-page">Моя страница</a>' +
         '<a class="btn btn-ghost" href="#upload-photos">Загрузить фото</a></p></div>';
     } else if (session.role === 'librarian') {
-      var books = AdminStore.listBooks();
+      var books = (window.AdminLibrary && AdminLibrary.allItems)
+        ? AdminLibrary.allItems().filter(function (b) { return b.status !== 'hidden'; })
+        : [];
       statsHtml =
-        card('Документов', books.length, 'в каталоге') +
-        card('Разделы', uniq(books.map(function (b) { return b.section; })).length, 'структура') +
-        card('PDF', books.filter(function (b) { return b.format === 'pdf'; }).length, 'формат') +
+        card('Карточек', books.length, 'в каталоге') +
+        card('Документы', books.filter(function (b) { return b.section === 'church'; }).length, 'Церковь') +
+        card('Книги', books.filter(function (b) { return b.section === 'books'; }).length, 'авторы') +
         card('Доступ', 'полный', 'библиотека');
-      listsHtml = '<div class="panel"><div class="panel-head"><h2>Быстрый переход</h2></div><p><a class="btn btn-primary" href="#media">Библиотека</a></p></div>';
+      listsHtml = '<div class="panel"><div class="panel-head"><h2>Быстрый переход</h2></div><p><a class="btn btn-primary" href="#library">Библиотека</a> <a class="btn btn-ghost" href="#library/rubrics">Рубрики</a></p></div>';
     }
 
     var desk = window.AdminDesk;
@@ -290,7 +292,7 @@
         ? '<a class="btn btn-primary" href="#publish">Опубликовать</a>'
         : '') +
       '</div></div>' +
-      (desk
+      (desk && session.role !== 'librarian'
         ? '<div class="desk-grid desk-grid--home">' +
           desk.BLOCKS.map(function (b) {
             var href = b.id === 'photo' ? '#media' : '#' + (b.id === 'article' ? 'articles' : b.id === 'event' ? 'afisha' : b.id) + '/new';
@@ -1918,8 +1920,8 @@
       mediaTab = 'images';
       renderMedia();
     } else if (r.name === 'library') {
-      mediaTab = 'documents';
-      renderMedia();
+      if (window.AdminLibrary) AdminLibrary.render(r.id, deskCtx);
+      else viewEl.innerHTML = '<div class="panel"><div class="empty">Модуль библиотеки не загрузился.</div></div>';
     } else if (r.name === 'authors') {
       if (window.AdminDesk) AdminDesk.renderRoute('authors', r.id, deskCtx);
       else {

@@ -120,7 +120,7 @@
       id: 'librarian',
       title: 'Библиотекарь',
       nav: ['dashboard', 'library'],
-      canPublish: false,
+      canPublish: true,
       canModerate: false,
       canManageUsers: false,
       canDeleteForever: false,
@@ -288,8 +288,8 @@
   }
 
   function canAccessNav(user, id) {
-    // aliases: old photostock/library → media; page-editor → pages
-    if (id === 'photostock' || id === 'library') id = 'media';
+    // aliases: old photostock → media; page-editor → pages
+    if (id === 'photostock') id = 'media';
     if (id === 'page-editor') id = 'pages';
     if (id === 'photographer-edit') id = 'photographers';
     if (id === 'publish' || id === 'news' || id === 'articles' || id === 'cycles' || id === 'audio' || id === 'video' || id === 'afisha' || id === 'church-day' || id === 'authors' || id === 'church' || id === 'spirit') {
