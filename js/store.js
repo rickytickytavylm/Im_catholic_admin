@@ -27,7 +27,7 @@
   var POST_RUBRICS = [
     { id: 'church-rus', title: 'Россия', section: 'news' },
     { id: 'santa-sede', title: 'Святой Престол', section: 'news' },
-    { id: 'world', title: 'Мир', section: 'news' },
+    { id: 'world', title: 'В мире', section: 'news' },
     { id: 'svidetelstva', title: 'Свидетельства', section: 'voices' },
     { id: 'interview', title: 'Интервью', section: 'voices' },
     { id: 'propovedi', title: 'Проповеди', section: 'voices' },

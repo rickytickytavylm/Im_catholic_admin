@@ -113,6 +113,38 @@
     });
   }
 
+  function uploadUrl(dataUrl, folder) {
+    if (!dataUrl || String(dataUrl).indexOf('data:') !== 0) return Promise.resolve(dataUrl || '');
+    if (window.AdminDesk && AdminDesk.uploadDataUrl) return AdminDesk.uploadDataUrl(dataUrl, folder || 'covers');
+    if (!window.AdminApi || !AdminApi.uploadMedia) {
+      return Promise.reject(new Error('нет соединения с сервером — фото останется только в этом браузере'));
+    }
+    return AdminApi.uploadMedia({ dataUrl: dataUrl, folder: folder || 'covers' }).then(function (pack) {
+      if (!pack || !pack.url) throw new Error('сервер не вернул ссылку на фото');
+      return pack.url;
+    });
+  }
+
+  function hoistHtml(html, folder) {
+    html = String(html || '');
+    var found = [];
+    html.replace(/src="(data:image[^"]+)"/g, function (_m, src) {
+      if (found.indexOf(src) === -1) found.push(src);
+      return _m;
+    });
+    if (!found.length) return Promise.resolve(html);
+    var i = 0;
+    function next() {
+      if (i >= found.length) return Promise.resolve(html);
+      var src = found[i++];
+      return uploadUrl(src, folder || 'inline').then(function (url) {
+        html = html.split(src).join(url);
+        return next();
+      });
+    }
+    return next();
+  }
+
   function datalist(id, items) {
     return '<datalist id="' + id + '">' + items.map(function (x) {
       var v = typeof x === 'string' ? x : x.title;
@@ -427,7 +459,10 @@
     file.onchange = function () {
       var f = file.files && file.files[0];
       if (!f) return;
-      readFile(f).then(function (url) { setCover(url); }).catch(function () { toast('Не удалось прочитать файл', true); });
+      toast('Сохраняем обложку в бакет…');
+      readFile(f).then(function (dataUrl) { return uploadUrl(dataUrl, 'covers'); })
+        .then(function (url) { setCover(url); toast('Обложка в бакете'); })
+        .catch(function (err) { toast((err && err.message) || 'Не удалось загрузить обложку', true); });
     };
     document.getElementById('p-cover-gal').onclick = function () {
       openGallery(false, function (urls) { if (urls[0]) setCover(urls[0]); });
@@ -501,6 +536,25 @@
       ctx.toast('Укажите дату публикации', true);
       return;
     }
+    var ready = Promise.resolve();
+    if (next.cover && next.cover.indexOf('data:') === 0) {
+      if (!silent) ctx.toast('Сохраняем фото на сервер…');
+      ready = uploadUrl(next.cover, 'covers').then(function (url) {
+        next.cover = url;
+        setCover(url);
+      });
+    }
+    ready.then(function () { return hoistHtml(next.body, 'inline'); }).then(function (html) {
+      next.body = html;
+      var bodyEl = document.getElementById('p-body');
+      if (bodyEl) bodyEl.innerHTML = html;
+      finishSave(ctx, mat, next, status, silent);
+    }).catch(function (err) {
+      ctx.toast((err && err.message) || 'Не удалось сохранить фото', true);
+    });
+  }
+
+  function finishSave(ctx, mat, next, status, silent) {
     AdminStore.upsertMaterial(next, ctx.session.email);
     if (window.AdminDesk && AdminDesk.linkAuthor && next.authorTag) {
       var slug = '';
@@ -560,7 +614,9 @@
       e.preventDefault();
       [].forEach.call(files, function (f) {
         if (f.type.indexOf('image') !== 0) return;
-        readFile(f).then(function (url) { insertHtml(el, imgBlock(url)); });
+        readFile(f).then(function (dataUrl) { return uploadUrl(dataUrl, 'inline'); })
+          .then(function (url) { insertHtml(el, imgBlock(url)); })
+          .catch(function (err) { toast((err && err.message) || 'Не удалось загрузить фото', true); });
       });
     });
     el.addEventListener('input', refreshSeo);
@@ -650,7 +706,9 @@
       input.multiple = !!multi;
       input.onchange = function () {
         var files = [].slice.call(input.files || []);
-        Promise.all(files.map(readFile)).then(done).catch(function () { toast('Не удалось прочитать файл', true); });
+        Promise.all(files.map(function (f) {
+          return readFile(f).then(function (dataUrl) { return uploadUrl(dataUrl, 'inline'); });
+        })).then(done).catch(function (err) { toast((err && err.message) || 'Не удалось загрузить файл', true); });
         input.value = '';
       };
       input.click();

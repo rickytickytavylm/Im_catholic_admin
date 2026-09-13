@@ -25,7 +25,7 @@
   var NEWS_CATS = [
     { id: 'news', title: 'Новости' },
     { id: 'church-rus', title: 'Россия' },
-    { id: 'sng', title: 'КЦ в мире' },
+    { id: 'sng', title: 'В мире' },
     { id: 'santa-sede', title: 'Святой Престол' },
   ];
 
@@ -75,7 +75,7 @@
   ];
 
   function emptyState() {
-    return { articles: [], events: [], audio: [], video: [], churchDays: [], authors: [], guides: [], authorLinks: [], photographers: [], videoChannels: [], cycles: [], topics: [], libraryItems: [], libraryRubrics: [] };
+    return { articles: [], events: [], audio: [], video: [], churchDays: [], authors: [], guides: [], authorLinks: [], photographers: [], videoChannels: [], cycles: [], topics: [], libraryItems: [], libraryRubrics: [], home: null, about: null };
   }
 
   var archiveCache = { news: [], article: [] };
@@ -1997,8 +1997,15 @@
       field('Категория', 'd-cat', lit.category || defaultCat, 'select', opts(DAY_CATS, lit.category || defaultCat)) +
       field('Литургический цвет', 'd-color', lit.color || '', 'select', opts(DAY_COLORS, lit.color || '')) +
       field('Название дня', 'd-title', lit.title, 'text', 'placeholder="Пятница XVIII обычной недели"') +
-      field('Святой дня', 'd-saint', lit.saint && lit.saint.name) +
-      field('Ссылка на святого (необязательно)', 'd-saint-href', lit.saint && lit.saint.href, 'text', 'placeholder="https://…"') +
+      '<div class="field"><label>Святой дня</label>' +
+      '<div class="rte">' +
+      '<div class="rte-bar" id="d-saint-bar">' +
+      '<button type="button" data-cmd="bold">Жирный</button>' +
+      '<button type="button" data-cmd="italic">Курсив</button>' +
+      '<button type="button" data-act="link">Ссылка</button>' +
+      '</div>' +
+      '<div class="rte-body" id="d-saint" contenteditable="true" data-placeholder="2–3 святых, у каждого своя ссылка"></div></div>' +
+      '<p class="hint-note">Форматирование и ссылки внутри поля. Отдельная «ссылка на святого» больше не нужна.</p></div>' +
       field('Чтение дня', 'd-reading', lit.reading, 'textarea') +
       field('Молитва дня', 'd-prayer', lit.prayer, 'textarea') +
       field('Цитата дня', 'd-quote', lit.quote, 'textarea') +
@@ -2013,12 +2020,47 @@
       var wd = document.getElementById('d-weekday');
       if (wd) wd.textContent = weekdayName(val('d-date')) || '';
     }
+    var saintEl = document.getElementById('d-saint');
+    if (saintEl) {
+      saintEl.innerHTML = (lit.saint && (lit.saint.html || lit.saint.name)) || '';
+      if (lit.saint && !lit.saint.html && lit.saint.name && lit.saint.href) {
+        saintEl.innerHTML = '<a href="' + esc(lit.saint.href) + '">' + esc(lit.saint.name) + '</a>';
+      } else if (lit.saint && lit.saint.html) {
+        saintEl.innerHTML = lit.saint.html;
+      } else if (lit.saint && lit.saint.name) {
+        saintEl.textContent = lit.saint.name;
+      }
+    }
+    var saintBar = document.getElementById('d-saint-bar');
+    if (saintBar && saintEl) {
+      saintBar.onclick = function (e) {
+        var btn = e.target.closest('button');
+        if (!btn) return;
+        saintEl.focus();
+        var cmd = btn.getAttribute('data-cmd');
+        var act = btn.getAttribute('data-act');
+        if (cmd) document.execCommand(cmd, false, null);
+        if (act === 'link') {
+          var href = prompt('Ссылка на святого', 'https://');
+          if (href) document.execCommand('createLink', false, href);
+        }
+        drawPreview();
+      };
+      saintEl.addEventListener('input', drawPreview);
+    }
+
+    function saintHtml() {
+      return saintEl ? saintEl.innerHTML : '';
+    }
+    function saintName() {
+      if (!saintEl) return '';
+      return (saintEl.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+
     function drawPreview() {
       var cat = val('d-cat') || defaultCat;
       var el = document.getElementById('d-preview');
       if (!el) return;
-      var saint = val('d-saint');
-      var saintHref = val('d-saint-href');
       function blk(label, body) {
         if (!body) return '';
         return '<div class="dp-block"><h4>' + esc(label) + '</h4>' + body + '</div>';
@@ -2028,13 +2070,13 @@
         '<span class="cal-rank cal-rank-' + catClass(cat) + '">' + esc(cat) + '</span>' +
         '<h3 class="dp-title">' + (esc(val('d-title')) || '<em class="dp-empty">Название дня</em>') + '</h3>' +
         (val('d-color') ? '<p class="dp-color">Литургический цвет: <b>' + esc(val('d-color')) + '</b></p>' : '') +
-        blk('Святой дня', saint ? (saintHref ? '<a href="' + esc(saintHref) + '">' + esc(saint) + '</a>' : '<p>' + esc(saint) + '</p>') : '') +
+        blk('Святой дня', saintHtml()) +
         blk('Чтение дня', val('d-reading') ? '<p>' + esc(val('d-reading')) + '</p>' : '') +
         blk('Молитва дня', val('d-prayer') ? '<p>' + esc(val('d-prayer')) + '</p>' : '') +
         blk('Цитата дня', val('d-quote') ? '<p class="dp-quote">' + esc(val('d-quote')) + '</p>' : '');
     }
     if (dateEl) dateEl.addEventListener('change', function () { syncWeekday(); drawPreview(); });
-    ['d-cat', 'd-color', 'd-title', 'd-saint', 'd-saint-href', 'd-reading', 'd-prayer', 'd-quote'].forEach(function (fid) {
+    ['d-cat', 'd-color', 'd-title', 'd-reading', 'd-prayer', 'd-quote'].forEach(function (fid) {
       var el = document.getElementById(fid);
       if (el) el.addEventListener('input', drawPreview);
       if (el && el.tagName === 'SELECT') el.addEventListener('change', drawPreview);
@@ -2045,14 +2087,54 @@
     document.getElementById('desk-pub').onclick = function () { saveChurch(ctx, item, 'published'); };
     var delBtn = document.getElementById('desk-del');
     if (delBtn) delBtn.onclick = function () {
-      if (confirm('Снять день с публикации?')) { hideItem('church-day', item.id); ctx.toast('Снято с публикации'); ctx.go('church-day'); }
+      if (!confirm('Снять день с публикации?')) return;
+      hideItem('church-day', item.id);
+      ctx.toast('Снимаем с сайта…');
+      publishChurchDays().then(function () {
+        ctx.toast('Снято с публикации');
+        ctx.go('church-day');
+      }).catch(function (err) {
+        ctx.toast((err && err.message) || 'Снято локально', true);
+        ctx.go('church-day');
+      });
     };
+  }
+
+  var CALENDAR_PAGE_ID = 1900000007;
+  var CALENDAR_PAGE_SLUG = 'yak-calendar-data';
+
+  function publishChurchDays() {
+    if (!window.AdminApi || !AdminApi.upsertArchive) {
+      return Promise.reject(new Error('нет соединения с сервером'));
+    }
+    var items = (read().churchDays || []).filter(function (d) {
+      return d && d.date && (!d.status || d.status === 'published');
+    });
+    return AdminApi.upsertArchive({
+      articles: [{
+        id: CALENDAR_PAGE_ID,
+        slug: CALENDAR_PAGE_SLUG,
+        title: 'Дни Церкви',
+        date: todayIso(),
+        modified: new Date().toISOString(),
+        author: '',
+        categories: [],
+        categorySlugs: ['day-by-day'],
+        excerpt: '',
+        contentHtml: '<p></p>',
+        contentText: JSON.stringify({ days: items }),
+        source: 'desk-calendar',
+      }],
+    });
   }
 
   function saveChurch(ctx, item, status) {
     var date = val('d-date') || todayIso();
     var title = val('d-title');
     if (!title) { ctx.toast('Укажите название дня', true); return; }
+    var saintBox = document.getElementById('d-saint');
+    var saintHtml = saintBox ? saintBox.innerHTML : '';
+    var saintName = saintBox ? (saintBox.textContent || '').replace(/\s+/g, ' ').trim() : '';
     upsert('church-day', Object.assign({}, item, {
       date: date,
       weekday: weekdayName(date),
@@ -2062,14 +2144,25 @@
         title: title,
         category: val('d-cat') || (weekdayName(date) === 'Воскресенье' ? 'воскресный' : 'будний'),
         color: val('d-color'),
-        saint: { name: val('d-saint'), href: val('d-saint-href') },
+        saint: { name: saintName, html: saintHtml },
         reading: val('d-reading'),
         prayer: val('d-prayer'),
         quote: val('d-quote'),
       },
     }));
-    ctx.toast(status === 'published' ? 'Опубликовано' : 'Черновик сохранён');
-    ctx.go('church-day');
+    if (status !== 'published' && status !== 'draft') {
+      ctx.toast('Черновик сохранён');
+      ctx.go('church-day');
+      return;
+    }
+    ctx.toast(status === 'published' ? 'Отправляем на сайт…' : 'Сохраняем…');
+    publishChurchDays().then(function () {
+      ctx.toast(status === 'published' ? 'День на сайте' : 'Черновик сохранён');
+      ctx.go('church-day');
+    }).catch(function (err) {
+      ctx.toast((err && err.message) || 'Сохранено только в этом браузере', true);
+      ctx.go('church-day');
+    });
   }
 
   function catalogPubs() {

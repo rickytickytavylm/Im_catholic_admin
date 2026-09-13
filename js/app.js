@@ -25,6 +25,7 @@
   /* Меню = блоки сайта, не склад сущностей CMS */
   var NAV = [
     { id: 'dashboard', title: 'Обзор', group: 'Сайт' },
+    { id: 'home', title: 'Главная', group: 'Сайт' },
     { id: 'news', title: 'Новости', group: 'Сайт' },
     { id: 'articles', title: 'Статьи', group: 'Сайт' },
     { id: 'cycles', title: 'Циклы', group: 'Сайт' },
@@ -36,6 +37,7 @@
     { id: 'library', title: 'Библиотека', group: 'Сайт' },
     { id: 'media', title: 'Фотосток', group: 'Сайт' },
     { id: 'church-day', title: 'День Церкви', group: 'Сайт' },
+    { id: 'about', title: 'О проекте', group: 'Сайт' },
     { id: 'authors', title: 'Авторы', group: 'Люди' },
     { id: 'taxonomy', title: 'Рубрики и темы', group: 'Сайт' },
     { id: 'photographers', title: 'Фотографы', group: 'Люди' },
@@ -685,13 +687,15 @@
     }
     AdminApi.upsertArchive({
       articles: [{
-        slug: mat.id,
+        slug: mat.slug || mat.id,
         title: mat.title,
         contentHtml: mat.body,
         excerpt: mat.excerpt,
-        categories: [mat.rubric],
+        categories: mat.rubrics && mat.rubrics.length ? mat.rubrics : [mat.rubric],
+        categorySlugs: mat.rubrics && mat.rubrics.length ? mat.rubrics : [mat.rubric],
         date: new Date().toISOString(),
         author: mat.authorName,
+        image: (mat.cover && String(mat.cover).indexOf('data:') !== 0) ? mat.cover : undefined,
       }],
     }).then(function () {
       toast('Upsert в архив отправлен');
@@ -959,7 +963,8 @@
       '<div class="toolbar" id="pg-toolbar">' +
       '<button type="button" class="btn btn-ghost" data-tb="bold"><b>B</b> Жирный</button>' +
       '<button type="button" class="btn btn-ghost" data-tb="quote">«» Цитата</button>' +
-      '<button type="button" class="btn btn-ghost" data-tb="image">🖼 Картинка URL</button>' +
+      '<button type="button" class="btn btn-ghost" data-tb="image">🖼 Картинка</button>' +
+      '<input type="file" id="pg-inline-file" accept="image/*" hidden />' +
       '<button type="button" class="btn btn-ghost" data-tb="embed">&lt;/&gt; Embed</button>' +
       '<button type="button" class="btn btn-ghost" data-tb="preview">◉ Ссылка предпросмотра</button>' +
       '</div>' +
@@ -1084,6 +1089,27 @@
       });
     }
 
+    function hoistPageImages(html) {
+      html = String(html || '');
+      var found = [];
+      html.replace(/src="(data:image[^"]+)"/g, function (_m, src) {
+        if (found.indexOf(src) === -1) found.push(src);
+        return _m;
+      });
+      if (!found.length) return Promise.resolve(html);
+      if (!window.AdminDesk || !AdminDesk.uploadDataUrl) return Promise.resolve(html);
+      var i = 0;
+      function next() {
+        if (i >= found.length) return Promise.resolve(html);
+        var src = found[i++];
+        return AdminDesk.uploadDataUrl(src, 'pages').then(function (url) {
+          html = html.split(src).join(url);
+          return next();
+        });
+      }
+      return next();
+    }
+
     function save(statusOverride, silent) {
       var data = collect();
       if (statusOverride) data.status = statusOverride;
@@ -1093,12 +1119,24 @@
           data.status = 'scheduled';
         }
       }
-      page = AdminStore.upsertPage(data, session.email);
-      document.getElementById('pg-seo-title').value = page.seoTitle || '';
-      document.getElementById('pg-seo-desc').value = page.seoDescription || '';
-      document.getElementById('pg-status').value = page.status;
-      document.getElementById('pg-url-preview').textContent = portalPageUrl(page.slug);
-      if (!silent) toast(page.status === 'published' ? 'Опубликовано' : page.status === 'scheduled' ? 'Запланировано' : 'Черновик сохранён');
+      var coverReady = (data.cover && data.cover.indexOf('data:') === 0 && window.AdminDesk && AdminDesk.uploadDataUrl)
+        ? AdminDesk.uploadDataUrl(data.cover, 'pages').then(function (url) { data.cover = url; })
+        : Promise.resolve();
+      coverReady.then(function () { return hoistPageImages(data.body); }).then(function (html) {
+        data.body = html;
+        var bodyEl = document.getElementById('pg-body');
+        if (bodyEl) bodyEl.value = html;
+        var coverEl = document.getElementById('pg-cover');
+        if (coverEl) coverEl.value = data.cover || '';
+        page = AdminStore.upsertPage(data, session.email);
+        document.getElementById('pg-seo-title').value = page.seoTitle || '';
+        document.getElementById('pg-seo-desc').value = page.seoDescription || '';
+        document.getElementById('pg-status').value = page.status;
+        document.getElementById('pg-url-preview').textContent = portalPageUrl(page.slug);
+        if (!silent) toast(page.status === 'published' ? 'Опубликовано' : page.status === 'scheduled' ? 'Запланировано' : 'Черновик сохранён');
+      }).catch(function (err) {
+        toast((err && err.message) || 'Не удалось сохранить', true);
+      });
     }
 
     document.getElementById('pg-title').addEventListener('input', function () {
@@ -1125,9 +1163,19 @@
     document.getElementById('pg-cover-file').addEventListener('change', function (e) {
       var file = e.target.files && e.target.files[0];
       if (!file) return;
-      readFileAsDataUrl(file).then(function (url) {
+      toast('Сохраняем обложку в бакет…');
+      readFileAsDataUrl(file).then(function (dataUrl) {
+        if (window.AdminDesk && AdminDesk.uploadDataUrl) return AdminDesk.uploadDataUrl(dataUrl, 'pages');
+        if (window.AdminApi && AdminApi.uploadMedia) {
+          return AdminApi.uploadMedia({ dataUrl: dataUrl, folder: 'pages' }).then(function (pack) {
+            if (!pack || !pack.url) throw new Error('сервер не вернул ссылку');
+            return pack.url;
+          });
+        }
+        return dataUrl;
+      }).then(function (url) {
         document.getElementById('pg-cover').value = url;
-        toast('Обложка загружена (data URL)');
+        toast(String(url).indexOf('data:') === 0 ? 'Обложка только в браузере — бакет недоступен' : 'Обложка в бакете');
         var side = document.getElementById('pg-cover').closest('.panel');
         var prev = side.querySelector('.cover-preview');
         if (!prev) {
@@ -1136,7 +1184,7 @@
           document.getElementById('pg-cover-file').insertAdjacentElement('afterend', prev);
         }
         prev.style.backgroundImage = "url('" + String(url).replace(/'/g, '%27') + "')";
-      }).catch(function () { toast('Не удалось прочитать файл', true); });
+      }).catch(function (err) { toast((err && err.message) || 'Не удалось загрузить обложку', true); });
     });
 
     document.getElementById('cycle-add').onclick = function () {
@@ -1158,9 +1206,37 @@
         } else if (act === 'quote') {
           insert = '<blockquote>' + (selected || 'цитата') + '</blockquote>';
         } else if (act === 'image') {
-          var imgUrl = prompt('URL изображения', 'https://');
-          if (!imgUrl) return;
-          insert = '<p><img src="' + imgUrl + '" alt="" /></p>';
+          var inline = document.getElementById('pg-inline-file');
+          if (!inline) {
+            var imgUrl = prompt('URL изображения', 'https://');
+            if (!imgUrl) return;
+            insert = '<p><img src="' + imgUrl + '" alt="" /></p>';
+          } else {
+            inline.onchange = function () {
+              var f = inline.files && inline.files[0];
+              if (!f) return;
+              toast('Сохраняем фото в бакет…');
+              readFileAsDataUrl(f).then(function (dataUrl) {
+                if (window.AdminDesk && AdminDesk.uploadDataUrl) return AdminDesk.uploadDataUrl(dataUrl, 'pages');
+                if (window.AdminApi && AdminApi.uploadMedia) {
+                  return AdminApi.uploadMedia({ dataUrl: dataUrl, folder: 'pages' }).then(function (pack) {
+                    if (!pack || !pack.url) throw new Error('сервер не вернул ссылку');
+                    return pack.url;
+                  });
+                }
+                return dataUrl;
+              }).then(function (url) {
+                var start2 = ta.selectionStart;
+                var end2 = ta.selectionEnd;
+                var chunk = '<p><img src="' + url + '" alt="" /></p>';
+                ta.value = ta.value.slice(0, start2) + chunk + ta.value.slice(end2);
+                ta.focus();
+              }).catch(function (err) { toast((err && err.message) || 'Не удалось загрузить фото', true); });
+              inline.value = '';
+            };
+            inline.click();
+            return;
+          }
         } else if (act === 'embed') {
           var code = prompt('Код embed (iframe / HTML)', '<iframe src=""></iframe>');
           if (code == null) return;
@@ -1921,6 +1997,12 @@
     } else if (r.name === 'media' || r.name === 'photostock') {
       mediaTab = 'images';
       renderMedia();
+    } else if (r.name === 'home') {
+      if (window.AdminHome) AdminHome.render(deskCtx);
+      else viewEl.innerHTML = '<div class="panel"><div class="empty">Модуль главной не загрузился.</div></div>';
+    } else if (r.name === 'about') {
+      if (window.AdminAbout) AdminAbout.render(deskCtx);
+      else viewEl.innerHTML = '<div class="panel"><div class="empty">Модуль «О проекте» не загрузился.</div></div>';
     } else if (r.name === 'library') {
       if (window.AdminLibrary) AdminLibrary.render(r.id, deskCtx);
       else viewEl.innerHTML = '<div class="panel"><div class="empty">Модуль библиотеки не загрузился.</div></div>';
