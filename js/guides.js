@@ -183,7 +183,7 @@
 
   function parentOptions(section) {
     return catalog(section).filter(function (x) {
-      return x.kind === 'cards' || x.kind === 'hub';
+      return x.kind === 'cards' || x.kind === 'hub' || x.kind === 'navigator';
     });
   }
 
@@ -245,7 +245,9 @@
   }
 
   function startNew(ctx, section) {
-    var parents = parentOptions(section).filter(function (p) { return p.kind === 'cards'; });
+    var parents = parentOptions(section).filter(function (p) {
+      return p.kind === 'cards' || p.kind === 'navigator';
+    });
     if (!parents.length) {
       ctx.toast('Сначала откройте подраздел', true);
       return;

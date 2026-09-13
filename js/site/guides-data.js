@@ -85,6 +85,13 @@
         image: 'assets/cards/church-deepen.webp',
       },
       {
+        id: 'structure',
+        title: 'Как устроена Католическая Церковь',
+        sub: 'Папа, епископ, приход, монашествующие и миряне',
+        tone: 'e',
+        image: 'assets/cards/church-become-parish.webp',
+      },
+      {
         id: 'navigator',
         title: 'Навигатор по католической жизни',
         sub: 'Если нужен не маршрут, а справочник по темам',
@@ -220,7 +227,7 @@
         'Чужой опыт не заменяет вашего пути, но снимает ощущение, что вы «единственный, кто ничего не понимает». Ниже — свидетельства из архива.',
         [
           { h2: 'Зачем читать свидетельства', p: 'Они показывают разные входы в веру: через красоту литургии, через кризис, через семью, через книги, через тишину шума. Общее одно — Бог приводит людей по-разному, но всегда конкретно.' },
-          { note: 'Если хотите рассказать свою историю редакции — напишите через контакты Рускатолик / ЯКатолик.' },
+          { note: 'Если хотите рассказать свою историю редакции — напишите в ЯКатолик через раздел «Спросить».' },
         ]
       ), {
         siblingsOf: 'first-time',
@@ -640,68 +647,80 @@
       'navigator': {
         type: 'navigator',
         title: 'Навигатор по католической жизни',
-        desc: 'Справочник тем · Каждый пункт ведёт к тексту, разделу или практической странице',
+        desc: 'Справочник тем · Каждый пункт ведёт на свою страницу, которую можно наполнить в редакции',
         groups: [
           {
             title: 'Во что мы верим',
             items: [
-              { title: 'Кто такой Бог: Отец, Сын и Святой Дух', href: 'church.html?path=nav-god', note: 'Кратко о Троице' },
-              { title: 'Кто такой Иисус Христос', href: 'church.html?path=nav-jesus', note: 'Воплощение, Крест, Воскресение' },
-              { title: 'Что такое Церковь', href: 'church.html?path=nav-church-what', note: 'Зачем нужна община веры' },
-              { title: 'Кто такая Дева Мария', href: 'church.html?path=nav-mary' },
-              { title: 'Святые — друзья и заступники', href: 'church.html?path=nav-saints' },
-              { title: 'Жизнь вечная', href: 'church.html?path=nav-eternal', note: 'Надежда христианина' },
-              { title: 'Экуменизм и другие христиане', href: 'archive.html?q=' + encodeURIComponent('экуменический') },
+              { title: 'Кто такой Бог: Отец, Сын и Святой Дух', href: 'church.html?path=nav-god' },
+              { title: 'Кто такой Иисус Христос и почему Он умер и воскрес', href: 'church.html?path=nav-jesus' },
+              { title: 'Что такое Церковь и зачем она нужна', href: 'church.html?path=nav-church-what', note: 'Община веры' },
+              { title: 'Кто такая Дева Мария', href: 'church.html?path=nav-mary', note: 'Догматы, почитание, Розарий' },
+              { title: 'Святые — наши друзья и заступники', href: 'church.html?path=nav-saints' },
+              { title: 'Жизнь вечная: воскресение, рай, ад, чистилище', href: 'church.html?path=nav-eternal' },
+              { title: 'Экуменизм и отношение к другим христианам', href: 'church.html?path=nav-ecumenism' },
             ],
           },
           {
             title: 'Таинства и литургия',
             items: [
-              { title: 'Что происходит на Мессе', href: 'spiritual-life.html?path=mass-guide' },
-              { title: 'Евхаристия', href: 'spiritual-life.html?path=eucharist-faq' },
-              { title: 'Что такое таинства', href: 'spiritual-life.html?path=sacraments-what' },
-              { title: 'Исповедь без страха', href: 'church.html?path=return-confession' },
-              { title: 'Литургический календарь', href: 'calendar.html' },
+              { title: 'Что происходит на Мессе', href: 'church.html?path=nav-mass', note: 'Путеводитель' },
+              { title: 'Евхаристия — сердце жизни Церкви', href: 'church.html?path=nav-eucharist' },
+              { title: 'Что такое Церковь и зачем она нужна', href: 'church.html?path=nav-church-what' },
+              { title: 'Что такое таинства и как к ним приступить', href: 'church.html?path=deepen-sacraments' },
+              { title: 'Исповедь: как подготовиться и не бояться', href: 'church.html?path=return-confession' },
+              { title: 'Жизнь вечная: воскресение, рай, ад, чистилище', href: 'church.html?path=nav-eternal' },
+              { title: 'Цвета литургического года и католический календарь', href: 'church.html?path=nav-liturgical-year' },
             ],
           },
           {
             title: 'Как жить по вере',
             items: [
-              { title: 'Десять заповедей сегодня', href: 'church.html?path=nav-commandments' },
-              { title: 'Добродетели, грех, совесть', href: 'church.html?path=nav-conscience' },
-              { title: 'Освящение повседневности', href: 'church.html?path=deepen-daily' },
-              { title: 'Социальное учение и общий дом', href: 'archive.html?q=Laudato' },
-              { title: 'Когда тяжело верить', href: 'church.html?path=nav-suffering' },
+              { title: 'Десять заповедей сегодня', href: 'church.html?path=nav-commandments', note: 'Простое объяснение' },
+              { title: 'Заповеди блаженств: путь к счастью, предложенный Иисусом', href: 'church.html?path=nav-beatitudes' },
+              { title: 'Добродетели и грех: главное, что нужно знать', href: 'church.html?path=nav-conscience' },
+              { title: 'Воспитание совести и как принимать решения', href: 'church.html?path=nav-decisions' },
+              { title: 'Социальное учение Церкви', href: 'church.html?path=nav-social', note: 'Достоинство, справедливость, мир, экология' },
+              { title: 'Биоэтика и защита жизни', href: 'church.html?path=nav-bioethics' },
+              { title: 'Прощение и примирение', href: 'church.html?path=nav-forgiveness' },
             ],
           },
           {
             title: 'Молитва и духовная жизнь',
             items: [
-              { title: 'Что такое молитва', href: 'spiritual-life.html?path=what-is-prayer' },
-              { title: 'Основные молитвы', href: 'spiritual-life.html?path=basic-prayers' },
-              { title: 'Розарий', href: 'spiritual-life.html?path=rosary' },
-              { title: 'Lectio Divina', href: 'spiritual-life.html?path=lectio' },
-              { title: 'Литургия Часов', href: 'spiritual-life.html?path=liturgy-hours' },
+              { title: 'Как начать молиться: первые шаги', href: 'church.html?path=nav-pray-start' },
+              { title: 'Молитва своими словами и молитва Церкви', href: 'church.html?path=nav-pray-words' },
+              { title: 'Любимые молитвы католиков', href: 'church.html?path=nav-favorite-prayers' },
+              { title: 'Lectio Divina: молитвенное чтение Библии', href: 'church.html?path=nav-lectio' },
+              { title: 'Розарий и другие молитвенные традиции', href: 'church.html?path=nav-rosary' },
+              { title: 'Когда кажется, что Бог молчит', href: 'church.html?path=nav-dryness', note: 'Духовная сухость, сомнения' },
+              { title: 'Духовное сопровождение: зачем и как найти', href: 'church.html?path=nav-direction' },
             ],
           },
           {
             title: 'Община и призвание',
             items: [
-              { title: 'Найти приход', href: 'map.html', note: 'Карта храмов' },
-              { title: 'Стать католиком', href: 'church.html?path=become' },
-              { title: 'Вернуться в Церковь', href: 'church.html?path=return' },
-              { title: 'Служение и община', href: 'church.html?path=deepen-serve' },
-              { title: 'Паломничества и реколлекции', href: 'spiritual-life.html?path=pilgrimage' },
-              { title: 'Афиша событий', href: 'events.html' },
+              { title: 'Что такое приход и как найти свой', href: 'church.html?path=nav-parish' },
+              { title: 'Кто такие монахи, монахини, настоятель', href: 'church.html?path=structure-religious' },
+              { title: 'Церковные движения', href: 'church.html?path=nav-movements' },
+              { title: 'Молодёжка', href: 'church.html?path=nav-youth' },
+              { title: 'Семейная жизнь как призвание', href: 'church.html?path=nav-family' },
+              { title: 'Как найти друзей в Церкви', href: 'church.html?path=nav-friends' },
+              { title: 'Супружеские встречи', href: 'church.html?path=nav-marriage-encounter' },
+              { title: 'Различение призвания: не знаю, чего Бог хочет от меня', href: 'church.html?path=nav-vocation' },
             ],
           },
           {
             title: 'Помощь и поддержка',
             items: [
-              { title: 'Задать вопрос священнику', href: 'archive.html?category=ask-priest' },
-              { title: 'Спросить в чате', href: 'chat.html' },
-              { title: 'Свидетельства', href: 'archive.html?category=svidetelstva' },
-              { title: 'Вопросы психологу', href: 'archive.html?category=psiholog' },
+              { title: 'Задать вопрос священнику', href: 'church.html?path=nav-ask-priest' },
+              { title: 'Задать вопрос психологу', href: 'church.html?path=nav-ask-psych' },
+              { title: 'Попросить о молитве', href: 'church.html?path=nav-prayer-request' },
+              { title: 'Найти духовного собеседника', href: 'church.html?path=nav-companion' },
+              { title: 'Свидетельства священников, монашествующих, семей', href: 'church.html?path=nav-witness-vocations' },
+              { title: 'Истории обращения', href: 'church.html?path=nav-conversion' },
+              { title: 'Когда тяжело: страдание, утрата, кризис веры', href: 'church.html?path=nav-suffering' },
+              { title: 'Горячие вопросы: наука и вера, страдание невинных, церковь и политика', href: 'church.html?path=nav-hard-questions' },
             ],
           },
         ],
@@ -720,13 +739,14 @@
           { note: 'Тайна Троицы не «решается», а созерцается. Начинайте не с схем, а с молитвы и Евангелия.' },
         ]
       ), {
+        siblingsOf: 'navigator',
         also: [
           { title: 'Кто такой Иисус Христос', href: 'church.html?path=nav-jesus' },
           { title: 'Основные молитвы', href: 'spiritual-life.html?path=basic-prayers' },
         ],
       }),
       'nav-jesus': Object.assign(page(
-        'Кто такой Иисус Христос',
+        'Кто такой Иисус Христос и почему Он умер и воскрес',
         'Иисус Христос — истинный Бог и истинный человек. В Нём Бог стал близок так, что Его можно услышать, увидеть и последовать за Ним.',
         [
           { h2: 'Сердце веры', ul: [
@@ -739,6 +759,7 @@
           { note: 'Христианство — не система идей о Иисусе, а отношения с живым Господом.' },
         ]
       ), {
+        siblingsOf: 'navigator',
         also: [
           { title: 'Как читать Библию', href: 'church.html?path=deepen-bible' },
           { title: 'Евхаристия', href: 'spiritual-life.html?path=eucharist-faq' },
@@ -758,8 +779,9 @@
           { note: 'Любить Церковь — не значит не замечать ран. Это значит оставаться в доме Отца и участвовать в его исцелении.' },
         ]
       ), {
+        siblingsOf: 'navigator',
         also: [
-          { title: 'Найти приход', href: 'map.html' },
+          { title: 'Как устроена Католическая Церковь', href: 'church.html?path=structure' },
           { title: 'Я здесь впервые', href: 'church.html?path=first-time' },
         ],
       }),
@@ -776,6 +798,7 @@
           { note: 'Всякая настоящая марианская молитва ведёт к Иисусу, а не останавливается на себе.' },
         ]
       ), {
+        siblingsOf: 'navigator',
         also: [
           { title: 'Розарий', href: 'spiritual-life.html?path=rosary' },
           { title: 'Основные молитвы', href: 'spiritual-life.html?path=basic-prayers' },
@@ -794,6 +817,7 @@
           { note: 'Праздник Всех Святых напоминает: святость — призвание каждого, а не клуба избранных.' },
         ]
       ), {
+        siblingsOf: 'navigator',
         also: [
           { title: 'День Церкви', href: 'calendar.html' },
           { title: 'Рубрика «Святые»', href: 'archive.html?category=saints' },
@@ -813,6 +837,7 @@
           { note: 'О смерти и суде лучше думать не в жанре страшилки, а в свете Воскресения Христова.' },
         ]
       ), {
+        siblingsOf: 'navigator',
         also: [
           { title: 'Кто такой Иисус Христос', href: 'church.html?path=nav-jesus' },
           { title: 'Спросить о вере', href: 'chat.html' },
@@ -830,13 +855,14 @@
           { note: 'Христос не отменяет заповеди — Он исполняет их в любви, которая идёт дальше минимума.' },
         ]
       ), {
+        siblingsOf: 'navigator',
         also: [
           { title: 'Добродетели и совесть', href: 'church.html?path=nav-conscience' },
           { title: 'Исповедь', href: 'church.html?path=return-confession' },
         ],
       }),
       'nav-conscience': Object.assign(page(
-        'Добродетели, грех и совесть',
+        'Добродетели и грех: главное, что нужно знать',
         'Совесть — способность распознавать добро. Её нужно образовывать, а не только «слушать как настроение».',
         [
           { h2: 'Добродетели', p: 'Устойчивые навыки добра: вера, надежда, любовь; благоразумие, справедливость, мужество, умеренность. Они растут повторением добрых актов с помощью благодати.' },
@@ -849,6 +875,7 @@
           { note: '«Мне так комфортно» — ещё не критерий истины. Но и тревожность сама по себе — не голос Бога. Нужна мудрая проверка.' },
         ]
       ), {
+        siblingsOf: 'navigator',
         also: [
           { title: 'Исповедь', href: 'church.html?path=return-confession' },
           { title: 'Вопросы священнику', href: 'archive.html?category=ask-priest' },
@@ -868,10 +895,285 @@
           { note: 'Если есть мысли о безысходности и самоповреждении — срочно обратитесь за живой помощью. Вера не против медицины и психологической поддержки.' },
         ]
       ), {
+        siblingsOf: 'navigator',
         also: [
           { title: 'Спросить в чате', href: 'chat.html' },
           { title: 'Вопросы психологу', href: 'archive.html?category=psiholog' },
           { title: 'Вопросы священнику', href: 'archive.html?category=ask-priest' },
+        ],
+      }),
+
+      'structure': {
+        type: 'cards',
+        title: 'Как устроена Католическая Церковь',
+        desc: 'От Папы до настоятеля: как Церковь собрана и кто за что отвечает',
+        tip: 'Это карта устройства, не экзамен. С неё удобно перейти в Навигатор, если нужна конкретная тема веры.',
+        showMore: true,
+        cardKicker: 'Тема',
+        cards: withSiblings('structure', [
+          { id: 'structure-pope', title: 'Папа Римский', sub: 'Преемник Петра и единство Церкви', image: 'assets/cards/church-deepen.webp' },
+          { id: 'structure-bishop', title: 'Епископ и епархия', sub: 'Местная Церковь', image: 'assets/cards/church-become.webp' },
+          { id: 'structure-parish', title: 'Приход и настоятель', sub: 'Ближайшая община', image: 'assets/cards/church-become-parish.webp' },
+          { id: 'structure-clergy', title: 'Священники и диаконы', sub: 'Служение Слова и таинств', image: 'assets/cards/church-first-visit.webp' },
+          { id: 'structure-religious', title: 'Монашествующие и ордена', sub: 'Посвящённая жизнь', image: 'assets/cards/church-deepen-pray.webp' },
+          { id: 'structure-laity', title: 'Миряне, движения, молодёжь', sub: 'Народ Божий в миру', wide: true, image: 'assets/cards/church-deepen-serve.webp' },
+        ]),
+      },
+      'structure-pope': Object.assign(page('Папа Римский'), {
+        siblingsOf: 'structure',
+        also: [
+          { title: 'Епископ и епархия', href: 'church.html?path=structure-bishop' },
+          { title: 'Что такое Церковь', href: 'church.html?path=nav-church-what' },
+        ],
+      }),
+      'structure-bishop': Object.assign(page('Епископ и епархия'), {
+        siblingsOf: 'structure',
+        also: [
+          { title: 'Приход и настоятель', href: 'church.html?path=structure-parish' },
+          { title: 'Папа Римский', href: 'church.html?path=structure-pope' },
+        ],
+      }),
+      'structure-parish': Object.assign(page('Приход и настоятель'), {
+        siblingsOf: 'structure',
+        also: [
+          { title: 'Как найти свой приход', href: 'church.html?path=nav-parish' },
+          { title: 'Священники и диаконы', href: 'church.html?path=structure-clergy' },
+        ],
+      }),
+      'structure-clergy': Object.assign(page('Священники и диаконы'), {
+        siblingsOf: 'structure',
+        also: [
+          { title: 'Приход и настоятель', href: 'church.html?path=structure-parish' },
+          { title: 'Различение призвания', href: 'church.html?path=nav-vocation' },
+        ],
+      }),
+      'structure-religious': Object.assign(page('Монашествующие и ордена'), {
+        siblingsOf: 'structure',
+        also: [
+          { title: 'Миряне, движения, молодёжь', href: 'church.html?path=structure-laity' },
+          { title: 'Различение призвания', href: 'church.html?path=nav-vocation' },
+        ],
+      }),
+      'structure-laity': Object.assign(page('Миряне, движения, молодёжь'), {
+        siblingsOf: 'structure',
+        also: [
+          { title: 'Церковные движения', href: 'church.html?path=nav-movements' },
+          { title: 'Молодёжка', href: 'church.html?path=nav-youth' },
+        ],
+      }),
+
+      'nav-ecumenism': Object.assign(page('Экуменизм и отношение к другим христианам'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Что такое Церковь', href: 'church.html?path=nav-church-what' },
+          { title: 'Горячие вопросы', href: 'church.html?path=nav-hard-questions' },
+        ],
+      }),
+      'nav-mass': Object.assign(page('Что происходит на Мессе'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Путеводитель по Мессе', href: 'spiritual-life.html?path=mass-guide' },
+          { title: 'Евхаристия', href: 'church.html?path=nav-eucharist' },
+        ],
+      }),
+      'nav-eucharist': Object.assign(page('Евхаристия — сердце жизни Церкви'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'FAQ о Евхаристии', href: 'spiritual-life.html?path=eucharist-faq' },
+          { title: 'Что происходит на Мессе', href: 'church.html?path=nav-mass' },
+        ],
+      }),
+      'nav-liturgical-year': Object.assign(page('Цвета литургического года и католический календарь'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'День Церкви', href: 'calendar.html' },
+          { title: 'Литургические цвета', href: 'spiritual-life.html?path=lit-colors' },
+        ],
+      }),
+      'nav-beatitudes': Object.assign(page('Заповеди блаженств: путь к счастью, предложенный Иисусом'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Десять заповедей', href: 'church.html?path=nav-commandments' },
+          { title: 'Добродетели и грех', href: 'church.html?path=nav-conscience' },
+        ],
+      }),
+      'nav-decisions': Object.assign(page('Воспитание совести и как принимать решения'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Добродетели и грех', href: 'church.html?path=nav-conscience' },
+          { title: 'Исповедь', href: 'church.html?path=return-confession' },
+        ],
+      }),
+      'nav-social': Object.assign(page('Социальное учение Церкви'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Биоэтика и защита жизни', href: 'church.html?path=nav-bioethics' },
+          { title: 'Библиотека: документы Церкви', href: 'library.html?section=church' },
+        ],
+      }),
+      'nav-bioethics': Object.assign(page('Биоэтика и защита жизни'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Социальное учение Церкви', href: 'church.html?path=nav-social' },
+          { title: 'Вопросы священнику', href: 'church.html?path=nav-ask-priest' },
+        ],
+      }),
+      'nav-forgiveness': Object.assign(page('Прощение и примирение'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Исповедь', href: 'church.html?path=return-confession' },
+          { title: 'Когда тяжело', href: 'church.html?path=nav-suffering' },
+        ],
+      }),
+      'nav-pray-start': Object.assign(page('Как начать молиться: первые шаги'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Что такое молитва', href: 'spiritual-life.html?path=what-is-prayer' },
+          { title: 'Любимые молитвы', href: 'church.html?path=nav-favorite-prayers' },
+        ],
+      }),
+      'nav-pray-words': Object.assign(page('Молитва своими словами и молитва Церкви'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Как начать молиться', href: 'church.html?path=nav-pray-start' },
+          { title: 'Основные молитвы', href: 'spiritual-life.html?path=basic-prayers' },
+        ],
+      }),
+      'nav-favorite-prayers': Object.assign(page('Любимые молитвы католиков'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Основные молитвы', href: 'spiritual-life.html?path=basic-prayers' },
+          { title: 'Розарий', href: 'church.html?path=nav-rosary' },
+        ],
+      }),
+      'nav-lectio': Object.assign(page('Lectio Divina: молитвенное чтение Библии'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Lectio Divina', href: 'spiritual-life.html?path=lectio' },
+          { title: 'Как читать Библию', href: 'church.html?path=deepen-bible' },
+        ],
+      }),
+      'nav-rosary': Object.assign(page('Розарий и другие молитвенные традиции'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Молитва Розария', href: 'spiritual-life.html?path=rosary' },
+          { title: 'Кто такая Дева Мария', href: 'church.html?path=nav-mary' },
+        ],
+      }),
+      'nav-dryness': Object.assign(page('Когда кажется, что Бог молчит'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Когда тяжело', href: 'church.html?path=nav-suffering' },
+          { title: 'Как начать молиться', href: 'church.html?path=nav-pray-start' },
+        ],
+      }),
+      'nav-direction': Object.assign(page('Духовное сопровождение: зачем и как найти'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Найти духовного собеседника', href: 'church.html?path=nav-companion' },
+          { title: 'Как найти приход', href: 'church.html?path=nav-parish' },
+        ],
+      }),
+      'nav-parish': Object.assign(page('Что такое приход и как найти свой'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Приход и настоятель', href: 'church.html?path=structure-parish' },
+          { title: 'Как найти приход', href: 'church.html?path=become-parish' },
+        ],
+      }),
+      'nav-movements': Object.assign(page('Церковные движения'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Миряне, движения, молодёжь', href: 'church.html?path=structure-laity' },
+          { title: 'Молодёжка', href: 'church.html?path=nav-youth' },
+        ],
+      }),
+      'nav-youth': Object.assign(page('Молодёжка'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Церковные движения', href: 'church.html?path=nav-movements' },
+          { title: 'Афиша', href: 'events.html' },
+        ],
+      }),
+      'nav-family': Object.assign(page('Семейная жизнь как призвание'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Супружеские встречи', href: 'church.html?path=nav-marriage-encounter' },
+          { title: 'Различение призвания', href: 'church.html?path=nav-vocation' },
+        ],
+      }),
+      'nav-friends': Object.assign(page('Как найти друзей в Церкви'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Что такое приход', href: 'church.html?path=nav-parish' },
+          { title: 'Как снова войти в общину', href: 'church.html?path=return-community' },
+        ],
+      }),
+      'nav-marriage-encounter': Object.assign(page('Супружеские встречи'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Семейная жизнь как призвание', href: 'church.html?path=nav-family' },
+          { title: 'Афиша', href: 'events.html' },
+        ],
+      }),
+      'nav-vocation': Object.assign(page('Различение призвания: не знаю, чего Бог хочет от меня'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Монашествующие и ордена', href: 'church.html?path=structure-religious' },
+          { title: 'Духовное сопровождение', href: 'church.html?path=nav-direction' },
+        ],
+      }),
+      'nav-ask-priest': Object.assign(page('Задать вопрос священнику'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Рубрика «Вопросы священнику»', href: 'archive.html?category=ask-priest' },
+          { title: 'Спросить в чате', href: 'chat.html' },
+        ],
+      }),
+      'nav-ask-psych': Object.assign(page('Задать вопрос психологу'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Рубрика «Вопросы психологу»', href: 'archive.html?category=psiholog' },
+          { title: 'Когда тяжело', href: 'church.html?path=nav-suffering' },
+        ],
+      }),
+      'nav-prayer-request': Object.assign(page('Попросить о молитве'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Спросить в чате', href: 'chat.html' },
+          { title: 'Найти молитвенную группу', href: 'spiritual-life.html?path=prayer-group' },
+        ],
+      }),
+      'nav-companion': Object.assign(page('Найти духовного собеседника'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Духовное сопровождение', href: 'church.html?path=nav-direction' },
+          { title: 'Как найти приход', href: 'church.html?path=nav-parish' },
+        ],
+      }),
+      'nav-witness-vocations': Object.assign(page('Свидетельства священников, монашествующих, семей'), {
+        siblingsOf: 'navigator',
+        feedCategory: 'svidetelstva',
+        feedLabel: 'Свидетельства',
+        also: [
+          { title: 'Все свидетельства', href: 'archive.html?category=svidetelstva' },
+          { title: 'Истории обращения', href: 'church.html?path=nav-conversion' },
+        ],
+      }),
+      'nav-conversion': Object.assign(page('Истории обращения'), {
+        siblingsOf: 'navigator',
+        feedCategory: 'svidetelstva',
+        feedLabel: 'Свидетельства',
+        also: [
+          { title: 'Истории других новичков', href: 'church.html?path=newcomer-stories' },
+          { title: 'Все свидетельства', href: 'archive.html?category=svidetelstva' },
+        ],
+      }),
+      'nav-hard-questions': Object.assign(page('Горячие вопросы: наука и вера, страдание невинных, церковь и политика'), {
+        siblingsOf: 'navigator',
+        also: [
+          { title: 'Когда тяжело', href: 'church.html?path=nav-suffering' },
+          { title: 'Задать вопрос священнику', href: 'church.html?path=nav-ask-priest' },
         ],
       }),
     },
