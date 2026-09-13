@@ -75,7 +75,9 @@
     if (name === 'photostock') name = 'media';
     if (name === 'columns') name = 'articles';
     if (name === 'posts') name = 'materials';
-    return { name: name, id: parts[1] || '' };
+    var id = parts[1] || '';
+    try { id = decodeURIComponent(id); } catch (e) { /* оставляем как есть */ }
+    return { name: name, id: id };
   }
 
   function go(name, id) {

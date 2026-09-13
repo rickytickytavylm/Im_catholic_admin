@@ -60,7 +60,20 @@
     return new Date().toISOString().slice(0, 10);
   }
 
+  function decodeRouteId(id) {
+    id = String(id == null ? '' : id);
+    try { id = decodeURIComponent(id); } catch (e) { /* уже декодирован или битый */ }
+    return id;
+  }
+
+  function idsEqual(a, b) {
+    a = decodeRouteId(a);
+    b = decodeRouteId(b);
+    return !!a && a === b;
+  }
+
   function readAll() {
+    if (window.AdminDesk && typeof AdminDesk.read === 'function') return AdminDesk.read();
     var raw = {};
     try { raw = JSON.parse(localStorage.getItem('yak_desk') || '{}') || {}; } catch (e) { raw = {}; }
     return raw;
@@ -71,6 +84,10 @@
     if (!all.libraryItems) all.libraryItems = [];
     if (!all.libraryRubrics) all.libraryRubrics = [];
     fn(all);
+    if (window.AdminDesk && typeof AdminDesk.write === 'function') {
+      AdminDesk.write(all);
+      return;
+    }
     localStorage.setItem('yak_desk', JSON.stringify(all));
   }
 
@@ -123,8 +140,12 @@
   }
 
   function getItem(id) {
+    id = decodeRouteId(id);
+    if (!id) return null;
     var list = allItems();
-    for (var i = 0; i < list.length; i++) if (String(list[i].id) === String(id)) return list[i];
+    for (var i = 0; i < list.length; i++) {
+      if (idsEqual(list[i].id, id)) return list[i];
+    }
     return null;
   }
 
@@ -242,8 +263,59 @@
     });
   }
 
-  function render(id, ctx) {
+  function parsePack(art) {
+    var raw = (art && (art.contentText || art.content || '')) || '';
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch (e) { return null; }
+  }
+
+  function absorbPack(pack) {
+    if (!pack) return;
+    patchDesk(function (all) {
+      var have = {};
+      (all.libraryItems || []).forEach(function (it) {
+        if (it && it.id) have[String(it.id)] = true;
+      });
+      (pack.items || []).forEach(function (it) {
+        if (!it || !it.id || have[String(it.id)] || it.status === 'hidden') return;
+        all.libraryItems.push(it);
+        have[String(it.id)] = true;
+      });
+      (pack.rubrics || []).forEach(function (r) {
+        if (!r || !r.id) return;
+        var exists = (all.libraryRubrics || []).some(function (x) {
+          return x && x.id === r.id && x.section === r.section;
+        });
+        if (!exists) all.libraryRubrics.push(r);
+      });
+    });
+    if (L() && L().mergePack) L().mergePack(pack);
+  }
+
+  var hydrated = false;
+  var hydrateWait = [];
+
+  function hydrate(done) {
     ensureSeed(function () {
+      if (hydrated) { done(); return; }
+      hydrateWait.push(done);
+      if (hydrateWait.length > 1) return;
+      function finish() {
+        hydrated = true;
+        var q = hydrateWait.splice(0);
+        q.forEach(function (fn) { try { fn(); } catch (e) {} });
+      }
+      if (!window.AdminApi || !AdminApi.getArticle) { finish(); return; }
+      AdminApi.getArticle(PAGE_SLUG)
+        .then(function (art) { absorbPack(parsePack(art)); })
+        .catch(function () {})
+        .then(finish);
+    });
+  }
+
+  function render(id, ctx) {
+    hydrate(function () {
+      id = decodeRouteId(id);
       if (id === 'rubrics') renderRubrics(ctx);
       else if (id) renderForm(ctx, id);
       else renderList(ctx);
@@ -282,7 +354,7 @@
               ? 'background-image:url(\'' + String(it.cover).replace(/'/g, '%27') + '\');background-size:cover'
               : 'background:linear-gradient(145deg,' + tone + ',#1a1814)';
             return (
-              '<a class="god-card" href="#library/' + encodeURIComponent(it.id) + '">' +
+              '<a class="god-card" href="#library/' + esc(it.id) + '">' +
               '<span class="god-thumb" style="' + cover + '"></span>' +
               '<span class="god-copy"><strong>' + esc(titleOf(it)) + '</strong>' +
               '<small>' + esc((it.section === 'church' ? 'Документ · ' : 'Книга · ') + (it.author || '')) + '</small></span></a>'
@@ -568,7 +640,10 @@
     }).then(function () {
       if (item.id && item.id !== next.id) hideItem(item.id);
       upsertItem(next);
-      if (status === 'published') return publishPack();
+      if (status === 'published') {
+        hydrated = false;
+        return publishPack();
+      }
     }).then(function () {
       ctx.toast(status === 'published' ? 'На сайте' : 'Черновик сохранён');
       ctx.go('library');

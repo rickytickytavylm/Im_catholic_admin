@@ -2736,6 +2736,7 @@
     publishTopics: publishTopics,
     portalHref: portalHref,
     read: read,
+    write: write,
     upsertGuide: upsertGuide,
     linkAuthor: linkAuthor,
     exportDesk: exportDesk,
