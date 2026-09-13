@@ -346,8 +346,31 @@
   }
 
   function byId(id) {
-    for (var i = 0; i < EVENTS.length; i++) if (EVENTS[i].id === id) return EVENTS[i];
+    id = String(id || '');
+    try { id = decodeURIComponent(id); } catch (e) {}
+    for (var i = 0; i < EVENTS.length; i++) {
+      if (EVENTS[i].id === id || EVENTS[i].slug === id) return EVENTS[i];
+    }
     return null;
+  }
+
+  function organizerName(e) {
+    if (!e) return '';
+    if (e.organizer) return e.organizer;
+    var org = organizerById(e.organizerId);
+    if (org) return org.short || org.name;
+    return e.venue || '';
+  }
+
+  function eventPageHref(e) {
+    var id = e && (e.slug || e.id);
+    return id ? 'event.html?id=' + encodeURIComponent(id) : 'events.html';
+  }
+
+  function eventCover(e) {
+    if (!e) return '';
+    if (e.cover) return e.cover;
+    return (COVERS && e.category && COVERS[e.category]) || '';
   }
 
   function organizerById(id) {
@@ -380,7 +403,41 @@
   }
 
   function byOrganizer(orgId, limit) {
-    return upcomingEvents().filter(function (e) { return e.organizerId === orgId; }).slice(0, limit || 12);
+    var org = organizerById(orgId);
+    var names = [orgId];
+    if (org) names.push(org.id, org.name, org.short);
+    names = names.filter(Boolean).map(function (s) { return String(s).toLowerCase(); });
+    return upcomingEvents().filter(function (e) {
+      if (e.organizerId && e.organizerId === orgId) return true;
+      var name = String(e.organizer || e.venue || '').toLowerCase();
+      return name && names.indexOf(name) !== -1;
+    }).slice(0, limit || 12);
+  }
+
+  var packListeners = [];
+  function onPack(fn) {
+    if (typeof fn === 'function') packListeners.push(fn);
+  }
+  function notifyPack() {
+    packListeners.forEach(function (fn) { try { fn(); } catch (e) {} });
+  }
+
+  function mergePack(pack) {
+    var items = !pack ? [] : (Array.isArray(pack) ? pack : (pack.items || pack.events || []));
+    items.forEach(function (it) {
+      if (!it || !(it.id || it.slug)) return;
+      var i;
+      for (i = 0; i < EVENTS.length; i++) {
+        if (EVENTS[i].id === it.id || (it.slug && (EVENTS[i].slug === it.slug || EVENTS[i].id === it.slug))) break;
+      }
+      if (it.status && it.status !== 'published') {
+        if (i !== EVENTS.length) EVENTS.splice(i, 1);
+        return;
+      }
+      if (i === EVENTS.length) EVENTS.push(it);
+      else EVENTS[i] = Object.assign({}, EVENTS[i], it);
+    });
+    notifyPack();
   }
 
   function monthDays(year, monthIndex) {
@@ -423,6 +480,9 @@
     publishedEvents: publishedEvents,
     byId: byId,
     organizerById: organizerById,
+    organizerName: organizerName,
+    eventPageHref: eventPageHref,
+    eventCover: eventCover,
     categoryLabel: categoryLabel,
     costLabel: costLabel,
     regLabel: regLabel,
@@ -430,6 +490,10 @@
     upcomingEvents: upcomingEvents,
     byOrganizer: byOrganizer,
     monthDays: monthDays,
-    eventEnd: eventEnd
+    eventEnd: eventEnd,
+    mergePack: mergePack,
+    onPack: onPack
   };
+
+  if (global.YakDesk && YakDesk.apply) YakDesk.apply();
 })(typeof window !== 'undefined' ? window : globalThis);

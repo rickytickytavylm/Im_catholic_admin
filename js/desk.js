@@ -14,7 +14,7 @@
   var BLOCKS = [
     { id: 'news', title: 'Новость', where: 'Новости', hint: 'Заголовок, лид, текст и обложка.', portal: 'archive.html?category=news' },
     { id: 'article', title: 'Статья', where: 'Статьи', hint: 'Заголовок, лид, текст и обложка.', portal: 'articles.html' },
-    { id: 'event', title: 'Афиша', where: 'События', hint: 'Дата, место и описание.', portal: 'events.html' },
+    { id: 'event', title: 'Афиша', where: 'События', hint: 'Дата, организатор, фото и страница на сайте.', portal: 'events.html' },
     { id: 'audio', title: 'Аудио', where: 'Аудио', hint: 'Название, исполнитель и файл.', portal: 'audio.html' },
     { id: 'video', title: 'Видео', where: 'Видео', hint: 'Название, описание и ссылка.', portal: 'video.html' },
     { id: 'photo', title: 'Фото', where: 'Фотосток', hint: 'Снимок и теги.', portal: 'photostock.html' },
@@ -1629,53 +1629,204 @@
     });
   }
 
+  function matchOrganizerId(name) {
+    var n = String(name || '').trim().toLowerCase();
+    if (!n || !window.YakAfisha) return '';
+    var orgs = YakAfisha.ORGANIZERS || [];
+    for (var i = 0; i < orgs.length; i++) {
+      var o = orgs[i];
+      if (o.id === n || String(o.name || '').toLowerCase() === n || String(o.short || '').toLowerCase() === n) return o.id;
+    }
+    return '';
+  }
+
+  function uniqueEventSlug(base, keepId) {
+    var slug = slugify(base);
+    var used = {};
+    mergedList('event').forEach(function (e) {
+      if (!e || e.status === 'hidden') return;
+      if (e.id && e.id !== keepId) used[e.id] = true;
+      if (e.slug && e.slug !== keepId) used[e.slug] = true;
+    });
+    if (!used[slug]) return slug;
+    var n = 2;
+    while (used[slug + '-' + n]) n += 1;
+    return slug + '-' + n;
+  }
+
+  function cleanEventPack(e) {
+    var copy = Object.assign({}, e);
+    delete copy.source;
+    delete copy._slugLocked;
+    delete copy._prevDeskId;
+    return copy;
+  }
+
+  function publishEvents() {
+    if (!window.AdminApi || !AdminApi.upsertArchive) {
+      return Promise.reject(new Error('нет соединения с сервером'));
+    }
+    var by = {};
+    mergedList('event').forEach(function (e) {
+      if (!e || !e.id) return;
+      if (e.status && e.status !== 'published') return;
+      by[e.id] = cleanEventPack(e);
+    });
+    (read().events || []).forEach(function (e) {
+      if (e && e.status === 'hidden' && e.id) by[e.id] = { id: e.id, slug: e.slug || e.id, status: 'hidden' };
+    });
+    var items = Object.keys(by).map(function (k) { return by[k]; });
+    return AdminApi.upsertArchive({
+      articles: [{
+        id: EVENTS_PAGE_ID,
+        slug: EVENTS_PAGE_SLUG,
+        title: 'Афиша редакции',
+        date: todayIso(),
+        modified: new Date().toISOString(),
+        author: '',
+        categories: [],
+        categorySlugs: ['day-by-day'],
+        excerpt: '',
+        contentHtml: '<p></p>',
+        contentText: JSON.stringify({ items: items }),
+        source: 'desk-events',
+      }],
+    });
+  }
+
   function renderEventForm(ctx, id) {
     var isNew = !id || id === 'new';
     var item = isNew
-      ? { id: uid('ev'), date: todayIso(), category: 'meeting', cost: 'free', registration: 'none', city: 'Москва', status: 'published' }
+      ? { id: '', date: todayIso(), category: 'meeting', cost: 'free', registration: 'none', city: 'Москва', status: 'published' }
       : getItem('event', id);
     if (!item) { ctx.toast('Событие не найдено', true); ctx.go('afisha'); return; }
+    var orgName = item.organizer || (window.YakAfisha && YakAfisha.organizerName && YakAfisha.organizerName(item)) || item.venue || '';
+    var costVal = item.cost === 'donation' ? 'paid' : (item.cost || 'free');
+    var cover = item.cover || '';
+    var slug = item.slug || item.id || '';
     composeShell(
       ctx, isNew ? 'Новое событие' : 'Событие', 'afisha',
       field('Название', 'd-title', item.title) +
+      '<div class="field slug-row"><label>Адрес</label>' +
+      '<span class="slug-prefix">event.html?id=</span>' +
+      '<input class="input" id="d-slug" value="' + esc(slug) + '" placeholder="letniy-kontsert" autocomplete="off" /></div>' +
       field('Тип', 'd-cat', item.category, 'select', opts(EVENT_CATS, item.category || 'meeting')) +
       field('Дата', 'd-date', item.date, 'date') +
       field('Дата окончания', 'd-end', item.endDate || '', 'date') +
       field('Время', 'd-time', item.time, 'text', 'placeholder="19:00"') +
       field('Город', 'd-city', item.city) +
-      field('Площадка', 'd-venue', item.venue) +
+      field('Организатор', 'd-org', orgName) +
       field('Адрес', 'd-place', item.place) +
+      field('Стоимость', 'd-cost', costVal, 'select', opts(
+        [{ id: 'free', title: 'Бесплатно' }, { id: 'paid', title: 'Платно' }],
+        costVal
+      )) +
+      field('Регистрация', 'd-reg', item.registration || 'none', 'select', opts(
+        [{ id: 'none', title: 'Не требуется' }, { id: 'required', title: 'Требуется' }],
+        item.registration || 'none'
+      )) +
       field('Описание', 'd-desc', item.desc, 'textarea') +
-      field('Ссылка', 'd-href', item.href),
-      function (status) { saveEvent(ctx, item, status); },
-      function () { saveEvent(ctx, item, 'published'); },
-      isNew ? null : function () { if (confirm('Снять событие с публикации?')) { hideItem('event', item.id); ctx.toast('Снято с публикации'); ctx.go('afisha'); } },
-      'events.html'
+      field('Ссылка на сайт организатора', 'd-href', item.href, 'text', 'placeholder="https://"') +
+      '<div class="field"><label>Фото</label>' +
+      '<div class="cover-frame' + (cover ? '' : ' is-empty') + '" id="d-cover-frame">' +
+      (cover ? '<img src="' + esc(mediaSrc(cover)) + '" alt="" />' : '<span>Нет фото</span>') +
+      '</div>' +
+      '<input class="input" id="d-cover" value="' + esc(cover) + '" placeholder="URL фото" />' +
+      '<button type="button" class="btn btn-ghost" id="d-cover-up">Загрузить фото</button>' +
+      '<input type="file" id="d-cover-file" accept="image/*" hidden /></div>',
+      function (status) { saveEvent(ctx, item, isNew, status); },
+      function () { saveEvent(ctx, item, isNew, 'published'); },
+      isNew ? null : function () {
+        if (!confirm('Снять событие с публикации?')) return;
+        hideItem('event', item.id);
+        ctx.toast('Снимаем с сайта…');
+        publishEvents().then(function () {
+          ctx.toast('Снято с публикации');
+          ctx.go('afisha');
+        }).catch(function (err) {
+          ctx.toast((err && err.message) || 'Снято локально', true);
+          ctx.go('afisha');
+        });
+      },
+      slug ? ('event.html?id=' + encodeURIComponent(slug)) : 'events.html'
     );
+    bindSlugField(!isNew && !!slug);
+    var coverInp = document.getElementById('d-cover');
+    var frame = document.getElementById('d-cover-frame');
+    if (coverInp && frame) {
+      coverInp.oninput = function () {
+        if (coverInp.value) {
+          frame.classList.remove('is-empty');
+          frame.innerHTML = '<img src="' + esc(mediaSrc(coverInp.value)) + '" alt="" />';
+        }
+      };
+    }
+    var up = document.getElementById('d-cover-up');
+    var file = document.getElementById('d-cover-file');
+    if (up && file) {
+      up.onclick = function () { file.click(); };
+      file.onchange = function () {
+        var f = file.files && file.files[0];
+        if (!f) return;
+        var reader = new FileReader();
+        reader.onload = function () {
+          if (coverInp) coverInp.value = reader.result;
+          if (frame) {
+            frame.classList.remove('is-empty');
+            frame.innerHTML = '<img src="' + esc(reader.result) + '" alt="" />';
+          }
+        };
+        reader.readAsDataURL(f);
+      };
+    }
   }
 
-  function saveEvent(ctx, item, status) {
+  function saveEvent(ctx, item, isNew, status) {
     var title = val('d-title');
     if (!title) { ctx.toast('Укажите название', true); return; }
-    try {
-      upsert('event', Object.assign({}, item, {
-        title: title,
-        category: val('d-cat'),
-        date: val('d-date') || todayIso(),
-        endDate: val('d-end'),
-        time: val('d-time'),
-        city: val('d-city'),
-        venue: val('d-venue'),
-        place: val('d-place'),
-        desc: val('d-desc'),
-        href: val('d-href'),
-        status: status,
-      }));
-      ctx.toast(status === 'published' ? 'Опубликовано' : 'Черновик сохранён');
-      ctx.go('afisha');
-    } catch (e) {
-      ctx.toast(e.message || 'Не удалось сохранить', true);
+    var rawSlug = val('d-slug');
+    var nextId;
+    if (!isNew && item.id && (!rawSlug || rawSlug === item.id || rawSlug === item.slug)) {
+      nextId = item.id;
+    } else {
+      nextId = uniqueEventSlug(rawSlug || title, item.id);
     }
+    var organizer = val('d-org');
+    var coverNow = val('d-cover');
+    var next = Object.assign({}, item, {
+      id: nextId,
+      slug: nextId,
+      title: title,
+      category: val('d-cat'),
+      date: val('d-date') || todayIso(),
+      endDate: val('d-end'),
+      time: val('d-time'),
+      city: val('d-city'),
+      organizer: organizer,
+      organizerId: matchOrganizerId(organizer) || item.organizerId || '',
+      venue: organizer,
+      place: val('d-place'),
+      cost: val('d-cost') || 'free',
+      registration: val('d-reg') || 'none',
+      desc: val('d-desc'),
+      href: val('d-href'),
+      cover: coverNow,
+      status: status,
+    });
+    var ready = (coverNow && coverNow.indexOf('data:') === 0)
+      ? (ctx.toast('Сохраняем фото…'), uploadDataUrl(coverNow, 'covers').then(function (url) { next.cover = url; }))
+      : Promise.resolve();
+    ctx.toast(status === 'published' ? 'Публикуем…' : 'Сохраняем…');
+    ready.then(function () {
+      if (item.id && item.id !== next.id) hideItem('event', item.id);
+      upsert('event', next);
+      if (status === 'published') return publishEvents();
+    }).then(function () {
+      ctx.toast(status === 'published' ? 'На сайте' : 'Черновик сохранён');
+      ctx.go('afisha');
+    }).catch(function (e) {
+      ctx.toast(e.message || 'Не удалось сохранить', true);
+    });
   }
 
   function renderAudioForm(ctx, id) {
@@ -2170,6 +2321,8 @@
   var PHOTO_PAGE_SLUG = 'yak-photostock-data';
   var TOPICS_PAGE_ID = 1900000004;
   var TOPICS_PAGE_SLUG = 'yak-topics-data';
+  var EVENTS_PAGE_ID = 1900000006;
+  var EVENTS_PAGE_SLUG = 'yak-events-data';
 
   function publishAuthors() {
     if (!window.AdminApi || !AdminApi.upsertArchive) {
