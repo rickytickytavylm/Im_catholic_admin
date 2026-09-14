@@ -248,9 +248,54 @@
     },
   ];
 
+  var items = OWN_LONGS.concat(OWN_SHORTS).concat(PARTNER_LONGS).concat(PARTNER_SHORTS);
+  var listeners = [];
+
+  function upsertItem(incoming) {
+    if (!incoming || incoming.id == null) return;
+    var i = -1;
+    for (var n = 0; n < items.length; n++) {
+      if (String(items[n].id) === String(incoming.id)) { i = n; break; }
+    }
+    var next = Object.assign({}, i === -1 ? {} : items[i], incoming);
+    if (i === -1) items.unshift(next);
+    else items[i] = next;
+  }
+
+  function upsertChannel(incoming) {
+    if (!incoming || !incoming.id) return;
+    for (var i = 0; i < CHANNELS.length; i++) {
+      if (CHANNELS[i].id === incoming.id) {
+        CHANNELS[i] = Object.assign({}, CHANNELS[i], incoming);
+        return;
+      }
+    }
+    CHANNELS.push(incoming);
+  }
+
+  function mergePack(pack) {
+    if (!pack) return items;
+    if (Array.isArray(pack.items)) pack.items.forEach(upsertItem);
+    if (Array.isArray(pack.channels)) pack.channels.forEach(upsertChannel);
+    return items;
+  }
+
+  function onPack(fn) {
+    if (typeof fn === 'function') listeners.push(fn);
+  }
+
+  function notifyPack() {
+    listeners.forEach(function (fn) {
+      try { fn(items); } catch (e) {}
+    });
+  }
+
   global.YakVideos = {
     bucket: BUCKET,
-    items: OWN_LONGS.concat(OWN_SHORTS).concat(PARTNER_LONGS).concat(PARTNER_SHORTS),
+    items: items,
     channels: CHANNELS,
+    mergePack: mergePack,
+    onPack: onPack,
+    notifyPack: notifyPack
   };
 })(window);

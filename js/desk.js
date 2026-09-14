@@ -75,7 +75,7 @@
   ];
 
   function emptyState() {
-    return { articles: [], events: [], audio: [], video: [], churchDays: [], authors: [], guides: [], authorLinks: [], photographers: [], videoChannels: [], cycles: [], topics: [], libraryItems: [], libraryRubrics: [], home: null, about: null };
+    return { articles: [], events: [], audio: [], video: [], churchDays: [], authors: [], guides: [], authorLinks: [], photographers: [], videoChannels: [], cycles: [], topics: [], libraryItems: [], libraryRubrics: [], podcasts: [], home: null, about: null };
   }
 
   var archiveCache = { news: [], article: [] };
@@ -980,6 +980,115 @@
     });
   }
 
+  function putFile(url, file, headers, onProgress) {
+    return new Promise(function (resolve, reject) {
+      var xhr = new XMLHttpRequest();
+      xhr.open('PUT', url);
+      Object.keys(headers || {}).forEach(function (k) {
+        if (headers[k]) xhr.setRequestHeader(k, headers[k]);
+      });
+      xhr.upload.onprogress = function (e) {
+        if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
+      };
+      xhr.onload = function () {
+        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        else reject(new Error('бакет не принял файл (' + xhr.status + ')'));
+      };
+      xhr.onerror = function () { reject(new Error('не удалось отправить файл в бакет')); };
+      xhr.send(file);
+    });
+  }
+
+  function uploadBlob(file, folder, onProgress) {
+    if (!file) return Promise.reject(new Error('нет файла'));
+    if (!window.AdminApi || !AdminApi.signMedia) {
+      return Promise.reject(new Error('нет соединения с сервером'));
+    }
+    return AdminApi.signMedia({
+      folder: folder || 'covers',
+      filename: file.name,
+      contentType: file.type || 'application/octet-stream',
+      size: file.size,
+    }).then(function (pack) {
+      if (!pack || !pack.uploadUrl || !pack.url) throw new Error('сервер не дал адрес для записи');
+      return putFile(pack.uploadUrl, file, pack.headers || {}, onProgress).then(function () {
+        return { url: pack.url, key: pack.key };
+      });
+    });
+  }
+
+  function attachField(opts) {
+    opts = opts || {};
+    return (
+      '<div class="field attach-field">' +
+      '<label>' + esc(opts.label || 'Файл') + '</label>' +
+      '<div class="attach-row">' +
+      '<button type="button" class="btn btn-ghost" id="' + esc(opts.btnId) + '">' + esc(opts.button || 'Прикрепить') + '</button>' +
+      '<input type="file" id="' + esc(opts.inputId) + '" accept="' + esc(opts.accept || '*/*') + '" hidden />' +
+      '<span class="attach-name" id="' + esc(opts.nameId) + '">' + esc(opts.current || 'файл не выбран') + '</span>' +
+      '</div>' +
+      '<div class="attach-bar" id="' + esc(opts.barId) + '" hidden><i id="' + esc(opts.fillId) + '"></i></div>' +
+      '<p class="hint-note">' + esc(opts.hint || 'Файл уйдёт в бакет. На сайте откроется по обычной ссылке.') + '</p>' +
+      '</div>'
+    );
+  }
+
+  function bindBucketFile(opts) {
+    var btn = document.getElementById(opts.btnId);
+    var input = document.getElementById(opts.inputId);
+    var nameEl = document.getElementById(opts.nameId);
+    var bar = document.getElementById(opts.barId);
+    var fill = document.getElementById(opts.fillId);
+    var urlEl = document.getElementById(opts.urlId);
+    if (btn && input) btn.onclick = function () { input.click(); };
+    if (!input) return;
+    input.onchange = function () {
+      var file = input.files && input.files[0];
+      if (!file) return;
+      if (nameEl) nameEl.textContent = file.name;
+      if (bar) bar.hidden = false;
+      if (fill) fill.style.width = '0%';
+      if (opts.ctx) opts.ctx.toast('Загружаю в бакет…');
+      uploadBlob(file, opts.folder, function (pct) {
+        if (fill) fill.style.width = pct + '%';
+      }).then(function (out) {
+        if (urlEl) urlEl.value = out.url;
+        if (fill) fill.style.width = '100%';
+        if (opts.ctx) opts.ctx.toast('Файл в бакете');
+        if (opts.onDone) opts.onDone(out, file);
+      }).catch(function (err) {
+        if (opts.ctx) opts.ctx.toast(err.message || 'Не удалось загрузить', true);
+      });
+    };
+  }
+
+  function fileLabel(url) {
+    var s = String(url || '');
+    if (!s) return 'файл не выбран';
+    try { s = decodeURIComponent(s); } catch (e) {}
+    var parts = s.split('/');
+    return parts[parts.length - 1] || s;
+  }
+
+  function readMediaDuration(file, kind) {
+    return new Promise(function (resolve) {
+      if (!file) return resolve('');
+      var el = document.createElement(kind === 'video' ? 'video' : 'audio');
+      el.preload = 'metadata';
+      el.onloadedmetadata = function () {
+        var sec = el.duration;
+        URL.revokeObjectURL(el.src);
+        if (!isFinite(sec) || sec <= 0) return resolve('');
+        if (kind === 'video') return resolve(String(Math.round(sec)));
+        var m = Math.floor(sec / 60);
+        var s = Math.floor(sec % 60);
+        resolve(m + ':' + String(s).padStart(2, '0'));
+      };
+      el.onerror = function () { resolve(''); };
+      el.src = URL.createObjectURL(file);
+    });
+  }
+
   function hoistHtmlImages(html, folder) {
     html = String(html || '');
     var found = [];
@@ -1829,33 +1938,131 @@
     });
   }
 
+  function publishAudio() {
+    if (!window.AdminApi || !AdminApi.upsertArchive) {
+      return Promise.reject(new Error('нет соединения с сервером'));
+    }
+    var tracks = (read().audio || []).filter(function (t) {
+      return t && t.id && (!t.status || t.status === 'published');
+    }).map(function (t) {
+      var copy = Object.assign({}, t);
+      delete copy.source;
+      return copy;
+    });
+    return AdminApi.upsertArchive({
+      articles: [{
+        id: AUDIO_PAGE_ID,
+        slug: AUDIO_PAGE_SLUG,
+        title: 'Аудио редакции',
+        date: todayIso(),
+        modified: new Date().toISOString(),
+        author: '',
+        categories: [],
+        categorySlugs: ['day-by-day'],
+        excerpt: '',
+        contentHtml: '<p></p>',
+        contentText: JSON.stringify({ tracks: tracks }),
+        source: 'desk-audio',
+      }],
+    });
+  }
+
+  function publishVideo() {
+    if (!window.AdminApi || !AdminApi.upsertArchive) {
+      return Promise.reject(new Error('нет соединения с сервером'));
+    }
+    var items = (read().video || []).filter(function (v) {
+      return v && v.id && (!v.status || v.status === 'published');
+    }).map(function (v) {
+      var copy = Object.assign({}, v);
+      delete copy.source;
+      return copy;
+    });
+    var channels = (read().videoChannels || []).filter(function (c) {
+      return c && c.id && (!c.status || c.status === 'published');
+    });
+    return AdminApi.upsertArchive({
+      articles: [{
+        id: VIDEO_PAGE_ID,
+        slug: VIDEO_PAGE_SLUG,
+        title: 'Видео редакции',
+        date: todayIso(),
+        modified: new Date().toISOString(),
+        author: '',
+        categories: [],
+        categorySlugs: ['day-by-day'],
+        excerpt: '',
+        contentHtml: '<p></p>',
+        contentText: JSON.stringify({ items: items, channels: channels }),
+        source: 'desk-video',
+      }],
+    });
+  }
+
   function renderAudioForm(ctx, id) {
     var isNew = !id || id === 'new';
-    var item = isNew ? { id: uid('au'), date: todayIso(), artist: '', status: 'published' }       : getItem('audio', id);
+    var item = isNew ? { id: uid('au'), date: todayIso(), artist: '', status: 'published' } : getItem('audio', id);
     if (!item) { ctx.toast('Аудио не найдено', true); ctx.go('audio'); return; }
+    var fileUrl = item.audioUrl || item.url || '';
     composeShell(
       ctx, isNew ? 'Новое аудио' : 'Аудио', 'audio',
       field('Название', 'd-title', item.title) +
       field('Исполнитель', 'd-artist', item.artist) +
       field('Дата', 'd-date', item.date, 'date') +
       field('Длительность', 'd-dur', item.duration, 'text', 'placeholder="12:40"') +
-      field('Ссылка на файл', 'd-url', item.audioUrl || item.url) +
-      '<div class="field"><label>Файл</label><input class="input" type="file" id="d-file" accept="audio/*" /></div>' +
-      field('Обложка', 'd-cover', item.cover),
+      attachField({
+        label: 'Аудиофайл',
+        btnId: 'd-audio-btn',
+        inputId: 'd-audio-file',
+        nameId: 'd-audio-name',
+        barId: 'd-audio-bar',
+        fillId: 'd-audio-fill',
+        accept: 'audio/*',
+        button: 'Прикрепить аудио',
+        current: fileLabel(fileUrl),
+        hint: 'Файл уйдёт в бакет. На сайте плеер откроет обычную ссылку.',
+      }) +
+      field('Ссылка на файл', 'd-url', fileUrl) +
+      field('Обложка', 'd-cover', item.cover) +
+      '<div class="field"><label>Файл обложки</label><input class="input" type="file" id="d-file" accept="image/*" /></div>',
       function (status) { saveAudio(ctx, item, status); },
       function () { saveAudio(ctx, item, 'published'); },
-      isNew ? null : function () { if (confirm('Снять аудио с публикации?')) { hideItem('audio', item.id); ctx.toast('Снято с публикации'); ctx.go('audio'); } },
+      isNew ? null : function () {
+        if (!confirm('Снять аудио с публикации?')) return;
+        hideItem('audio', item.id);
+        publishAudio().then(function () {
+          ctx.toast('Снято с публикации');
+          ctx.go('audio');
+        }).catch(function (e) { ctx.toast(e.message || 'Не удалось снять', true); });
+      },
       'audio.html'
     );
-    var file = document.getElementById('d-file');
-    if (file) file.onchange = function () {
-      var f = file.files && file.files[0];
+    bindBucketFile({
+      ctx: ctx,
+      folder: 'audio',
+      btnId: 'd-audio-btn',
+      inputId: 'd-audio-file',
+      nameId: 'd-audio-name',
+      barId: 'd-audio-bar',
+      fillId: 'd-audio-fill',
+      urlId: 'd-url',
+      onDone: function (_out, file) {
+        if (!val('d-title')) document.getElementById('d-title').value = file.name.replace(/\.[^.]+$/, '');
+        readMediaDuration(file, 'audio').then(function (dur) {
+          if (dur && !val('d-dur')) document.getElementById('d-dur').value = dur;
+        });
+      },
+    });
+    var cover = document.getElementById('d-file');
+    if (cover) cover.onchange = function () {
+      var f = cover.files && cover.files[0];
       if (!f) return;
       var reader = new FileReader();
       reader.onload = function () {
-        var url = document.getElementById('d-url');
-        if (url) url.value = reader.result;
-        if (!val('d-title')) document.getElementById('d-title').value = f.name.replace(/\.[^.]+$/, '');
+        shrinkImage(reader.result, 1400, 0.76, function (src) {
+          var el = document.getElementById('d-cover');
+          if (el) el.value = src;
+        });
       };
       reader.readAsDataURL(f);
     };
@@ -1864,24 +2071,38 @@
   function saveAudio(ctx, item, status) {
     var title = val('d-title');
     if (!title) { ctx.toast('Укажите название', true); return; }
-    if (!val('d-url')) { ctx.toast('Укажите ссылку или файл', true); return; }
-    upsert('audio', Object.assign({}, item, {
+    var url = val('d-url');
+    if (!url) { ctx.toast('Прикрепите файл или укажите ссылку', true); return; }
+    if (url.indexOf('data:') === 0) { ctx.toast('Сначала дождитесь загрузки файла в бакет', true); return; }
+    var coverNow = val('d-cover');
+    var next = Object.assign({}, item, {
       title: title,
       artist: val('d-artist'),
       date: val('d-date') || todayIso(),
       duration: val('d-dur'),
-      audioUrl: val('d-url'),
-      url: val('d-url'),
-      cover: val('d-cover'),
+      audioUrl: url,
+      url: url,
+      cover: coverNow,
       status: status,
-    }));
-    ctx.toast(status === 'published' ? 'Опубликовано' : 'Черновик сохранён');
-    ctx.go('audio');
+    });
+    var ready = (coverNow && coverNow.indexOf('data:') === 0)
+      ? (ctx.toast('Сохраняем обложку…'), uploadDataUrl(coverNow, 'covers').then(function (u) { next.cover = u; }))
+      : Promise.resolve();
+    ctx.toast(status === 'published' ? 'Публикуем…' : 'Сохраняем…');
+    ready.then(function () {
+      upsert('audio', next);
+      if (status === 'published') return publishAudio();
+    }).then(function () {
+      ctx.toast(status === 'published' ? 'На сайте' : 'Черновик сохранён');
+      ctx.go('audio');
+    }).catch(function (e) {
+      ctx.toast(e.message || 'Не удалось сохранить', true);
+    });
   }
 
   function renderVideoForm(ctx, id) {
     var isNew = !id || id === 'new';
-    var item = isNew ? { id: uid('vid'), type: 'long', status: 'published' }       : getItem('video', id);
+    var item = isNew ? { id: uid('vid'), type: 'long', status: 'published' } : getItem('video', id);
     if (!item) { ctx.toast('Видео не найдено', true); ctx.go('video'); return; }
     composeShell(
       ctx, isNew ? 'Новое видео' : 'Видео', 'video',
@@ -1891,24 +2112,61 @@
       field('Канал партнёра', 'd-channel', item.channelId) +
       field('Цикл', 'd-cycle', item.cycle) +
       field('Описание', 'd-desc', item.description, 'textarea') +
+      attachField({
+        label: 'Видеофайл',
+        btnId: 'd-video-btn',
+        inputId: 'd-video-file',
+        nameId: 'd-video-name',
+        barId: 'd-video-bar',
+        fillId: 'd-video-fill',
+        accept: 'video/*',
+        button: 'Прикрепить видео',
+        current: fileLabel(item.videoUrl),
+        hint: 'Файл уйдёт в бакет. На сайте откроется по обычной ссылке. Для ролика с VK/RuTube оставьте поле пустым и укажите внешнюю ссылку.',
+      }) +
       field('Ссылка на видео', 'd-url', item.videoUrl) +
+      field('Внешняя ссылка (VK, RuTube)', 'd-ext', item.externalUrl) +
       field('Превью', 'd-thumb', item.thumb) +
       '<div class="field"><label>Файл превью</label><input class="input" type="file" id="d-file" accept="image/*" /></div>' +
       field('Длительность, сек.', 'd-dur', item.duration, 'number'),
       function (status) { saveVideo(ctx, item, status); },
       function () { saveVideo(ctx, item, 'published'); },
-      isNew ? null : function () { if (confirm('Снять видео с публикации?')) { hideItem('video', item.id); ctx.toast('Снято с публикации'); ctx.go('video'); } },
+      isNew ? null : function () {
+        if (!confirm('Снять видео с публикации?')) return;
+        hideItem('video', item.id);
+        publishVideo().then(function () {
+          ctx.toast('Снято с публикации');
+          ctx.go('video');
+        }).catch(function (e) { ctx.toast(e.message || 'Не удалось снять', true); });
+      },
       'video.html'
     );
-    bindCoverFile();
+    bindBucketFile({
+      ctx: ctx,
+      folder: 'video',
+      btnId: 'd-video-btn',
+      inputId: 'd-video-file',
+      nameId: 'd-video-name',
+      barId: 'd-video-bar',
+      fillId: 'd-video-fill',
+      urlId: 'd-url',
+      onDone: function (_out, file) {
+        if (!val('d-title')) document.getElementById('d-title').value = file.name.replace(/\.[^.]+$/, '');
+        readMediaDuration(file, 'video').then(function (dur) {
+          if (dur && !val('d-dur')) document.getElementById('d-dur').value = dur;
+        });
+      },
+    });
     var file = document.getElementById('d-file');
     if (file) file.onchange = function () {
       var f = file.files && file.files[0];
       if (!f) return;
       var reader = new FileReader();
       reader.onload = function () {
-        var thumb = document.getElementById('d-thumb');
-        if (thumb) thumb.value = reader.result;
+        shrinkImage(reader.result, 1400, 0.76, function (src) {
+          var thumb = document.getElementById('d-thumb');
+          if (thumb) thumb.value = src;
+        });
       };
       reader.readAsDataURL(f);
     };
@@ -1917,21 +2175,37 @@
   function saveVideo(ctx, item, status) {
     var title = val('d-title');
     if (!title) { ctx.toast('Укажите название', true); return; }
-    if (!val('d-url')) { ctx.toast('Укажите ссылку на видео', true); return; }
-    upsert('video', Object.assign({}, item, {
+    var url = val('d-url');
+    var ext = val('d-ext');
+    if (!url && !ext) { ctx.toast('Прикрепите файл или укажите ссылку', true); return; }
+    if (url.indexOf('data:') === 0) { ctx.toast('Сначала дождитесь загрузки файла в бакет', true); return; }
+    var thumbNow = val('d-thumb');
+    var next = Object.assign({}, item, {
       title: title,
       type: val('d-type') || 'long',
       speaker: val('d-speaker'),
       channelId: val('d-channel'),
       cycle: val('d-cycle'),
       description: val('d-desc'),
-      videoUrl: val('d-url'),
-      thumb: val('d-thumb'),
+      videoUrl: url,
+      externalUrl: ext,
+      thumb: thumbNow,
       duration: Number(val('d-dur')) || 0,
       status: status,
-    }));
-    ctx.toast(status === 'published' ? 'Опубликовано' : 'Черновик сохранён');
-    ctx.go('video');
+    });
+    var ready = (thumbNow && thumbNow.indexOf('data:') === 0)
+      ? (ctx.toast('Сохраняем превью…'), uploadDataUrl(thumbNow, 'covers').then(function (u) { next.thumb = u; }))
+      : Promise.resolve();
+    ctx.toast(status === 'published' ? 'Публикуем…' : 'Сохраняем…');
+    ready.then(function () {
+      upsert('video', next);
+      if (status === 'published') return publishVideo();
+    }).then(function () {
+      ctx.toast(status === 'published' ? 'На сайте' : 'Черновик сохранён');
+      ctx.go('video');
+    }).catch(function (e) {
+      ctx.toast(e.message || 'Не удалось сохранить', true);
+    });
   }
 
   function weekdayName(iso) {
@@ -2415,6 +2689,10 @@
   var TOPICS_PAGE_ID = 1900000004;
   var TOPICS_PAGE_SLUG = 'yak-topics-data';
   var EVENTS_PAGE_ID = 1900000006;
+  var AUDIO_PAGE_ID = 1900000010;
+  var AUDIO_PAGE_SLUG = 'yak-audio-data';
+  var VIDEO_PAGE_ID = 1900000011;
+  var VIDEO_PAGE_SLUG = 'yak-video-data';
   var EVENTS_PAGE_SLUG = 'yak-events-data';
 
   function publishAuthors() {
@@ -2975,6 +3253,13 @@
     mergedList: mergedList,
     allPhotos: allPhotos,
     uploadDataUrl: uploadDataUrl,
+    uploadBlob: uploadBlob,
+    attachField: attachField,
+    bindBucketFile: bindBucketFile,
+    fileLabel: fileLabel,
+    readMediaDuration: readMediaDuration,
+    publishAudio: publishAudio,
+    publishVideo: publishVideo,
     publishPhotostock: publishPhotostock,
     listTopics: listTopics,
     upsertTopic: upsertTopic,

@@ -867,6 +867,19 @@ table.data .title-link:hover { color: var(--accent); }
   100% { background-position: -100% 0; }
 }
 
+.attach-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.attach-name {
+  font-size: 13px; color: var(--stone-700); overflow-wrap: anywhere;
+}
+.attach-bar {
+  height: 4px; border-radius: 99px; background: var(--surface-2); overflow: hidden;
+}
+.attach-bar i {
+  display: block; height: 100%; width: 0; background: var(--ink);
+}
+
 .archive-status { display: inline-flex; align-items: center; gap: 8px; }
 .list-item strong, table.data .title-link {
   overflow-wrap: anywhere;

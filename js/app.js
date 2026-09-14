@@ -33,6 +33,7 @@
     { id: 'spirit', title: 'Духовная жизнь', group: 'Сайт' },
     { id: 'afisha', title: 'Афиша', group: 'Сайт' },
     { id: 'audio', title: 'Аудио', group: 'Сайт' },
+    { id: 'podcasts', title: 'Подкасты', group: 'Сайт' },
     { id: 'video', title: 'Видео', group: 'Сайт' },
     { id: 'library', title: 'Библиотека', group: 'Сайт' },
     { id: 'media', title: 'Фотосток', group: 'Сайт' },
@@ -2003,6 +2004,9 @@
     } else if (r.name === 'about') {
       if (window.AdminAbout) AdminAbout.render(deskCtx);
       else viewEl.innerHTML = '<div class="panel"><div class="empty">Модуль «О проекте» не загрузился.</div></div>';
+    } else if (r.name === 'podcasts') {
+      if (window.AdminPodcasts) AdminPodcasts.render(r.id, deskCtx);
+      else viewEl.innerHTML = '<div class="panel"><div class="empty">Модуль подкастов не загрузился.</div></div>';
     } else if (r.name === 'library') {
       if (window.AdminLibrary) AdminLibrary.render(r.id, deskCtx);
       else viewEl.innerHTML = '<div class="panel"><div class="empty">Модуль библиотеки не загрузился.</div></div>';

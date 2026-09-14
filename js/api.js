@@ -260,6 +260,7 @@
     getAdminUsers: getAdminUsers,
     upsertArchive: upsertArchive,
     uploadMedia: function (body) { return send('POST', '/api/admin/media/upload', body); },
+    signMedia: function (body) { return send('POST', '/api/admin/media/sign', body); },
     createNews: createNews,
     updateNews: updateNews,
     deleteNews: deleteNews,

@@ -80,11 +80,44 @@
     return String(b.date || '').localeCompare(String(a.date || ''));
   });
 
+  var listeners = [];
+
+  function upsertTrack(incoming) {
+    if (!incoming || !incoming.id) return;
+    var i = -1;
+    for (var n = 0; n < tracks.length; n++) {
+      if (String(tracks[n].id) === String(incoming.id)) { i = n; break; }
+    }
+    var next = Object.assign({}, i === -1 ? {} : tracks[i], incoming);
+    if (i === -1) tracks.unshift(next);
+    else tracks[i] = next;
+  }
+
+  function mergePack(pack) {
+    if (!pack) return tracks;
+    var list = Array.isArray(pack) ? pack : pack.tracks;
+    if (Array.isArray(list)) list.forEach(upsertTrack);
+    return tracks;
+  }
+
+  function onPack(fn) {
+    if (typeof fn === 'function') listeners.push(fn);
+  }
+
+  function notifyPack() {
+    listeners.forEach(function (fn) {
+      try { fn(tracks); } catch (e) {}
+    });
+  }
+
   global.YakAudio = {
     artist: ARTIST,
     album: ALBUM,
     cover: COVER_DEFAULT,
     publicBase: 'https://storage.yandexcloud.net/fidesetratio/',
-    tracks: tracks
+    tracks: tracks,
+    mergePack: mergePack,
+    onPack: onPack,
+    notifyPack: notifyPack
   };
 })(typeof window !== 'undefined' ? window : this);
