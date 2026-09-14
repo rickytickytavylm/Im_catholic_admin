@@ -86,6 +86,45 @@
     };
   });
 
+  var DESK_LONGS = [
+    {
+      id: 4001,
+      title: 'Крестовый подход. Епископ Павел Пецци',
+      description: 'Выпуск программы «Крестовый подход».',
+      speaker: 'еп. Павел Пецци',
+      duration: 0,
+      type: 'long',
+      videoUrl: 'https://storage.yandexcloud.net/fidesetratio/desk/video/1789388902902-mgk6uj-%D0%9A%D1%80%D0%B5%D1%81%D1%82%D0%BE%D0%B2%D1%8B%D0%B9-%D0%BF%D0%BE%D0%B4%D1%85%D0%BE%D0%B4.-%D0%95%D0%BF%D0%B8%D1%81%D0%BA%D0%BE%D0%BF-%D0%9F%D0%B0%D0%B2%D0%B5%D0%BB-%D0%9F%D0%B5%D1%86%D1%86%D0%B8.mp4',
+      thumb: '',
+      channelId: 'krestovyy-podhod',
+      cycle: 'Крестовый подход',
+    },
+    {
+      id: 4002,
+      title: 'Крестовый подход. Отец Илья Астапов',
+      description: 'Выпуск программы «Крестовый подход».',
+      speaker: 'о. Илья Астапов',
+      duration: 0,
+      type: 'long',
+      videoUrl: 'https://storage.yandexcloud.net/fidesetratio/desk/video/1789389138706-qs1qug-%D0%9A%D1%80%D0%B5%D1%81%D1%82%D0%BE%D0%B2%D1%8B%D0%B9-%D0%BF%D0%BE%D0%B4%D1%85%D0%BE%D0%B4.-%D0%9E%D1%82%D0%B5%D1%86-%D0%98%D0%BB%D1%8C%D1%8F-%D0%90%D1%81%D1%82%D0%B0%D0%BF%D0%BE%D0%B2.mp4',
+      thumb: '',
+      channelId: 'krestovyy-podhod',
+      cycle: 'Крестовый подход',
+    },
+    {
+      id: 4003,
+      title: 'Крестовый подход. Пасхальный выпуск 2025',
+      description: 'Выпуск программы «Крестовый подход».',
+      speaker: 'Крестовый подход',
+      duration: 0,
+      type: 'long',
+      videoUrl: 'https://storage.yandexcloud.net/fidesetratio/desk/video/1789389256793-nfg0m9-%D0%9A%D1%80%D0%B5%D1%81%D1%82%D0%BE%D0%B2%D1%8B%D0%B9-%D0%BF%D0%BE%D0%B4%D1%85%D0%BE%D0%B4.-%D0%9F%D0%B0%D1%81%D1%85%D0%B0%D0%BB%D1%8C%D0%BD%D1%8B%D0%B9-%D0%B2%D1%8B%D0%BF%D1%83%D1%81%D0%BA-2025.mp4',
+      thumb: '',
+      channelId: 'krestovyy-podhod',
+      cycle: 'Крестовый подход',
+    },
+  ];
+
   var OWN_LONGS = [
     {
       id: 10,
@@ -239,6 +278,14 @@
       cycles: [],
     },
     {
+      id: 'krestovyy-podhod',
+      name: 'Крестовый подход',
+      logo: '',
+      bio: 'Программа «Крестовый подход»: разговоры о вере и Церкви.',
+      links: [],
+      cycles: [],
+    },
+    {
       id: 'ocean-mercy',
       name: 'Океан милосердия',
       logo: 'assets/video/long-01-mercy.webp?v=2026090701',
@@ -248,7 +295,7 @@
     },
   ];
 
-  var items = OWN_LONGS.concat(OWN_SHORTS).concat(PARTNER_LONGS).concat(PARTNER_SHORTS);
+  var items = DESK_LONGS.concat(OWN_LONGS).concat(OWN_SHORTS).concat(PARTNER_LONGS).concat(PARTNER_SHORTS);
   var listeners = [];
 
   function upsertItem(incoming) {
