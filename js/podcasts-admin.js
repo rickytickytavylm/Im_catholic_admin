@@ -50,9 +50,16 @@
   }
 
   function allShows() {
+    var seed = seedShows();
     var saved = readAll().podcasts;
-    if (saved && saved.length) return saved.slice();
-    return seedShows();
+    if (!saved || !saved.length) return seed;
+    return saved.map(function (s) {
+      var fromSeed = seed.filter(function (x) { return x && x.id === s.id; })[0];
+      if (fromSeed && fromSeed.episodes && (!s.episodes || s.episodes.length < fromSeed.episodes.length)) {
+        return Object.assign({}, s, { episodes: fromSeed.episodes.slice() });
+      }
+      return s;
+    });
   }
 
   function getShow(id) {

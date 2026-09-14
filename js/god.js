@@ -179,6 +179,10 @@
         band('Аудио', '#audio', auds.slice(0, 8).map(function (it) {
           return card('#audio/' + encodeURIComponent(it.id), it.cover || 'assets/cards/articles-sermons.webp', it.title, (it.artist || '') + (it.duration ? ' · ' + it.duration : ''));
         }).join(''), auds.length) +
+        band('Подкасты', '#podcasts', ((window.YakPodcasts && YakPodcasts.shows) || []).slice(0, 8).map(function (it) {
+          var n = window.YakPodcasts && YakPodcasts.countOf ? YakPodcasts.countOf(it) : (it.episodes || []).length;
+          return card('#podcasts/' + encodeURIComponent(it.id), it.cover || 'assets/cards/articles-spirituality.webp', it.title, (it.host || '') + (n ? ' · ' + n + ' вып.' : ''));
+        }).join(''), (window.YakPodcasts && YakPodcasts.shows && YakPodcasts.shows.length) || 0) +
         band('Афиша', '#afisha', evs.slice(0, 8).map(function (it) {
           return card('#afisha/' + encodeURIComponent(it.id), eventCover(it), it.title, (it.date || '') + (it.city ? ' · ' + it.city : ''));
         }).join(''), evs.length) +
