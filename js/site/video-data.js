@@ -246,31 +246,35 @@
   var PARTNER_SHORTS = [];
 
   var PARTNER_LONGS = [
-    /* Универсальная Церковь — отдельные ролики с VK */
     {
-      id: 201,
-      title: 'Видео на VK',
-      speaker: 'Вселенская Церковь по-русски',
-      channelId: 'unasancta',
+      id: 4209,
+      title: "Маленькие притчи обо всём на свете. Выпуск 9",
+      description: "Маленькие притчи обо всём на свете",
+      speaker: "ТВ Кана",
+      videoUrl: "https://storage.yandexcloud.net/fidesetratio/desk/video/1789468304390-an2kxh-%D0%9C%D0%B0%D0%BB%D0%B5%D0%BD%D1%8C%D0%BA%D0%B8%D0%B5-%D0%BF%D1%80%D0%B8%D1%82%D1%87%D0%B8-%D0%BE%D0%B1%D0%BE-%D0%B2%D1%81%D1%91%D0%BC-%D0%BD%D0%B0-%D1%81%D0%B2%D0%B5%D1%82%D0%B5.-%D0%92%D1%8B%D0%BF%D1%83%D1%81%D0%BA-9.mp4",
       thumb: '',
-      externalUrl: 'https://vkvideo.ru/video-64334109_456240116',
+      channelId: "tvkana",
+      cycle: "Маленькие притчи обо всём на свете",
     },
     {
-      id: 202,
-      title: 'Видео на VK',
-      speaker: 'Вселенская Церковь по-русски',
-      channelId: 'unasancta',
+      id: 4304,
+      title: "Храм Успения Пресвятой Девы Марии в Санкт-Петербурге",
+      description: "Католические храмы России",
+      speaker: "ТВ Кана",
+      videoUrl: "https://storage.yandexcloud.net/fidesetratio/desk/video/1789468286228-bpuxyz-%D0%A5%D1%80%D0%B0%D0%BC-%D0%A3%D1%81%D0%BF%D0%B5%D0%BD%D0%B8%D1%8F-%D0%9F%D1%80%D0%B5%D1%81%D0%B2%D1%8F%D1%82%D0%BE%D0%B9-%D0%94%D0%B5%D0%B2%D1%8B-%D0%9C%D0%B0%D1%80%D0%B8%D0%B8-%D0%B2-%D0%A1%D0%B0%D0%BD%D0%BA%D1%82-%D0%9F%D0%B5%D1%82%D0%B5%D1%80%D0%B1%D1%83%D1%80%D0%B3%D0%B5.mp4",
       thumb: '',
-      externalUrl: 'https://vkvideo.ru/video-64334109_456240070',
+      channelId: "tvkana",
+      cycle: "Католические храмы России",
     },
-    /* МАМА */
     {
-      id: 301,
-      title: 'Видео на VK',
-      speaker: 'Киностудия «МАМА»',
-      channelId: 'mama',
+      id: 4401,
+      title: "Библейский Розарий. Радостные тайны",
+      description: "Библейский Розарий",
+      speaker: "Вселенская Церковь по-русски",
+      videoUrl: "https://storage.yandexcloud.net/fidesetratio/desk/video/1789468333336-dw2w2r-%D0%91%D0%B8%D0%B1%D0%BB%D0%B5%D0%B9%D1%81%D0%BA%D0%B8%D0%B9-%D0%A0%D0%BE%D0%B7%D0%B0%D1%80%D0%B8%D0%B9-%D0%A0%D0%B0%D0%B4%D0%BE%D1%81%D1%82%D0%BD%D1%8B%D0%B5-%D0%A2%D0%B0%D0%B9%D0%BD%D1%8B.mp4",
       thumb: '',
-      externalUrl: 'https://vkvideo.ru/video-26685443_456239124',
+      channelId: "unasancta",
+      cycle: "Библейский Розарий",
     },
   ].map(function (v) {
     return {
