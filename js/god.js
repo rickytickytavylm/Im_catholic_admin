@@ -222,6 +222,7 @@
       if (type === 'video') return videoItems();
       if (type === 'church-day') return dayItems();
       if (type === 'authors') return authorItems();
+      if (type === 'organizer') return (window.AdminDesk && AdminDesk.mergedList) ? AdminDesk.mergedList('organizer') : [];
       if (type === 'cycle') return (window.AdminDesk && AdminDesk.mergedList) ? AdminDesk.mergedList('cycle') : [];
       if (type === 'photo') return photos();
       if (type === 'church') return guideCards(window.YakGuides && YakGuides.church, 'church');
@@ -236,6 +237,7 @@
       if (type === 'video') return '#video/' + encodeURIComponent(it.id);
       if (type === 'church-day') return '#church-day/' + encodeURIComponent(it.id || it.date);
       if (type === 'authors') return '#authors/' + encodeURIComponent(it.slug || it.id);
+      if (type === 'organizer') return '#organizers/' + encodeURIComponent(it.id);
       if (type === 'cycle') return '#cycles/' + encodeURIComponent(it.id || it.slug);
       if (type === 'church') return '#church/' + encodeURIComponent(it.id);
       if (type === 'spirit') return '#spirit/' + encodeURIComponent(it.id);
@@ -247,6 +249,7 @@
       if (type === 'audio') return it.cover || 'assets/cards/articles-sermons.webp';
       if (type === 'photo') return it.url || it.thumb;
       if (type === 'authors') return it.photo;
+      if (type === 'organizer') return it.logo;
       if (type === 'cycle') return it.cover || it.image;
       if (type === 'church' || type === 'spirit') return it.image;
       if (type === 'church-day') return 'assets/cards/spirit-liturgy.webp';
@@ -258,6 +261,7 @@
       if (type === 'event') return (it.date || '') + (it.city ? ' · ' + it.city : '');
       if (type === 'photo') return (it.tags || []).slice(0, 4).join(' · ');
       if (type === 'authors') return it.role || '';
+      if (type === 'organizer') return [it.city, it.website].filter(Boolean).join(' · ');
       if (type === 'cycle') return ((it.items || []).length ? (it.items.length + ' материалов') : '') + (it.subtitle ? ' · ' + it.subtitle : '');
       if (type === 'church' || type === 'spirit') return it.sub || '';
       if (type === 'church-day') return it.date || '';
@@ -282,7 +286,7 @@
       else status = 'Показано ' + list.length;
       return (
         '<div class="panel archive-bar">' +
-        '<input class="input" id="god-q" type="search" placeholder="Поиск по всему архиву: заголовок, автор, слово из текста" value="' + esc(query) + '" />' +
+        '<input class="input" id="god-q" type="search" placeholder="Поиск: заголовок, автор, адрес статьи (slug), слово из текста" value="' + esc(query) + '" />' +
         '<div class="archive-bar-row">' +
         '<span class="archive-status">' + status + '</span>' +
         '<span class="archive-bar-actions">' +
@@ -307,6 +311,7 @@
         '<div class="topbar-actions">' +
         (canBackup ? '<button type="button" class="btn btn-ghost" id="god-export">Выгрузить контент</button>' +
           '<button type="button" class="btn btn-ghost" id="god-import">Загрузить контент</button>' : '') +
+        (type === 'event' ? '<a class="btn btn-ghost" href="#organizers">Организаторы</a>' : '') +
         (addHref ? '<a class="btn btn-primary" href="' + addHref + '">Добавить</a>' : '') +
         '</div></div>' +
         archiveBar(list) +

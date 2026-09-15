@@ -422,6 +422,26 @@
     packListeners.forEach(function (fn) { try { fn(); } catch (e) {} });
   }
 
+  function mergeOrganizer(it) {
+    if (!it || !it.id) return;
+    var i;
+    for (i = 0; i < ORGANIZERS.length; i++) if (ORGANIZERS[i].id === it.id) break;
+    if (it.status && it.status !== 'published') {
+      if (i !== ORGANIZERS.length) ORGANIZERS.splice(i, 1);
+      return;
+    }
+    if (i === ORGANIZERS.length) ORGANIZERS.push(it);
+    else ORGANIZERS[i] = Object.assign({}, ORGANIZERS[i], it);
+  }
+
+  function orgMarkStyle(o) {
+    if (!o) return 'background:#5c5346';
+    if (o.logo) {
+      return 'background-color:' + (o.coverTone || '#5c5346') + ';background-image:url(\'' + String(o.logo).replace(/'/g, '%27') + '\')';
+    }
+    return 'background:linear-gradient(145deg,' + (o.coverTone || '#5c5346') + ',#1a1816)';
+  }
+
   function mergePack(pack) {
     var items = !pack ? [] : (Array.isArray(pack) ? pack : (pack.items || pack.events || []));
     items.forEach(function (it) {
@@ -437,6 +457,8 @@
       if (i === EVENTS.length) EVENTS.push(it);
       else EVENTS[i] = Object.assign({}, EVENTS[i], it);
     });
+    var orgs = pack && !Array.isArray(pack) ? (pack.organizers || []) : [];
+    orgs.forEach(mergeOrganizer);
     notifyPack();
   }
 
@@ -492,6 +514,7 @@
     monthDays: monthDays,
     eventEnd: eventEnd,
     mergePack: mergePack,
+    orgMarkStyle: orgMarkStyle,
     onPack: onPack
   };
 

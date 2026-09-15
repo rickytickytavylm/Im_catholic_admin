@@ -252,7 +252,7 @@
       title: 'Видео на VK',
       speaker: 'Вселенская Церковь по-русски',
       channelId: 'unasancta',
-      thumb: 'assets/video/partners/unasancta.svg',
+      thumb: '',
       externalUrl: 'https://vkvideo.ru/video-64334109_456240116',
     },
     {
@@ -260,7 +260,7 @@
       title: 'Видео на VK',
       speaker: 'Вселенская Церковь по-русски',
       channelId: 'unasancta',
-      thumb: 'assets/video/partners/unasancta.svg',
+      thumb: '',
       externalUrl: 'https://vkvideo.ru/video-64334109_456240070',
     },
     /* МАМА */
@@ -269,7 +269,7 @@
       title: 'Видео на VK',
       speaker: 'Киностудия «МАМА»',
       channelId: 'mama',
-      thumb: 'assets/video/partners/mama.svg',
+      thumb: '',
       externalUrl: 'https://vkvideo.ru/video-26685443_456239124',
     },
   ].map(function (v) {
@@ -292,7 +292,7 @@
     {
       id: 'unasancta',
       name: 'Вселенская Церковь по-русски',
-      logo: 'assets/video/partners/unasancta.svg',
+      logo: 'assets/video/partners/unasancta.webp',
       bio:
         'Проект «Вселенская Церковь по-русски» — лучшие зарубежные католические проповедники и мыслители современности на русском языке. Основное направление — перевод видео проповедей и лекций о Католической Церкви. Автор проекта Александр Баранов также переводит статьи, книги и послания Римских Пап.',
       links: [
@@ -306,7 +306,7 @@
     {
       id: 'mama',
       name: 'Киностудия «МАМА»',
-      logo: 'assets/video/partners/mama.svg',
+      logo: 'assets/video/partners/mama.webp',
       bio:
         'Киностудия «МАМА» занимается созданием документального и игрового кино. Цель — духовное просвещение, помощь в укреплении веры, воспитание духовных ценностей. Производство: Давид Чебан и Яна Чебан. Директор: Роланд Жакенуд.',
       links: [
@@ -317,12 +317,12 @@
         {
           title: 'Символ веры',
           href: 'https://vkvideo.ru/playlist/-26685443_13',
-          thumb: 'assets/video/partners/mama.svg',
+          thumb: '',
         },
         {
           title: 'Семь даров Святого Духа',
           href: 'https://vkvideo.ru/playlist/-26685443_2',
-          thumb: 'assets/video/partners/mama.svg',
+          thumb: '',
         },
       ],
     },

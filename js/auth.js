@@ -15,7 +15,7 @@
     super: {
       id: 'super',
       title: 'Супер-администратор',
-      nav: ['dashboard', 'home', 'about', 'publish', 'news', 'articles', 'cycles', 'church', 'spirit', 'afisha', 'audio', 'podcasts', 'video', 'church-day', 'materials', 'pages', 'taxonomy', 'authors', 'library', 'media', 'photographers', 'photo-moderation', 'users', 'logs', 'settings'],
+      nav: ['dashboard', 'home', 'about', 'publish', 'news', 'articles', 'cycles', 'church', 'spirit', 'afisha', 'organizers', 'audio', 'podcasts', 'video', 'church-day', 'materials', 'pages', 'taxonomy', 'authors', 'library', 'media', 'photographers', 'photo-moderation', 'users', 'logs', 'settings'],
       canPublish: true,
       canModerate: true,
       canManageUsers: true,
@@ -33,7 +33,7 @@
     chief: {
       id: 'chief',
       title: 'Главный редактор',
-      nav: ['dashboard', 'home', 'about', 'publish', 'news', 'articles', 'cycles', 'church', 'spirit', 'afisha', 'audio', 'podcasts', 'video', 'church-day', 'materials', 'pages', 'taxonomy', 'authors', 'library', 'media', 'photographers', 'photo-moderation', 'users', 'logs'],
+      nav: ['dashboard', 'home', 'about', 'publish', 'news', 'articles', 'cycles', 'church', 'spirit', 'afisha', 'organizers', 'audio', 'podcasts', 'video', 'church-day', 'materials', 'pages', 'taxonomy', 'authors', 'library', 'media', 'photographers', 'photo-moderation', 'users', 'logs'],
       canPublish: true,
       canModerate: true,
       canManageUsers: false,
@@ -51,7 +51,7 @@
     rubric_editor: {
       id: 'rubric_editor',
       title: 'Редактор рубрики',
-      nav: ['dashboard', 'home', 'publish', 'news', 'articles', 'cycles', 'afisha', 'materials'],
+      nav: ['dashboard', 'home', 'publish', 'news', 'articles', 'cycles', 'afisha', 'organizers', 'materials'],
       canPublish: true,
       canModerate: true,
       canManageUsers: false,
@@ -292,7 +292,7 @@
     if (id === 'photostock') id = 'media';
     if (id === 'page-editor') id = 'pages';
     if (id === 'photographer-edit') id = 'photographers';
-    if (id === 'publish' || id === 'home' || id === 'news' || id === 'articles' || id === 'cycles' || id === 'audio' || id === 'podcasts' || id === 'video' || id === 'afisha' || id === 'church-day' || id === 'authors' || id === 'church' || id === 'spirit') {
+    if (id === 'publish' || id === 'home' || id === 'news' || id === 'articles' || id === 'cycles' || id === 'audio' || id === 'podcasts' || id === 'video' || id === 'afisha' || id === 'organizers' || id === 'church-day' || id === 'authors' || id === 'church' || id === 'spirit') {
       var n = roleOf(user).nav;
       if (n.indexOf(id) !== -1 || n.indexOf('publish') !== -1 || n.indexOf('materials') !== -1) return true;
     }

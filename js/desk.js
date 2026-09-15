@@ -75,7 +75,7 @@
   ];
 
   function emptyState() {
-    return { articles: [], events: [], audio: [], video: [], churchDays: [], authors: [], guides: [], authorLinks: [], photographers: [], videoChannels: [], cycles: [], topics: [], libraryItems: [], libraryRubrics: [], podcasts: [], home: null, about: null };
+    return { articles: [], events: [], audio: [], video: [], churchDays: [], authors: [], organizers: [], hiddenSlugs: [], guides: [], authorLinks: [], photographers: [], videoChannels: [], cycles: [], topics: [], libraryItems: [], libraryRubrics: [], podcasts: [], home: null, about: null };
   }
 
   var archiveCache = { news: [], article: [] };
@@ -301,6 +301,7 @@
     if (type === 'video') return data.video;
     if (type === 'church-day') return data.churchDays;
     if (type === 'authors') return data.authors || [];
+    if (type === 'organizer') return data.organizers || [];
     if (type === 'cycle') return data.cycles || [];
     return [];
   }
@@ -341,13 +342,62 @@
         return Object.assign({ status: 'published', source: 'site' }, c);
       });
     }
+    if (type === 'organizer' && window.YakAfisha) {
+      return (YakAfisha.ORGANIZERS || []).map(function (o) {
+        return Object.assign({ status: 'published', source: 'site' }, o);
+      });
+    }
     return [];
+  }
+
+  function authorWorkItems(q) {
+    q = String(q || '').trim().toLowerCase();
+    if (!q) return [];
+    var hidden = hiddenSlugSet();
+    var out = [];
+    (window.YakAuthors || []).forEach(function (a) {
+      (a.recent || []).forEach(function (p) {
+        if (!p || !p.slug) return;
+        if (hidden[String(p.slug)]) return;
+        var item = {
+          id: p.slug,
+          slug: p.slug,
+          title: p.title || p.slug,
+          excerpt: p.excerpt || '',
+          date: p.date || '',
+          author: a.name || '',
+          authorSlug: a.slug,
+          kind: 'article',
+          status: 'published',
+          source: 'author-work',
+        };
+        if (q) {
+          var hay = ((item.title || '') + ' ' + (item.slug || '') + ' ' + (item.author || '') + ' ' + (item.excerpt || '')).toLowerCase();
+          if (hay.indexOf(q) === -1) return;
+        }
+        out.push(item);
+      });
+    });
+    return out;
+  }
+
+  function hiddenSlugSet() {
+    var set = {};
+    (read().hiddenSlugs || []).forEach(function (s) {
+      if (s) set[String(s)] = 1;
+    });
+    return set;
   }
 
   function mergedList(type, q) {
     q = String(q || '').trim().toLowerCase();
     var byId = {};
     var site = (type === 'news' || type === 'article') ? (archiveCache[type] || []) : siteItems(type);
+    if (type === 'article') {
+      authorWorkItems(q).forEach(function (x) {
+        if (x && x.id != null && x.id !== '') byId[String(x.id)] = x;
+      });
+    }
     site.forEach(function (x) {
       if (x && x.id != null && x.id !== '') byId[String(x.id)] = x;
     });
@@ -369,7 +419,7 @@
           return String(a.id) === String(x.id) || (x.slug && a.slug && a.slug === x.slug);
         });
         if (!fromServer) {
-          var hay = ((x.title || '') + ' ' + (x.excerpt || '') + ' ' + (x.author || '') + ' ' + (x.slug || '')).toLowerCase();
+          var hay = ((x.title || '') + ' ' + (x.excerpt || '') + ' ' + (x.author || '') + ' ' + (x.slug || '') + ' ' + (x.id || '')).toLowerCase();
           if (hay.indexOf(q) === -1) return false;
         }
       }
@@ -533,13 +583,14 @@
       done(list);
       w.forEach(function (fn) { try { fn(list); } catch (e) { /* noop */ } });
     }
-    var req = { q: st.q || '', limit: PAGE, page: nextPage };
+    var req = { q: st.q || '', limit: PAGE, page: nextPage, includeHidden: true };
     if (type === 'news') req.category = 'news';
     else if (st.q) req.category = '';
     else req.category = 'desk';
     function applyPack(pack) {
       if (seq !== st.seq) return;
       var items = ((pack && pack.items) || []).map(function (a) { return mapArchive(a, type); });
+      if (type === 'article' && st.q) items = items.concat(authorWorkItems(st.q));
       st.page = nextPage;
       mergeArchive(type, items);
       var total = pack && pack.total != null ? Number(pack.total) : NaN;
@@ -572,7 +623,19 @@
           };
         });
       }
-      return arts.then(function (pack) {
+      var exact = !st.q ? Promise.resolve(null) : Promise.resolve()
+        .then(function () { return AdminApi.getArticle(st.q); })
+        .catch(function () { return AdminApi.getPage ? AdminApi.getPage(st.q) : null; })
+        .catch(function () { return null; });
+      return Promise.all([arts, exact]).then(function (pair) {
+        var pack = pair[0] || {};
+        var one = pair[1];
+        if (one && (one.title || one.slug)) {
+          pack = {
+            items: [one].concat(pack.items || []),
+            total: Number(pack.total || 0) + 1,
+          };
+        }
         var got = ((pack && pack.items) || []).length;
         if (type === 'article' && !st.q && req.category === 'desk' && nextPage === 1 && !got) {
           return Promise.all([
@@ -617,6 +680,7 @@
       : type === 'audio' ? 'audio'
       : type === 'video' ? 'video'
       : type === 'authors' ? 'authors'
+      : type === 'organizer' ? 'organizers'
       : type === 'guides' ? 'guides'
       : type === 'cycle' ? 'cycles'
       : 'churchDays';
@@ -625,7 +689,7 @@
     if (!item.createdAt) item.createdAt = item.updatedAt;
     var i = list.findIndex(function (x) {
       if (String(x.id) === String(item.id)) return true;
-      if (item.slug && x.slug && String(x.slug) === String(item.slug) && (key === 'articles' || key === 'authors' || key === 'cycles')) return true;
+      if (item.slug && x.slug && String(x.slug) === String(item.slug) && (key === 'articles' || key === 'authors' || key === 'cycles' || key === 'organizers')) return true;
       return false;
     });
     list = list.filter(function (x, idx) {
@@ -650,6 +714,7 @@
       : type === 'audio' ? 'audio'
       : type === 'video' ? 'video'
       : type === 'authors' ? 'authors'
+      : type === 'organizer' ? 'organizers'
       : type === 'guides' ? 'guides'
       : type === 'cycle' ? 'cycles'
       : 'churchDays';
@@ -1118,7 +1183,9 @@
     var newsSlugs = { news: 1, digest: 1 };
     var isVoice = slugs.some(function (s) { return voices[s]; });
     if (type === 'news' && slugs.indexOf('news') === -1) slugs.unshift('news');
-    if (isVoice) {
+    if (slugs.indexOf('hidden') !== -1) {
+      slugs = ['hidden'];
+    } else if (isVoice) {
       slugs = slugs.filter(function (s) { return !newsSlugs[s] && s !== 'columns'; });
     } else if (type === 'article' && slugs.indexOf('columns') === -1) {
       slugs.push('columns');
@@ -1269,12 +1336,46 @@
     };
     var delBtn = document.getElementById('desk-del');
     if (delBtn) delBtn.onclick = function () {
-      if (confirm(isNews ? 'Снять новость с публикации?' : 'Снять статью с публикации?')) {
-        hideItem(type, item.id);
-        ctx.toast('Снято с публикации');
-        ctx.go(back);
+      if (confirm(isNews ? 'Снять новость с публикации?' : 'Снять статью с публикации? Она пропадёт с сайта и со страниц авторов.')) {
+        hidePublication(ctx, type, item, back);
       }
     };
+  }
+
+  function hidePublication(ctx, type, item, back) {
+    var slug = item.slug || item.id;
+    hideItem(type, item.id || slug);
+    var data = read();
+    data.hiddenSlugs = data.hiddenSlugs || [];
+    if (slug && data.hiddenSlugs.indexOf(String(slug)) === -1) data.hiddenSlugs.push(String(slug));
+    write(data);
+    (window.YakAuthors || []).forEach(function (a) {
+      if (!a || !a.slug) return;
+      if ((a.recent || []).some(function (p) { return p && String(p.slug) === String(slug); })) {
+        unlinkAuthor(a.slug, slug);
+      }
+    });
+    ctx.toast('Снимаем с сайта…');
+    var tasks = [publishAuthors().catch(function () {})];
+    if (item.source !== 'author-work' || item.contentHtml || item.body) {
+      var hidden = Object.assign({}, item, {
+        slug: slug,
+        title: item.title || slug,
+        date: item.date || todayIso(),
+        rubrics: ['hidden'],
+        excerpt: item.excerpt || '',
+        contentHtml: item.contentHtml || '',
+        body: item.body || '',
+      });
+      tasks.push(publishToArchive(hidden, type).catch(function () {}));
+    }
+    Promise.all(tasks).then(function () {
+      ctx.toast('Снято с публикации');
+      ctx.go(back);
+    }).catch(function (err) {
+      ctx.toast((err && err.message) || 'Снято локально', true);
+      ctx.go(back);
+    });
   }
 
   function bindSlugField(locked) {
@@ -1797,7 +1898,7 @@
         categorySlugs: ['day-by-day'],
         excerpt: '',
         contentHtml: '<p></p>',
-        contentText: JSON.stringify({ items: items }),
+        contentText: JSON.stringify({ items: items, organizers: publishedOrganizers() }),
         source: 'desk-events',
       }],
     });
@@ -1824,7 +1925,15 @@
       field('Дата окончания', 'd-end', item.endDate || '', 'date') +
       field('Время', 'd-time', item.time, 'text', 'placeholder="19:00"') +
       field('Город', 'd-city', item.city) +
-      field('Организатор', 'd-org', orgName) +
+      '<div class="field"><label>Организатор</label>' +
+      '<select class="input" id="d-org-id">' +
+      '<option value="">— выбрать —</option>' +
+      mergedList('organizer').map(function (o) {
+        var sel = (item.organizerId && o.id === item.organizerId) || (orgName && (o.name === orgName || o.short === orgName));
+        return '<option value="' + esc(o.id) + '"' + (sel ? ' selected' : '') + '>' + esc(o.name) + (o.city ? ' · ' + esc(o.city) : '') + '</option>';
+      }).join('') +
+      '</select>' +
+      '<input class="input" id="d-org" value="' + esc(orgName) + '" placeholder="или вписать название" /></div>' +
       field('Адрес', 'd-place', item.place) +
       field('Стоимость', 'd-cost', costVal, 'select', opts(
         [{ id: 'free', title: 'Бесплатно' }, { id: 'paid', title: 'Платно' }],
@@ -1901,6 +2010,11 @@
       nextId = uniqueEventSlug(rawSlug || title, item.id);
     }
     var organizer = val('d-org');
+    var organizerId = val('d-org-id') || matchOrganizerId(organizer) || item.organizerId || '';
+    if (organizerId && !organizer) {
+      var picked = mergedList('organizer').filter(function (o) { return o.id === organizerId; })[0];
+      if (picked) organizer = picked.name;
+    }
     var coverNow = val('d-cover');
     var next = Object.assign({}, item, {
       id: nextId,
@@ -1912,7 +2026,7 @@
       time: val('d-time'),
       city: val('d-city'),
       organizer: organizer,
-      organizerId: matchOrganizerId(organizer) || item.organizerId || '',
+      organizerId: organizerId,
       venue: organizer,
       place: val('d-place'),
       cost: val('d-cost') || 'free',
@@ -2722,9 +2836,173 @@
         categorySlugs: ['day-by-day'],
         excerpt: '',
         contentHtml: '<p></p>',
-        contentText: JSON.stringify(list),
+        contentText: JSON.stringify({ authors: list, hiddenSlugs: read().hiddenSlugs || [] }),
         source: 'desk-authors',
       }],
+    });
+  }
+
+  function publishedOrganizers() {
+    var by = {};
+    mergedList('organizer').forEach(function (o) {
+      if (!o || !o.id) return;
+      if (o.status && o.status !== 'published') return;
+      by[o.id] = {
+        id: o.id,
+        name: o.name || '',
+        short: o.short || o.name || '',
+        city: o.city || '',
+        blurb: o.blurb || o.desc || '',
+        website: o.website || '',
+        logo: httpUrl(o.logo) ? o.logo : '',
+        coverTone: o.coverTone || '#5c5346',
+        partnerTitle: o.partnerTitle || '',
+      };
+    });
+    (read().organizers || []).forEach(function (o) {
+      if (o && o.status === 'hidden' && o.id) by[o.id] = { id: o.id, status: 'hidden' };
+    });
+    return Object.keys(by).map(function (k) { return by[k]; });
+  }
+
+  function uniqueOrganizerSlug(base, keepId) {
+    var slug = slugify(base) || 'organizer';
+    var used = {};
+    mergedList('organizer').forEach(function (o) {
+      if (!o || o.status === 'hidden') return;
+      if (o.id && o.id !== keepId) used[o.id] = true;
+    });
+    if (!used[slug]) return slug;
+    var n = 2;
+    while (used[slug + '-' + n]) n += 1;
+    return slug + '-' + n;
+  }
+
+  function orgTone(name) {
+    var tones = ['#5c5346', '#6b2d3c', '#2f5d8c', '#3d6b4f', '#8a5a2b', '#4a3f6b'];
+    var h = 0;
+    String(name || '').split('').forEach(function (ch) { h = (h + ch.charCodeAt(0)) % tones.length; });
+    return tones[h];
+  }
+
+  function renderOrganizers(ctx, id) {
+    if (id) {
+      renderOrganizerForm(ctx, id);
+      return;
+    }
+    if (window.AdminGod) {
+      AdminGod.paintSection(ctx, 'organizer', 'Организаторы', '#organizers/new');
+      return;
+    }
+    var items = mergedList('organizer');
+    ctx.viewEl.innerHTML =
+      '<div class="topbar"><div><h1>Организаторы</h1><p>Карточки в афише: название, город, сайт, текст и логотип-кружок.</p></div>' +
+      '<div class="topbar-actions"><a class="btn btn-primary" href="#organizers/new">Добавить</a></div></div>' +
+      '<div class="panel">' +
+      (items.length
+        ? '<div class="list-stack">' + items.map(function (o) {
+          return '<a class="list-item" href="#organizers/' + esc(o.id) + '"><div><strong>' + esc(o.name) + '</strong><small>' + esc(o.city || '') + '</small></div></a>';
+        }).join('') + '</div>'
+        : emptyRow('Пока нет организаторов.')) +
+      '</div>';
+  }
+
+  function renderOrganizerForm(ctx, id) {
+    var isNew = !id || id === 'new';
+    var item = isNew
+      ? { id: '', name: '', city: '', website: '', blurb: '', logo: '', coverTone: '#5c5346', status: 'published' }
+      : getItem('organizer', id);
+    if (!item) { ctx.toast('Организатор не найден', true); ctx.go('organizers'); return; }
+    var logo = item.logo || '';
+    composeShell(
+      ctx, isNew ? 'Новый организатор' : 'Организатор', 'organizers',
+      field('Название', 'd-title', item.name) +
+      '<div class="field slug-row"><label>Адрес</label>' +
+      '<span class="slug-prefix">organizer.html?id=</span>' +
+      '<input class="input" id="d-slug" value="' + esc(item.id || '') + '" placeholder="iskusstvo-dobra" autocomplete="off" /></div>' +
+      field('Город', 'd-city', item.city) +
+      field('Сайт', 'd-href', item.website || '', 'text', 'placeholder="https://"') +
+      field('Описание', 'd-desc', item.blurb || item.desc || '', 'textarea') +
+      '<div class="field"><label>Логотип — на сайте цветным кружком</label>' +
+      '<div class="cover-frame' + (logo ? '' : ' is-empty') + '" id="d-cover-frame" style="width:88px;height:88px;border-radius:50%;overflow:hidden">' +
+      (logo ? '<img src="' + esc(mediaSrc(logo)) + '" alt="" />' : '<span>Кружок</span>') +
+      '</div>' +
+      '<input type="hidden" id="d-cover" value="' + esc(logo) + '" />' +
+      '<button type="button" class="btn btn-ghost" id="d-cover-up">Загрузить логотип</button>' +
+      '<input type="file" id="d-cover-file" accept="image/*" hidden /></div>',
+      function (status) { saveOrganizer(ctx, item, isNew, status); },
+      function () { saveOrganizer(ctx, item, isNew, 'published'); },
+      isNew ? null : function () {
+        if (!confirm('Снять организатора с афиши?')) return;
+        hideItem('organizer', item.id);
+        ctx.toast('Снимаем…');
+        publishEvents().then(function () {
+          ctx.toast('Снято');
+          ctx.go('organizers');
+        }).catch(function (err) {
+          ctx.toast((err && err.message) || 'Снято локально', true);
+          ctx.go('organizers');
+        });
+      },
+      item.id ? ('organizer.html?id=' + encodeURIComponent(item.id)) : 'events.html'
+    );
+    bindSlugField(!isNew && !!item.id);
+    var coverInp = document.getElementById('d-cover');
+    var frame = document.getElementById('d-cover-frame');
+    var up = document.getElementById('d-cover-up');
+    var file = document.getElementById('d-cover-file');
+    if (up && file) {
+      up.onclick = function () { file.click(); };
+      file.onchange = function () {
+        var f = file.files && file.files[0];
+        if (!f) return;
+        var reader = new FileReader();
+        reader.onload = function () {
+          shrinkImage(reader.result, 640, 0.86, function (src) {
+            if (coverInp) coverInp.value = src;
+            if (frame) {
+              frame.classList.remove('is-empty');
+              frame.innerHTML = '<img src="' + esc(src) + '" alt="" />';
+            }
+          });
+        };
+        reader.readAsDataURL(f);
+      };
+    }
+  }
+
+  function saveOrganizer(ctx, item, isNew, status) {
+    var name = val('d-title');
+    if (!name) { ctx.toast('Укажите название', true); return; }
+    var nextId = (!isNew && item.id && (!val('d-slug') || val('d-slug') === item.id))
+      ? item.id
+      : uniqueOrganizerSlug(val('d-slug') || name, item.id);
+    var logoNow = val('d-cover');
+    var next = Object.assign({}, item, {
+      id: nextId,
+      slug: nextId,
+      name: name,
+      short: item.short || name,
+      city: val('d-city'),
+      website: val('d-href'),
+      blurb: val('d-desc'),
+      logo: logoNow,
+      coverTone: item.coverTone || orgTone(name),
+      status: status,
+    });
+    var ready = (logoNow && logoNow.indexOf('data:') === 0)
+      ? (ctx.toast('Сохраняем логотип…'), uploadDataUrl(logoNow, 'covers').then(function (url) { next.logo = url; }))
+      : Promise.resolve();
+    ctx.toast(status === 'published' ? 'Публикуем…' : 'Сохраняем…');
+    ready.then(function () {
+      if (item.id && item.id !== next.id) hideItem('organizer', item.id);
+      upsert('organizer', next);
+      if (status === 'published') return publishEvents();
+    }).then(function () {
+      ctx.toast(status === 'published' ? 'На сайте' : 'Черновик сохранён');
+      ctx.go('organizers');
+    }).catch(function (e) {
+      ctx.toast(e.message || 'Не удалось сохранить', true);
     });
   }
 
@@ -3226,6 +3504,10 @@
     if (name === 'authors') {
       if (!id && window.AdminGod) AdminGod.paintSection(ctx, 'authors', 'Авторы', '#authors/new');
       else renderAuthors(ctx, id);
+      return true;
+    }
+    if (name === 'organizers') {
+      renderOrganizers(ctx, id);
       return true;
     }
     if (name === 'cycles') {

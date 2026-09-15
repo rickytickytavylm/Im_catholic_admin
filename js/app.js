@@ -32,6 +32,7 @@
     { id: 'church', title: 'О Церкви', group: 'Сайт' },
     { id: 'spirit', title: 'Духовная жизнь', group: 'Сайт' },
     { id: 'afisha', title: 'Афиша', group: 'Сайт' },
+    { id: 'organizers', title: 'Организаторы', group: 'Сайт' },
     { id: 'audio', title: 'Аудио', group: 'Сайт' },
     { id: 'podcasts', title: 'Подкасты', group: 'Сайт' },
     { id: 'video', title: 'Видео', group: 'Сайт' },
