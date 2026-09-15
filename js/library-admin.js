@@ -758,10 +758,14 @@
   function bind(ctx, item, isNew, downloads, pickedThemes, draw) {
     bindSlug(item, isNew);
     mountLibRTE();
+    function persist() {
+      Object.assign(item, collect(item, isNew, downloads, item.status || 'published'));
+      return item;
+    }
     var sec = document.getElementById('lib-section');
     if (sec) {
       sec.onchange = function () {
-        item = collect(item, isNew, downloads, item.status || 'published');
+        persist();
         draw();
       };
     }
@@ -803,7 +807,7 @@
         var fmt = val('lib-file-fmt') || 'PDF';
         if (!url) { ctx.toast('Вставьте ссылку', true); return; }
         downloads.push({ format: fmt, url: url, size: '' });
-        item = collect(item, isNew, downloads, item.status || 'published');
+        persist();
         draw();
       };
     }
@@ -821,7 +825,7 @@
             url: out.url,
             size: fmtSize(out.size),
           });
-          item = collect(item, isNew, downloads, item.status || 'published');
+          persist();
           ctx.toast('Файл на сервере');
           draw();
         }).catch(function (err) { ctx.toast(err.message || 'Не удалось загрузить файл', true); });
@@ -832,7 +836,7 @@
         var row = btn.closest('[data-i]');
         var i = row ? Number(row.getAttribute('data-i')) : -1;
         if (i >= 0) downloads.splice(i, 1);
-        item = collect(item, isNew, downloads, item.status || 'published');
+        persist();
         draw();
       };
     });

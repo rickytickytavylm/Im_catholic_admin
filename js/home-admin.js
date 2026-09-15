@@ -34,19 +34,40 @@
     localStorage.setItem('yak_desk', JSON.stringify(raw));
   }
 
+  var STATIC_PAGES = [
+    { slug: 'guide:navigator', title: 'Навигатор по католической жизни', href: 'church.html?path=navigator', image: 'assets/cards/church-navigator.webp', kind: 'page', kicker: 'Страница · О Церкви' },
+    { slug: 'guide:structure', title: 'Как устроена Католическая Церковь', href: 'church.html?path=structure', image: 'assets/cards/church-become-parish.webp', kind: 'page', kicker: 'Страница · О Церкви' },
+    { slug: 'guide:spirit', title: 'Духовная жизнь', href: 'spiritual-life.html', image: 'assets/cards/spirit-prayer.webp', kind: 'page', kicker: 'Страница · Духовный путь' },
+    { slug: 'guide:mass', title: 'Путеводитель по Мессе', href: 'spiritual-life.html?path=mass-guide', image: 'assets/cards/liturgy-mass-guide.webp', kind: 'page', kicker: 'Страница · Духовный путь' },
+    { slug: 'guide:prayer', title: 'Молитва', href: 'spiritual-life.html?path=prayer', image: 'assets/cards/spirit-prayer.webp', kind: 'page', kicker: 'Страница · Духовный путь' },
+    { slug: 'guide:church', title: 'О Церкви', href: 'church.html', image: 'assets/cards/church-first-time.webp', kind: 'page', kicker: 'Страница · О Церкви' },
+  ];
+
+  function emptySlot() {
+    return { slug: '', title: '', href: '', image: '', kind: '' };
+  }
+
   function emptyHome() {
     return {
-      slides: [{ slug: '', title: '' }, { slug: '', title: '' }, { slug: '', title: '' }],
-      side: [{ slug: '', title: '' }, { slug: '', title: '' }, { slug: '', title: '' }, { slug: '', title: '' }],
+      slides: [emptySlot(), emptySlot(), emptySlot()],
+      side: [emptySlot(), emptySlot(), emptySlot(), emptySlot()],
     };
   }
 
   function currentHome() {
     var saved = readDesk().home || {};
-    var base = emptyHome();
     function fill(arr, n) {
       var out = [];
-      for (var i = 0; i < n; i++) out.push(arr[i] ? { slug: arr[i].slug || '', title: arr[i].title || '' } : { slug: '', title: '' });
+      for (var i = 0; i < n; i++) {
+        var x = arr[i];
+        out.push(x ? {
+          slug: x.slug || '',
+          title: x.title || '',
+          href: x.href || '',
+          image: x.image || '',
+          kind: x.kind || '',
+        } : emptySlot());
+      }
       return out;
     }
     return {
@@ -55,7 +76,9 @@
     };
   }
 
-  function catalogPosts() {
+  var catalogCache = [];
+
+  function catalogPosts(extraPages) {
     var out = [];
     var seen = {};
     function add(it) {
@@ -68,7 +91,25 @@
       out.push({
         slug: String(slug),
         title: it.title || String(slug),
-        date: String(it.date || '').slice(0, 10),
+        date: String(it.date || it.updatedAt || '').slice(0, 10),
+        href: it.href || '',
+        image: it.image || it.cover || '',
+        kind: it.kind || 'article',
+        kicker: it.kicker || '',
+      });
+    }
+    STATIC_PAGES.forEach(add);
+    (extraPages || []).forEach(add);
+    if (window.AdminStore && AdminStore.listPages) {
+      AdminStore.listPages().forEach(function (p) {
+        add({
+          slug: p.slug || p.id,
+          title: p.title,
+          href: 'static.html?id=' + encodeURIComponent(p.slug || p.id),
+          kind: 'page',
+          kicker: 'Страница',
+          date: p.updatedAt || p.createdAt || '',
+        });
       });
     }
     if (window.AdminDesk && AdminDesk.mergedList) {
@@ -78,24 +119,35 @@
     if (window.AdminStore && AdminStore.listMaterials) {
       AdminStore.listMaterials().forEach(add);
     }
+    catalogCache = out.slice();
     return out.sort(function (a, b) {
+      var ak = a.kind === 'page' ? '0' : '1';
+      var bk = b.kind === 'page' ? '0' : '1';
+      if (ak !== bk) return ak.localeCompare(bk);
       return String(b.date).localeCompare(String(a.date));
     });
+  }
+
+  function slotFromInput(slugId, titleId) {
+    var slug = (document.getElementById(slugId) || {}).value || '';
+    var title = (document.getElementById(titleId) || {}).value || '';
+    var hit = catalogCache.filter(function (p) { return p.slug === slug; })[0];
+    return {
+      slug: slug,
+      title: title || (hit && hit.title) || '',
+      href: (hit && hit.href) || '',
+      image: (hit && hit.image) || '',
+      kind: (hit && hit.kind) || '',
+    };
   }
 
   function collect() {
     var home = emptyHome();
     home.slides = [0, 1, 2].map(function (i) {
-      return {
-        slug: (document.getElementById('home-s-' + i) || {}).value || '',
-        title: (document.getElementById('home-st-' + i) || {}).value || '',
-      };
+      return slotFromInput('home-s-' + i, 'home-st-' + i);
     });
     home.side = [0, 1, 2, 3].map(function (i) {
-      return {
-        slug: (document.getElementById('home-c-' + i) || {}).value || '',
-        title: (document.getElementById('home-ct-' + i) || {}).value || '',
-      };
+      return slotFromInput('home-c-' + i, 'home-ct-' + i);
     });
     return home;
   }
@@ -130,7 +182,7 @@
     return (
       '<div class="field">' +
       '<label>' + esc(label) + '</label>' +
-      '<input class="input" id="' + id + '" list="' + listId + '" value="' + esc(item.slug) + '" placeholder="slug публикации" />' +
+      '<input class="input" id="' + id + '" list="' + listId + '" value="' + esc(item.slug) + '" placeholder="статья или страница, например guide:navigator" />' +
       '<input class="input" id="' + titleId + '" value="' + esc(item.title) + '" placeholder="Название — подсказка для редакции" />' +
       '</div>'
     );
@@ -138,19 +190,28 @@
 
   function render(ctx) {
     var home = currentHome();
+    if (!home.slides[0].slug) {
+      home.slides = [
+        Object.assign({}, STATIC_PAGES[0]),
+        Object.assign({}, STATIC_PAGES[1]),
+        Object.assign({}, STATIC_PAGES[3]),
+      ];
+    }
     var posts = catalogPosts();
     var listId = 'home-post-list';
+    function optionHtml(p) {
+      var mark = p.kind === 'page' ? 'страница · ' : '';
+      return '<option value="' + esc(p.slug) + '">' + esc(mark + p.title) + (p.date ? ' · ' + esc(p.date) : '') + '</option>';
+    }
     ctx.viewEl.innerHTML =
       '<div class="topbar"><div><h1>Главная</h1>' +
-      '<p>Слайдер «Главное» и четыре карточки справа. Пустые слоты на сайте заполнятся свежими публикациями.</p></div>' +
+      '<p>Слайдер и четыре карточки справа: статьи или статические страницы — Навигатор, устройство Церкви, духовный путь. Пустые слоты на сайте заполнятся свежими публикациями.</p></div>' +
       '<div class="topbar-actions">' +
       '<a class="btn btn-ghost" href="' + ((window.AdminConfig && AdminConfig.PORTAL_URL) || '../Ave_Maria/') + 'index.html" target="_blank" rel="noopener">На сайте</a>' +
       '<button type="button" class="btn btn-primary" id="home-pub">Опубликовать</button>' +
       '</div></div>' +
       '<datalist id="' + listId + '">' +
-      posts.map(function (p) {
-        return '<option value="' + esc(p.slug) + '">' + esc(p.title) + (p.date ? ' · ' + esc(p.date) : '') + '</option>';
-      }).join('') +
+      posts.map(optionHtml).join('') +
       '</datalist>' +
       '<div class="panel" style="margin-bottom:12px"><div class="panel-head"><h2>Слайдер — 3 записи</h2></div>' +
       '<div class="form-grid">' +
@@ -188,6 +249,24 @@
         ctx.toast(e.message || 'Не удалось опубликовать', true);
       });
     };
+
+    if (window.AdminApi && AdminApi.getPages) {
+      AdminApi.getPages({ limit: 100 }).then(function (pack) {
+        var extra = ((pack && (pack.items || pack.pages)) || []).map(function (p) {
+          return {
+            slug: p.slug || p.id,
+            title: p.title,
+            href: 'static.html?id=' + encodeURIComponent(p.slug || p.id),
+            kind: 'page',
+            kicker: 'Страница',
+            date: p.modified || p.date || '',
+          };
+        });
+        posts = catalogPosts(extra);
+        var list = document.getElementById(listId);
+        if (list) list.innerHTML = posts.map(optionHtml).join('');
+      }).catch(function () {});
+    }
   }
 
   global.AdminHome = { render: render, publish: publish };
