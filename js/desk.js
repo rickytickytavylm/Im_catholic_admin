@@ -684,9 +684,8 @@
   }
 
   function hideItem(type, id) {
-    var item = getItem(type, id) || { id: id };
-    if (item.source === 'site') upsert(type, Object.assign({}, item, { status: 'hidden' }));
-    else remove(type, id);
+    var item = getItem(type, id) || { id: id, slug: id };
+    upsert(type, Object.assign({}, item, { status: 'hidden' }));
   }
 
   function upsert(type, item) {
