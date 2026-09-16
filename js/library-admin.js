@@ -464,7 +464,6 @@
     }
     var downloads = (item.downloads || []).slice();
     var lib = L();
-    var themes = allThemes();
     var docTypes = (lib && lib.DOC_TYPES) || [];
     var popes = (lib && lib.POPES) || [];
     var pickedThemes = (item.themes || []).slice();
@@ -483,6 +482,7 @@
 
     function draw() {
       var church = item.section === 'church';
+      var themes = allThemes();
       ctx.viewEl.innerHTML =
         '<div class="post-editor">' +
         '<div class="post-editor-bar">' +
