@@ -75,7 +75,7 @@
   ];
 
   function emptyState() {
-    return { articles: [], events: [], audio: [], video: [], churchDays: [], authors: [], organizers: [], hiddenSlugs: [], guides: [], authorLinks: [], photographers: [], videoChannels: [], cycles: [], topics: [], libraryItems: [], libraryRubrics: [], podcasts: [], home: null, about: null };
+    return { articles: [], events: [], audio: [], video: [], churchDays: [], authors: [], organizers: [], hiddenSlugs: [], guides: [], authorLinks: [], photographers: [], videoChannels: [], cycles: [], topics: [], libraryItems: [], libraryRubrics: [], libraryThemes: [], podcasts: [], home: null, about: null };
   }
 
   var archiveCache = { news: [], article: [] };
@@ -145,8 +145,10 @@
 
   function compactDesk(data, keepId, hard) {
     Object.keys(emptyState()).forEach(function (key) {
-      (data[key] || []).forEach(function (rec) {
-        if (!rec) return;
+      var list = data[key];
+      if (!Array.isArray(list)) return;
+      list.forEach(function (rec) {
+        if (!rec || typeof rec !== 'object') return;
         var keep = keepId && (String(rec.id) === String(keepId) || String(rec.slug || '') === String(keepId));
         if (keep && !hard) return;
         stripHeavy(rec, hard);
@@ -154,9 +156,20 @@
     });
   }
 
+  function deskBytes() {
+    try { return (localStorage.getItem(KEY) || '').length; } catch (e) { return 0; }
+  }
+
+  function paintDeskBanner() {
+    var el = document.getElementById('desk-banner');
+    if (!el) return;
+    el.hidden = deskBytes() < 3.5 * 1024 * 1024;
+  }
+
   function write(data, keepId) {
     try {
       localStorage.setItem(KEY, JSON.stringify(data));
+      paintDeskBanner();
       return;
     } catch (e) {
       if (!isQuota(e)) throw e;
@@ -164,6 +177,7 @@
     compactDesk(data, keepId, false);
     try {
       localStorage.setItem(KEY, JSON.stringify(data));
+      paintDeskBanner();
       return;
     } catch (e2) {
       if (!isQuota(e2)) throw e2;
@@ -171,8 +185,10 @@
     compactDesk(data, keepId, true);
     try {
       localStorage.setItem(KEY, JSON.stringify(data));
+      paintDeskBanner();
     } catch (e3) {
-      throw new Error('Браузер переполнен фотографиями. Снимите тяжёлые обложки или фото авторов и сохраните снова.');
+      paintDeskBanner();
+      throw new Error('Браузер переполнен. Не очищайте сайт: сначала опубликуйте циклы с этого компьютера, чтобы они ушли на сервер.');
     }
   }
 
@@ -1469,7 +1485,14 @@
     });
     (read().cycles || []).forEach(function (c) {
       if (!c || !c.id) return;
-      byId[c.id] = Object.assign({}, byId[c.id] || {}, c);
+      var prev = byId[c.id] || {};
+      var next = Object.assign({}, prev, c);
+      if (!next.authorSlug && prev.authorSlug) next.authorSlug = prev.authorSlug;
+      if ((!next.authorSlugs || !next.authorSlugs.length) && prev.authorSlugs && prev.authorSlugs.length) {
+        next.authorSlugs = prev.authorSlugs;
+      }
+      if ((prev.items || []).length > (next.items || []).length) next.items = prev.items;
+      byId[c.id] = next;
     });
     return Object.keys(byId).map(function (k) { return byId[k]; }).filter(function (c) {
       return !c.status || c.status === 'published';
@@ -1829,7 +1852,7 @@
       ctx.toast('Отправляем на сайт…');
       return publishToArchive(next, type).then(function () {
         upsert(type, next);
-        if (type === 'article' && next.cycleSlug) return publishCycles(catalogCycles()).catch(function () {});
+        if (type === 'article' && next.cycleSlug) return publishCycles().catch(function () {});
       }).then(function () {
         ctx.toast('Опубликовано на сайте');
         ctx.go(type === 'news' ? 'news' : 'articles');
@@ -1876,31 +1899,34 @@
     if (!window.AdminApi || !AdminApi.upsertArchive) {
       return Promise.reject(new Error('нет соединения с сервером'));
     }
-    var by = {};
-    mergedList('event').forEach(function (e) {
-      if (!e || !e.id) return;
-      if (e.status && e.status !== 'published') return;
-      by[e.id] = cleanEventPack(e);
-    });
-    (read().events || []).forEach(function (e) {
-      if (e && e.status === 'hidden' && e.id) by[e.id] = { id: e.id, slug: e.slug || e.id, status: 'hidden' };
-    });
-    var items = Object.keys(by).map(function (k) { return by[k]; });
-    return AdminApi.upsertArchive({
-      articles: [{
-        id: EVENTS_PAGE_ID,
-        slug: EVENTS_PAGE_SLUG,
-        title: 'Афиша редакции',
-        date: todayIso(),
-        modified: new Date().toISOString(),
-        author: '',
-        categories: [],
-        categorySlugs: ['day-by-day'],
-        excerpt: '',
-        contentHtml: '<p></p>',
-        contentText: JSON.stringify({ items: items, organizers: publishedOrganizers() }),
-        source: 'desk-events',
-      }],
+    return pullRemotePack(EVENTS_PAGE_SLUG).then(function (remote) {
+      absorbEventsPack(remote);
+      var by = {};
+      mergedList('event').forEach(function (e) {
+        if (!e || !e.id) return;
+        if (e.status && e.status !== 'published') return;
+        by[e.id] = cleanEventPack(e);
+      });
+      (read().events || []).forEach(function (e) {
+        if (e && e.status === 'hidden' && e.id) by[e.id] = { id: e.id, slug: e.slug || e.id, status: 'hidden' };
+      });
+      var items = Object.keys(by).map(function (k) { return by[k]; });
+      return AdminApi.upsertArchive({
+        articles: [{
+          id: EVENTS_PAGE_ID,
+          slug: EVENTS_PAGE_SLUG,
+          title: 'Афиша редакции',
+          date: todayIso(),
+          modified: new Date().toISOString(),
+          author: '',
+          categories: [],
+          categorySlugs: ['day-by-day'],
+          excerpt: '',
+          contentHtml: '<p></p>',
+          contentText: JSON.stringify({ items: items, organizers: publishedOrganizers() }),
+          source: 'desk-events',
+        }],
+      });
     });
   }
 
@@ -2809,36 +2835,154 @@
   var VIDEO_PAGE_SLUG = 'yak-video-data';
   var EVENTS_PAGE_SLUG = 'yak-events-data';
 
+  function parseArchivePack(art) {
+    var raw = (art && (art.contentText || art.content || '')) || '';
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch (e) { return null; }
+  }
+
+  function pullRemotePack(slug) {
+    if (!window.AdminApi || !AdminApi.getArticle) return Promise.resolve(null);
+    return AdminApi.getArticle(slug).then(parseArchivePack).catch(function () { return null; });
+  }
+
+  function recKey(rec) {
+    return String((rec && (rec.id || rec.slug)) || '').toLowerCase();
+  }
+
+  function mergeRecordLists(local, remote, opts) {
+    opts = opts || {};
+    var by = {};
+    var order = [];
+    function put(rec) {
+      if (!rec) return;
+      var key = recKey(rec);
+      if (!key) return;
+      if (!by[key]) {
+        by[key] = rec;
+        order.push(key);
+        return;
+      }
+      var cur = by[key];
+      if (opts.preferRicherItems) {
+        var a = (cur.items || []).length;
+        var b = (rec.items || []).length;
+        if (b > a) by[key] = Object.assign({}, cur, rec);
+        else if (a > b) by[key] = Object.assign({}, rec, cur);
+        else {
+          var ct = String(cur.updatedAt || cur.modified || '');
+          var rt = String(rec.updatedAt || rec.modified || '');
+          by[key] = rt > ct ? Object.assign({}, cur, rec) : Object.assign({}, rec, cur);
+        }
+        return;
+      }
+      by[key] = Object.assign({}, cur, rec);
+    }
+    (remote || []).forEach(put);
+    (local || []).forEach(put);
+    return order.map(function (k) { return by[k]; });
+  }
+
+  function absorbCycles(list) {
+    if (!Array.isArray(list) || !list.length) return;
+    var data = read();
+    data.cycles = mergeRecordLists(data.cycles || [], list, { preferRicherItems: true });
+    write(data);
+  }
+
+  function absorbAuthorsPack(pack) {
+    if (!pack) return;
+    var list = Array.isArray(pack) ? pack : (pack.authors || []);
+    var hidden = Array.isArray(pack) ? [] : (pack.hiddenSlugs || []);
+    var data = read();
+    data.authors = mergeRecordLists(data.authors || [], list, {});
+    var have = {};
+    (data.hiddenSlugs || []).forEach(function (s) { have[String(s)] = 1; });
+    hidden.forEach(function (s) {
+      if (s && !have[String(s)]) {
+        data.hiddenSlugs.push(String(s));
+        have[String(s)] = 1;
+      }
+    });
+    write(data);
+  }
+
+  function absorbEventsPack(pack) {
+    if (!pack) return;
+    var items = Array.isArray(pack) ? pack : (pack.items || pack.events || []);
+    var orgs = Array.isArray(pack) ? [] : (pack.organizers || []);
+    var data = read();
+    if (items.length) data.events = mergeRecordLists(data.events || [], items, {});
+    if (orgs.length) data.organizers = mergeRecordLists(data.organizers || [], orgs, {});
+    write(data);
+  }
+
+  var remoteHydrated = false;
+  function hydrateRemote(done) {
+    var finish = function (ok) {
+      if (ok) remoteHydrated = true;
+      paintDeskBanner();
+      if (done) done();
+    };
+    if (remoteHydrated) { finish(true); return Promise.resolve(); }
+    return Promise.all([
+      pullRemotePack(CYCLES_PAGE_SLUG).then(function (p) { if (Array.isArray(p)) absorbCycles(p); }),
+      pullRemotePack(AUTHORS_PAGE_SLUG).then(absorbAuthorsPack),
+      pullRemotePack(EVENTS_PAGE_SLUG).then(absorbEventsPack),
+    ]).then(function () { finish(true); }).catch(function () { finish(false); });
+  }
+
+  function publishedAuthorsPack() {
+    var by = {};
+    function put(a, replaceRecent) {
+      if (!a) return;
+      var slug = a.slug || a.id;
+      if (!slug) return;
+      var key = String(slug).toLowerCase();
+      if (a.status && a.status !== 'published') {
+        if (a.status === 'hidden') delete by[key];
+        return;
+      }
+      var prev = by[key] || {};
+      by[key] = {
+        slug: slug,
+        name: a.name || prev.name || '',
+        role: a.role != null && a.role !== '' ? a.role : (prev.role || ''),
+        bio: a.bio || prev.bio || '',
+        photo: httpUrl(a.photo) ? a.photo : (prev.photo || ''),
+        recent: replaceRecent && a.recent
+          ? a.recent
+          : ((a.recent && a.recent.length >= (prev.recent || []).length) ? a.recent : (prev.recent || a.recent || [])),
+      };
+    }
+    (window.YakAuthors || []).forEach(function (a) { put(a, false); });
+    (read().authors || []).forEach(function (a) { put(a, true); });
+    return Object.keys(by).map(function (k) { return by[k]; });
+  }
+
   function publishAuthors() {
     if (!window.AdminApi || !AdminApi.upsertArchive) {
       return Promise.reject(new Error('нет соединения с сервером'));
     }
-    var list = (read().authors || []).filter(function (a) {
-      return a && (!a.status || a.status === 'published');
-    }).map(function (a) {
-      return {
-        slug: a.slug || a.id,
-        name: a.name || '',
-        role: a.role || '',
-        bio: a.bio || '',
-        photo: httpUrl(a.photo) ? a.photo : '',
-      };
-    });
-    return AdminApi.upsertArchive({
-      articles: [{
-        id: AUTHORS_PAGE_ID,
-        slug: AUTHORS_PAGE_SLUG,
-        title: 'Авторы редакции',
-        date: todayIso(),
-        modified: new Date().toISOString(),
-        author: '',
-        categories: [],
-        categorySlugs: ['day-by-day'],
-        excerpt: '',
-        contentHtml: '<p></p>',
-        contentText: JSON.stringify({ authors: list, hiddenSlugs: read().hiddenSlugs || [] }),
-        source: 'desk-authors',
-      }],
+    return pullRemotePack(AUTHORS_PAGE_SLUG).then(function (remote) {
+      absorbAuthorsPack(remote);
+      var list = publishedAuthorsPack();
+      return AdminApi.upsertArchive({
+        articles: [{
+          id: AUTHORS_PAGE_ID,
+          slug: AUTHORS_PAGE_SLUG,
+          title: 'Авторы редакции',
+          date: todayIso(),
+          modified: new Date().toISOString(),
+          author: '',
+          categories: [],
+          categorySlugs: ['day-by-day'],
+          excerpt: '',
+          contentHtml: '<p></p>',
+          contentText: JSON.stringify({ authors: list, hiddenSlugs: read().hiddenSlugs || [] }),
+          source: 'desk-authors',
+        }],
+      });
     });
   }
 
@@ -3138,25 +3282,28 @@
     });
   }
 
-  function publishCycles(list) {
+  function publishCycles() {
     if (!window.AdminApi || !AdminApi.upsertArchive) {
       return Promise.reject(new Error('нет соединения с сервером'));
     }
-    return AdminApi.upsertArchive({
-      articles: [{
-        id: CYCLES_PAGE_ID,
-        slug: CYCLES_PAGE_SLUG,
-        title: 'Циклы редакции',
-        date: todayIso(),
-        modified: new Date().toISOString(),
-        author: '',
-        categories: [],
-        categorySlugs: ['day-by-day'],
-        excerpt: '',
-        contentHtml: '<p></p>',
-        contentText: JSON.stringify(list || catalogCycles()),
-        source: 'desk-cycles',
-      }],
+    return pullRemotePack(CYCLES_PAGE_SLUG).then(function (remote) {
+      if (Array.isArray(remote)) absorbCycles(remote);
+      return AdminApi.upsertArchive({
+        articles: [{
+          id: CYCLES_PAGE_ID,
+          slug: CYCLES_PAGE_SLUG,
+          title: 'Циклы редакции',
+          date: todayIso(),
+          modified: new Date().toISOString(),
+          author: '',
+          categories: [],
+          categorySlugs: ['day-by-day'],
+          excerpt: '',
+          contentHtml: '<p></p>',
+          contentText: JSON.stringify(catalogCycles()),
+          source: 'desk-cycles',
+        }],
+      });
     });
   }
 
@@ -3386,7 +3533,7 @@
           }
         });
         ctx.toast('Отправляем на сайт…');
-        return publishCycles(catalogCycles());
+        return publishCycles();
       }).then(function () {
         ctx.toast('Цикл опубликован');
         ctx.go('cycles');
@@ -3398,8 +3545,14 @@
     if (delBtn) delBtn.onclick = function () {
       if (!confirm('Снять цикл с публикации? Статьи останутся.')) return;
       upsert('cycle', Object.assign({}, item, { status: 'hidden', id: item.id || item.slug }));
-      ctx.toast('Снято');
-      ctx.go('cycles');
+      ctx.toast('Снимаем…');
+      publishCycles().then(function () {
+        ctx.toast('Снято');
+        ctx.go('cycles');
+      }).catch(function (err) {
+        ctx.toast((err && err.message) || 'Снято локально', true);
+        ctx.go('cycles');
+      });
     };
   }
 
@@ -3461,13 +3614,34 @@
         } else {
           var cur = read();
           Object.keys(emptyState()).forEach(function (key) {
-            var inc = incoming[key] || [];
+            var inc = incoming[key];
+            if (inc == null) return;
+            if (key === 'hiddenSlugs' && Array.isArray(inc)) {
+              var have = {};
+              (cur[key] || []).forEach(function (s) { have[String(s)] = 1; });
+              inc.forEach(function (s) {
+                if (s && !have[String(s)]) {
+                  cur[key] = cur[key] || [];
+                  cur[key].push(String(s));
+                  have[String(s)] = 1;
+                }
+              });
+              return;
+            }
+            if (!Array.isArray(inc)) {
+              if (inc && typeof inc === 'object') cur[key] = Object.assign({}, cur[key] || {}, inc);
+              return;
+            }
             if (!inc.length) return;
-            var list = cur[key] || [];
+            var list = Array.isArray(cur[key]) ? cur[key] : [];
             inc.forEach(function (rec) {
               if (!rec) return;
               var i = list.findIndex(function (x) {
-                return String(x.id) === String(rec.id) || (rec.date && String(x.date) === String(rec.date));
+                return x && rec && (
+                  (rec.id && String(x.id) === String(rec.id)) ||
+                  (rec.slug && String(x.slug || '') === String(rec.slug)) ||
+                  (rec.date && String(x.date) === String(rec.date))
+                );
               });
               if (i === -1) list.unshift(rec);
               else list[i] = Object.assign({}, list[i], rec);
@@ -3554,11 +3728,13 @@
     linkAuthor: linkAuthor,
     exportDesk: exportDesk,
     importDesk: importDesk,
+    hydrateRemote: hydrateRemote,
   };
 
   try {
     loadSeed(function () {});
     loadArchive('news', function () {});
     loadArchive('article', function () {});
+    hydrateRemote();
   } catch (e) {}
 })(window);

@@ -83,6 +83,7 @@
     var all = readAll();
     if (!all.libraryItems) all.libraryItems = [];
     if (!all.libraryRubrics) all.libraryRubrics = [];
+    if (!all.libraryThemes) all.libraryThemes = [];
     fn(all);
     if (window.AdminDesk && typeof AdminDesk.write === 'function') {
       AdminDesk.write(all);
@@ -94,9 +95,7 @@
   function L() { return global.YAK_LIBRARY || null; }
 
   function seedRubrics() {
-    var lib = L();
-    if (lib && lib.RUBRICS && lib.RUBRICS.length) return lib.RUBRICS.slice();
-    return [
+    var fallback = [
       { id: 'encyclicals', section: 'church', label: 'Энциклики', parentId: '' },
       { id: 'exhortations', section: 'church', label: 'Апостольские увещевания', parentId: '' },
       { id: 'letters', section: 'church', label: 'Послания', parentId: '' },
@@ -106,7 +105,29 @@
       { id: 'spirituality', section: 'books', label: 'Духовность', parentId: '' },
       { id: 'theology', section: 'books', label: 'Богословие', parentId: '' },
       { id: 'history', section: 'books', label: 'История', parentId: '' },
+      { id: 'magazines', section: 'periodicals', label: 'Журналы', parentId: '' },
+      { id: 'newspapers', section: 'periodicals', label: 'Газеты', parentId: '' },
+      { id: 'bulletins', section: 'periodicals', label: 'Бюллетени', parentId: '' },
     ];
+    var by = {};
+    fallback.forEach(function (r) { by[r.section + ':' + r.id] = r; });
+    ((L() && L().RUBRICS) || []).forEach(function (r) {
+      if (r && r.id) by[(r.section || '') + ':' + r.id] = r;
+    });
+    return Object.keys(by).map(function (k) { return by[k]; });
+  }
+
+  function allThemes() {
+    var by = {};
+    ((L() && L().THEMES) || []).forEach(function (t) { if (t && t.id) by[t.id] = t; });
+    (readAll().libraryThemes || []).forEach(function (t) { if (t && t.id) by[t.id] = t; });
+    return Object.keys(by).map(function (k) { return by[k]; });
+  }
+
+  function sectionLabel(section) {
+    if (section === 'church') return 'Документ';
+    if (section === 'periodicals') return 'Периодика';
+    return 'Книга';
   }
 
   function allRubrics() {
@@ -232,35 +253,42 @@
     if (!window.AdminApi || !AdminApi.upsertArchive) {
       return Promise.reject(new Error('нет соединения с сервером'));
     }
-    var items = allItems().map(function (it) {
-      var copy = Object.assign({}, it);
-      delete copy.source;
-      delete copy._slugLocked;
-      return copy;
-    });
-    var pack = {
-      items: items,
-      rubrics: allRubrics(),
-      docTypes: (L() && L().DOC_TYPES) || [],
-      popes: (L() && L().POPES) || [],
-      themes: (L() && L().THEMES) || [],
-    };
-    return AdminApi.upsertArchive({
-      articles: [{
-        id: PAGE_ID,
-        slug: PAGE_SLUG,
-        title: 'Библиотека редакции',
-        date: todayIso(),
-        modified: new Date().toISOString(),
-        author: '',
-        categories: [],
-        categorySlugs: ['day-by-day'],
-        excerpt: '',
-        contentHtml: '<p></p>',
-        contentText: JSON.stringify(pack),
-        source: 'desk-library',
-      }],
-    });
+    function send() {
+      var items = allItems().map(function (it) {
+        var copy = Object.assign({}, it);
+        delete copy.source;
+        delete copy._slugLocked;
+        return copy;
+      });
+      var pack = {
+        items: items,
+        rubrics: allRubrics(),
+        docTypes: (L() && L().DOC_TYPES) || [],
+        popes: (L() && L().POPES) || [],
+        themes: allThemes(),
+      };
+      return AdminApi.upsertArchive({
+        articles: [{
+          id: PAGE_ID,
+          slug: PAGE_SLUG,
+          title: 'Библиотека редакции',
+          date: todayIso(),
+          modified: new Date().toISOString(),
+          author: '',
+          categories: [],
+          categorySlugs: ['day-by-day'],
+          excerpt: '',
+          contentHtml: '<p></p>',
+          contentText: JSON.stringify(pack),
+          source: 'desk-library',
+        }],
+      });
+    }
+    if (!AdminApi.getArticle) return send();
+    return AdminApi.getArticle(PAGE_SLUG)
+      .then(function (art) { absorbPack(parsePack(art)); })
+      .catch(function () {})
+      .then(send);
   }
 
   function parsePack(art) {
@@ -287,6 +315,11 @@
           return x && x.id === r.id && x.section === r.section;
         });
         if (!exists) all.libraryRubrics.push(r);
+      });
+      (pack.themes || []).forEach(function (t) {
+        if (!t || !t.id) return;
+        var exists = (all.libraryThemes || []).some(function (x) { return x && x.id === t.id; });
+        if (!exists) all.libraryThemes.push(t);
       });
     });
     if (L() && L().mergePack) L().mergePack(pack);
@@ -335,7 +368,7 @@
       });
       ctx.viewEl.innerHTML =
         '<div class="topbar"><div><h1>Библиотека</h1>' +
-        '<p>Карточки как на сайте: документы Церкви и книги. Можно добавить файл и текст на страницу.</p></div>' +
+        '<p>Карточки как на сайте: документы Церкви, книги и периодика. Можно добавить файл и текст на страницу.</p></div>' +
         '<div class="topbar-actions">' +
         '<a class="btn btn-ghost" href="#library/rubrics">Рубрики</a>' +
         '<a class="btn btn-primary" href="#library/new">Добавить</a>' +
@@ -346,6 +379,7 @@
         '<button type="button" class="tab' + (!section ? ' active' : '') + '" data-s="">Все</button>' +
         '<button type="button" class="tab' + (section === 'church' ? ' active' : '') + '" data-s="church">Документы Церкви</button>' +
         '<button type="button" class="tab' + (section === 'books' ? ' active' : '') + '" data-s="books">Книги</button>' +
+        '<button type="button" class="tab' + (section === 'periodicals' ? ' active' : '') + '" data-s="periodicals">Периодика</button>' +
         '</div></div>' +
         (list.length
           ? '<div class="god-grid">' + list.map(function (it) {
@@ -357,7 +391,7 @@
               '<a class="god-card" href="#library/' + esc(it.id) + '">' +
               '<span class="god-thumb" style="' + cover + '"></span>' +
               '<span class="god-copy"><strong>' + esc(titleOf(it)) + '</strong>' +
-              '<small>' + esc((it.section === 'church' ? 'Документ · ' : 'Книга · ') + (it.author || '')) + '</small></span></a>'
+              '<small>' + esc(sectionLabel(it.section) + ' · ' + (it.author || '')) + '</small></span></a>'
             );
           }).join('') + '</div>'
           : '<div class="panel"><div class="empty">Пока нет карточек в этом фильтре.</div></div>');
@@ -430,7 +464,7 @@
     }
     var downloads = (item.downloads || []).slice();
     var lib = L();
-    var themes = (lib && lib.THEMES) || [];
+    var themes = allThemes();
     var docTypes = (lib && lib.DOC_TYPES) || [];
     var popes = (lib && lib.POPES) || [];
     var pickedThemes = (item.themes || []).slice();
@@ -463,8 +497,9 @@
         '<div class="post-main panel">' +
         '<label class="field"><span>Раздел</span>' +
         '<select class="select" id="lib-section">' +
-        '<option value="books"' + (!church ? ' selected' : '') + '>Книги</option>' +
+        '<option value="books"' + (item.section === 'books' ? ' selected' : '') + '>Книги</option>' +
         '<option value="church"' + (church ? ' selected' : '') + '>Документы Церкви</option>' +
+        '<option value="periodicals"' + (item.section === 'periodicals' ? ' selected' : '') + '>Периодика</option>' +
         '</select></label>' +
         '<label class="field"><span>Рубрика</span>' +
         '<select class="select" id="lib-category">' + selectOpts(catsFor(item.section), item.category, 'Выберите рубрику') + '</select></label>' +
@@ -545,6 +580,10 @@
           var on = pickedThemes.indexOf(t.id) !== -1;
           return '<label class="rubric-pill"><input type="checkbox" value="' + esc(t.id) + '"' + (on ? ' checked' : '') + ' /><span>' + esc(t.label) + '</span></label>';
         }).join('') +
+        '</div>' +
+        '<div class="archive-bar-row" style="margin-top:8px">' +
+        '<input class="input" id="lib-theme-new" placeholder="Новая тема" />' +
+        '<button type="button" class="btn btn-ghost" id="lib-theme-add">Добавить</button>' +
         '</div></div>' +
         '<div class="panel post-card"><h3>Пометки</h3>' +
         '<label class="check-row"><input type="checkbox" id="lib-f-18"' + (item.flags && item.flags.lgbt18 ? ' checked' : '') + ' /> 18+ / чувствительные темы</label>' +
@@ -575,7 +614,9 @@
   }
 
   function collect(item, isNew, downloads, status) {
-    var church = val('lib-section') === 'church';
+    var section = val('lib-section') || item.section || 'books';
+    if (section !== 'church' && section !== 'periodicals') section = 'books';
+    var church = section === 'church';
     var main = val('lib-title-main');
     var alt = val('lib-title-alt');
     var textEl = document.getElementById('lib-text');
@@ -584,7 +625,7 @@
       themes.push(el.value);
     });
     var next = Object.assign({}, item, {
-      section: church ? 'church' : 'books',
+      section: section,
       category: val('lib-category'),
       docType: church ? val('lib-doctype') : '',
       pope: church ? val('lib-pope') : '',
@@ -840,6 +881,22 @@
         draw();
       };
     });
+    var themeAdd = document.getElementById('lib-theme-add');
+    if (themeAdd) {
+      themeAdd.onclick = function () {
+        var label = val('lib-theme-new');
+        if (!label) { ctx.toast('Напишите название темы', true); return; }
+        var rec = { id: slugify(label), label: label };
+        patchDesk(function (all) {
+          var exists = all.libraryThemes.some(function (t) { return t && t.id === rec.id; });
+          if (exists) rec.id = rec.id + '-' + Date.now().toString(36).slice(-3);
+          all.libraryThemes.push(rec);
+        });
+        pickedThemes.push(rec.id);
+        persist();
+        draw();
+      };
+    }
     var pub = document.getElementById('lib-pub');
     if (pub) pub.onclick = function () { save(ctx, item, isNew, downloads, 'published'); };
     var draft = document.getElementById('lib-draft');
@@ -861,6 +918,7 @@
     function draw() {
       var church = rubricsOf('church', '');
       var books = rubricsOf('books', '');
+      var periodicals = rubricsOf('periodicals', '');
       function block(section, title, rows) {
         return (
           '<div class="panel" style="margin-bottom:12px"><div class="panel-head"><h2>' + esc(title) + '</h2>' +
@@ -886,12 +944,25 @@
           '</div>'
         );
       }
+      var themes = allThemes();
       ctx.viewEl.innerHTML =
         '<div class="topbar"><div><h1>Рубрики библиотеки</h1>' +
-        '<p>Появляются на сайте в «Документах Церкви» и «Книгах». Подрубрика живёт внутри рубрики.</p></div>' +
+        '<p>Появляются на сайте в «Документах Церкви», «Книгах» и «Периодике». Подрубрика живёт внутри рубрики.</p></div>' +
         '<div class="topbar-actions"><a class="btn btn-ghost btn-back" href="#library">← Список</a></div></div>' +
         block('church', 'Документы Церкви', church) +
-        block('books', 'Книги', books);
+        block('books', 'Книги', books) +
+        block('periodicals', 'Периодика', periodicals) +
+        '<div class="panel"><div class="panel-head"><h2>Темы</h2></div>' +
+        '<p class="hint-note" style="margin:0 12px 8px">Эти темы стоят в карточках книг. Можно добавить свои, не только девять стартовых.</p>' +
+        (themes.length
+          ? themes.map(function (t) {
+            return '<div class="guide-row" style="margin:0 12px 8px"><div class="guide-row-copy"><strong>' +
+              esc(t.label) + '</strong><small>' + esc(t.id) + '</small></div></div>';
+          }).join('')
+          : '<p class="hint-note">Пока нет тем.</p>') +
+        '<div class="archive-bar-row" style="margin:8px 12px 12px">' +
+        '<input class="input" id="lib-theme-new" placeholder="Новая тема" />' +
+        '<button type="button" class="btn btn-ghost" id="lib-theme-add">Добавить тему</button></div></div>';
       ctx.viewEl.querySelectorAll('[data-add]').forEach(function (btn) {
         btn.onclick = function () { addRubric(ctx, btn.getAttribute('data-add'), '', draw); };
       });
@@ -901,6 +972,26 @@
       ctx.viewEl.querySelectorAll('[data-ren]').forEach(function (btn) {
         btn.onclick = function () { renameRubric(ctx, btn.getAttribute('data-ren'), draw); };
       });
+      var themeAdd = document.getElementById('lib-theme-add');
+      if (themeAdd) {
+        themeAdd.onclick = function () {
+          var label = val('lib-theme-new');
+          if (!label) { ctx.toast('Напишите название темы', true); return; }
+          var rec = { id: slugify(label), label: label.trim() };
+          patchDesk(function (all) {
+            var exists = all.libraryThemes.some(function (t) { return t && t.id === rec.id; });
+            if (exists) rec.id = rec.id + '-' + Date.now().toString(36).slice(-3);
+            all.libraryThemes.push(rec);
+          });
+          publishPack().then(function () {
+            ctx.toast('Тема на сайте');
+            draw();
+          }).catch(function (err) {
+            ctx.toast('Сохранено локально. ' + ((err && err.message) || ''), true);
+            draw();
+          });
+        };
+      }
     }
     draw();
   }
