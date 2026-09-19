@@ -36,6 +36,7 @@
     { id: 'audio', title: 'Аудио', group: 'Сайт' },
     { id: 'podcasts', title: 'Подкасты', group: 'Сайт' },
     { id: 'video', title: 'Видео', group: 'Сайт' },
+    { id: 'video-partners', title: 'Видео-партнёры', group: 'Сайт' },
     { id: 'library', title: 'Библиотека', group: 'Сайт' },
     { id: 'media', title: 'Фотосток', group: 'Сайт' },
     { id: 'church-day', title: 'День Церкви', group: 'Сайт' },

@@ -9,6 +9,13 @@
   var PORTAL = (window.AdminConfig && AdminConfig.PORTAL_URL) || '../Ave_Maria/';
   if (PORTAL.slice(-1) !== '/') PORTAL += '/';
 
+  var DEFAULT_LINKS = [
+    { label: 'App Store', href: 'https://apps.apple.com/ru/app/%D1%8F%D0%BA%D0%B0%D1%82%D0%BE%D0%BB%D0%B8%D0%BA/id6742419988' },
+    { label: 'Google Play', href: 'https://play.google.com/store/apps/details?id=ru.yacatholic.mobile' },
+    { label: 'FAQ', href: 'https://telegra.ph/CHasto-zadavaemye-voprosy-05-09-6' },
+    { label: 'Поддержка', href: 'https://t.me/yacatholicapp' },
+  ];
+
   function esc(s) {
     return String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -24,10 +31,10 @@
       titleHtml: '',
       cover: '',
       descriptionHtml: '',
-      principlesTitle: 'Во что мы верим как редакция',
-      principles: [{ title: '', text: '' }, { title: '', text: '' }, { title: '', text: '' }, { title: '', text: '' }],
-      donate: { eyebrow: 'Поддержите нас', titleHtml: '', text: '', mailto: 'mailto:red@yacatholic.ru' },
-      app: { eyebrow: 'Приложение', title: '', html: '', photo: '' },
+      principlesTitle: 'Наша команда',
+      principles: [],
+      donate: { eyebrow: 'Поддержите нас', titleHtml: '', qrs: [{ image: '', label: 'Портал' }, { image: '', label: 'Приложение' }] },
+      app: { eyebrow: 'Приложение', title: '', subtitle: '', html: '', photo: '', links: DEFAULT_LINKS.slice(), authors: [] },
       partnersTitle: 'С кем мы работаем',
       partners: [],
       contacts: [],
@@ -56,10 +63,14 @@
     var saved = readDesk().about;
     if (!saved) return base;
     var next = Object.assign({}, base, saved);
-    next.principles = (saved.principles && saved.principles.length ? saved.principles : base.principles).slice(0, 4);
-    while (next.principles.length < 4) next.principles.push({ title: '', text: '' });
+    next.principles = (saved.principles && saved.principles.length ? saved.principles : base.principles).slice();
     next.donate = Object.assign({}, base.donate, saved.donate || {});
+    next.donate.qrs = ((saved.donate && saved.donate.qrs) || base.donate.qrs || []).slice();
+    while (next.donate.qrs.length < 2) next.donate.qrs.push({ image: '', label: next.donate.qrs.length ? 'Приложение' : 'Портал' });
     next.app = Object.assign({}, base.app, saved.app || {});
+    next.app.links = ((saved.app && saved.app.links && saved.app.links.length) ? saved.app.links : base.app.links).slice(0, 4);
+    while (next.app.links.length < 4) next.app.links.push({ label: '', href: '' });
+    next.app.authors = ((saved.app && saved.app.authors) || []).slice();
     next.partners = (saved.partners && saved.partners.length) ? saved.partners.slice() : base.partners.slice();
     next.contacts = (saved.contacts && saved.contacts.length) ? saved.contacts.slice() : base.contacts.slice();
     return next;
@@ -105,17 +116,15 @@
     });
   }
 
-  function rteBar(id) {
+  function rteBar(id, withImage) {
     return (
       '<div class="rte">' +
       '<div class="rte-bar" data-rte="' + id + '">' +
       '<button type="button" data-cmd="bold">Жирный</button>' +
       '<button type="button" data-cmd="italic">Курсив</button>' +
-      '<button type="button" data-block="h2">Заголовок</button>' +
-      '<button type="button" data-block="quote">Цитата</button>' +
       '<button type="button" data-cmd="insertUnorderedList">Список</button>' +
       '<button type="button" data-act="link">Ссылка</button>' +
-      '<button type="button" data-act="image">Фото</button>' +
+      (withImage ? '<button type="button" data-act="image">Фото</button>' : '') +
       '</div>' +
       '<div class="rte-body" id="' + id + '" contenteditable="true"></div>' +
       '<input type="file" id="' + id + '-file" accept="image/*" hidden />' +
@@ -127,25 +136,13 @@
     var el = document.getElementById(id);
     var bar = document.querySelector('[data-rte="' + id + '"]');
     if (!el || !bar) return;
-    el.addEventListener('paste', function (e) {
-      e.preventDefault();
-      var html = (e.clipboardData && (e.clipboardData.getData('text/html') || e.clipboardData.getData('text/plain'))) || '';
-      var box = document.createElement('div');
-      if (/<[a-z][\s\S]*>/i.test(html)) box.innerHTML = html;
-      else box.innerHTML = '<p>' + esc(html).replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br>') + '</p>';
-      box.querySelectorAll('script,style').forEach(function (n) { n.remove(); });
-      document.execCommand('insertHTML', false, box.innerHTML);
-    });
     bar.onclick = function (e) {
       var btn = e.target.closest('button');
       if (!btn) return;
       el.focus();
       var cmd = btn.getAttribute('data-cmd');
-      var block = btn.getAttribute('data-block');
       var act = btn.getAttribute('data-act');
       if (cmd) document.execCommand(cmd, false, null);
-      if (block === 'h2') document.execCommand('formatBlock', false, 'h2');
-      if (block === 'quote') document.execCommand('formatBlock', false, 'blockquote');
       if (act === 'link') {
         var href = prompt('Ссылка', 'https://');
         if (href) document.execCommand('createLink', false, href);
@@ -190,6 +187,34 @@
     };
   }
 
+  function personRows(list, prefix) {
+    return (list.length ? list : [{ title: '', text: '', photo: '' }]).map(function (p, i) {
+      return (
+        '<div class="form-grid" data-' + prefix + '="' + i + '" style="margin-bottom:12px">' +
+        '<input class="input" data-f="title" value="' + esc(p.title || '') + '" placeholder="Подпись" />' +
+        '<textarea class="textarea" data-f="text" rows="2" placeholder="Текст">' + esc(p.text || '') + '</textarea>' +
+        '<div class="field"><label>Фото — станет ч/б кружком</label>' +
+        '<div class="cover-frame' + (p.photo ? '' : ' is-empty') + '" id="' + prefix + '-ph-' + i + '" style="width:72px;height:72px;border-radius:50%;overflow:hidden">' +
+        (p.photo ? '<img src="' + esc(p.photo) + '" alt="" />' : '<span>Фото</span>') + '</div>' +
+        '<input type="hidden" data-f="photo" value="' + esc(p.photo || '') + '" />' +
+        '<button type="button" class="btn btn-ghost" data-ph-up="' + prefix + ':' + i + '">Загрузить</button>' +
+        '<input type="file" accept="image/*" hidden data-ph-file="' + prefix + ':' + i + '" /></div>' +
+        '<button type="button" class="btn btn-ghost" data-del-' + prefix + '="' + i + '">Убрать</button></div>'
+      );
+    }).join('');
+  }
+
+  function collectPeople(prefix) {
+    var out = [];
+    document.querySelectorAll('[data-' + prefix + ']').forEach(function (row) {
+      var title = (row.querySelector('[data-f="title"]') || {}).value || '';
+      var text = (row.querySelector('[data-f="text"]') || {}).value || '';
+      var photo = (row.querySelector('[data-f="photo"]') || {}).value || '';
+      if (title.trim() || text.trim() || photo) out.push({ title: title.trim(), text: text.trim(), photo: photo });
+    });
+    return out;
+  }
+
   function partnersHtml(list) {
     return (list.length ? list : [{ name: '', href: '' }]).map(function (p, i) {
       return (
@@ -211,44 +236,58 @@
     return out;
   }
 
-  function collect(partners) {
+  function collectContacts() {
+    var out = [];
+    document.querySelectorAll('[data-contact]').forEach(function (row) {
+      var label = (row.querySelector('[data-f="label"]') || {}).value || '';
+      var value = (row.querySelector('[data-f="value"]') || {}).value || '';
+      var href = (row.querySelector('[data-f="href"]') || {}).value || '';
+      var rte = row.querySelector('[data-f="html"]');
+      var textHtml = rte ? rte.innerHTML : '';
+      if (label.trim()) out.push({ label: label.trim(), value: value.trim(), href: href.trim(), textHtml: textHtml });
+    });
+    return out;
+  }
+
+  function collect(partners, principles, authors) {
     var desc = document.getElementById('ab-desc');
     var appHtml = document.getElementById('ab-app-html');
-    var principles = [0, 1, 2, 3].map(function (i) {
+    var links = [0, 1, 2, 3].map(function (i) {
       return {
-        title: ((document.getElementById('ab-pr-t-' + i) || {}).value || '').trim(),
-        text: ((document.getElementById('ab-pr-x-' + i) || {}).value || '').trim(),
+        label: ((document.getElementById('ab-app-l-' + i) || {}).value || '').trim(),
+        href: ((document.getElementById('ab-app-h-' + i) || {}).value || '').trim(),
       };
-    });
-    var contacts = [0, 1, 2].map(function (i) {
-      return {
-        label: ((document.getElementById('ab-c-l-' + i) || {}).value || '').trim(),
-        value: ((document.getElementById('ab-c-v-' + i) || {}).value || '').trim(),
-        href: ((document.getElementById('ab-c-h-' + i) || {}).value || '').trim(),
-      };
-    }).filter(function (c) { return c.label; });
+    }).filter(function (l) { return l.label || l.href; });
     return {
       eyebrow: ((document.getElementById('ab-eye') || {}).value || '').trim(),
       titleHtml: ((document.getElementById('ab-title') || {}).value || '').trim(),
       cover: ((document.getElementById('ab-cover') || {}).value || '').trim(),
       descriptionHtml: desc ? desc.innerHTML : '',
       principlesTitle: ((document.getElementById('ab-pr-title') || {}).value || '').trim(),
-      principles: principles,
+      principles: principles || collectPeople('team'),
       donate: {
         eyebrow: ((document.getElementById('ab-don-eye') || {}).value || '').trim(),
         titleHtml: ((document.getElementById('ab-don-title') || {}).value || '').trim(),
-        text: ((document.getElementById('ab-don-text') || {}).value || '').trim(),
-        mailto: ((document.getElementById('ab-don-mail') || {}).value || '').trim(),
+        qrs: [0, 1].map(function (i) {
+          return {
+            image: ((document.getElementById('ab-qr-' + i) || {}).value || '').trim(),
+            label: ((document.getElementById('ab-qr-l-' + i) || {}).value || '').trim(),
+          };
+        }),
       },
       app: {
         eyebrow: ((document.getElementById('ab-app-eye') || {}).value || '').trim(),
         title: ((document.getElementById('ab-app-title') || {}).value || '').trim(),
+        subtitle: ((document.getElementById('ab-app-sub') || {}).value || '').trim(),
         html: appHtml ? appHtml.innerHTML : '',
         photo: ((document.getElementById('ab-app-photo') || {}).value || '').trim(),
+        links: links,
+        authors: authors || collectPeople('appauth'),
       },
       partnersTitle: ((document.getElementById('ab-par-title') || {}).value || '').trim(),
       partners: partners || collectPartners(),
-      contacts: contacts,
+      contactsTitle: ((document.getElementById('ab-c-title') || {}).value || '').trim(),
+      contacts: collectContacts(),
     };
   }
 
@@ -274,15 +313,32 @@
     });
   }
 
+  function photoCell(id, url, label, btn, file) {
+    return (
+      '<div class="field"><label>' + esc(label) + '</label>' +
+      '<div class="cover-frame' + (url ? '' : ' is-empty') + '" id="' + id + '-frame">' +
+      (url ? '<img src="' + esc(url) + '" alt="" />' : '<span>Нет фото</span>') + '</div>' +
+      '<input type="hidden" id="' + id + '" value="' + esc(url || '') + '" />' +
+      '<button type="button" class="btn btn-ghost" id="' + btn + '">Загрузить</button>' +
+      '<input type="file" id="' + file + '" accept="image/*" hidden /></div>'
+    );
+  }
+
   function render(ctx) {
     var d = current();
     var partners = (d.partners || []).slice();
     if (!partners.length) partners = [{ name: '', href: '' }];
-    var contacts = d.contacts || [];
-    while (contacts.length < 3) contacts.push({ label: '', value: '', href: '' });
+    var team = (d.principles || []).slice();
+    if (!team.length) team = [{ title: '', text: '', photo: '' }];
+    var appAuthors = ((d.app && d.app.authors) || []).slice();
+    if (!appAuthors.length) appAuthors = [{ title: '', text: '', photo: '' }];
+    var contacts = (d.contacts || []).slice();
+    if (!contacts.length) contacts = [{ label: '', value: '', href: '', textHtml: '' }];
+    var qrs = d.donate.qrs || [];
+    var links = d.app.links || [];
 
     ctx.viewEl.innerHTML =
-      '<div class="topbar"><div><h1>О проекте</h1><p>Обложка, текст, принципы, поддержка, приложение, партнёры и контакты.</p></div>' +
+      '<div class="topbar"><div><h1>О проекте</h1><p>Команда, приложение, поддержка, партнёры и контакты.</p></div>' +
       '<div class="topbar-actions">' +
       '<a class="btn btn-ghost" href="' + PORTAL + 'page.html" target="_blank" rel="noopener">На сайте</a>' +
       '<button type="button" class="btn btn-primary" id="ab-pub">Опубликовать</button>' +
@@ -293,81 +349,139 @@
       '<label class="field">Надзаголовок<input class="input" id="ab-eye" value="' + esc(d.eyebrow || '') + '" /></label>' +
       '<label class="field">Заголовок (можно с &lt;br&gt; и &lt;em&gt;)<textarea class="textarea" id="ab-title" rows="3">' + esc(d.titleHtml || '') + '</textarea></label>' +
       '</div>' +
-      '<div class="field"><label>Обложка</label>' +
-      '<div class="cover-frame' + (d.cover ? '' : ' is-empty') + '" id="ab-cover-frame">' +
-      (d.cover ? '<img src="' + esc(d.cover) + '" alt="" />' : '<span>Нет фото</span>') + '</div>' +
-      '<input type="hidden" id="ab-cover" value="' + esc(d.cover || '') + '" />' +
-      '<button type="button" class="btn btn-ghost" id="ab-cover-up">Загрузить обложку</button>' +
-      '<input type="file" id="ab-cover-file" accept="image/*" hidden /></div>' +
-      '<div class="field"><label>Описание</label>' + rteBar('ab-desc') + '</div></div>' +
+      photoCell('ab-cover', d.cover, 'Обложка', 'ab-cover-up', 'ab-cover-file') +
+      '<div class="field"><label>Описание</label>' + rteBar('ab-desc', true) + '</div></div>' +
 
-      '<div class="panel" style="margin-bottom:12px"><div class="panel-head"><h2>Во что мы верим</h2></div>' +
-      '<label class="field">Заголовок блока<input class="input" id="ab-pr-title" value="' + esc(d.principlesTitle || '') + '" /></label>' +
-      '<div class="form-grid">' +
-      [0, 1, 2, 3].map(function (i) {
-        var p = d.principles[i] || { title: '', text: '' };
-        return (
-          '<div class="field"><label>Блок ' + (i + 1) + '</label>' +
-          '<input class="input" id="ab-pr-t-' + i + '" value="' + esc(p.title) + '" placeholder="Подзаголовок" />' +
-          '<textarea class="textarea" id="ab-pr-x-' + i + '" rows="3" placeholder="Текст">' + esc(p.text) + '</textarea></div>'
-        );
-      }).join('') +
-      '</div></div>' +
-
-      '<div class="panel" style="margin-bottom:12px"><div class="panel-head"><h2>Поддержите нас</h2></div>' +
-      '<p class="hint-note">Этот блок на сайте стоит выше приложения.</p>' +
-      '<div class="form-grid">' +
-      '<label class="field">Надзаголовок<input class="input" id="ab-don-eye" value="' + esc(d.donate.eyebrow || '') + '" /></label>' +
-      '<label class="field">Заголовок<textarea class="textarea" id="ab-don-title" rows="2">' + esc(d.donate.titleHtml || '') + '</textarea></label>' +
-      '<label class="field">Текст<textarea class="textarea" id="ab-don-text" rows="3">' + esc(d.donate.text || '') + '</textarea></label>' +
-      '<label class="field">Ссылка кнопки<input class="input" id="ab-don-mail" value="' + esc(d.donate.mailto || '') + '" /></label>' +
-      '</div></div>' +
+      '<div class="panel" style="margin-bottom:12px"><div class="panel-head"><h2>Наша команда</h2>' +
+      '<button type="button" class="btn btn-ghost" id="ab-team-add">+ Блок</button></div>' +
+      '<label class="field">Заголовок блока<input class="input" id="ab-pr-title" value="' + esc(d.principlesTitle || 'Наша команда') + '" /></label>' +
+      '<div id="ab-team">' + personRows(team, 'team') + '</div></div>' +
 
       '<div class="panel" style="margin-bottom:12px"><div class="panel-head"><h2>Приложение</h2></div>' +
+      '<p class="hint-note">На сайте этот блок стоит выше поддержки и на всю ширину.</p>' +
       '<div class="form-grid">' +
       '<label class="field">Надзаголовок<input class="input" id="ab-app-eye" value="' + esc(d.app.eyebrow || '') + '" /></label>' +
       '<label class="field">Заголовок<input class="input" id="ab-app-title" value="' + esc(d.app.title || '') + '" /></label>' +
+      '<label class="field">Подзаголовок<input class="input" id="ab-app-sub" value="' + esc(d.app.subtitle || '') + '" /></label>' +
       '</div>' +
-      '<div class="field"><label>Текст</label>' + rteBar('ab-app-html') + '</div>' +
-      '<div class="field"><label>Фото блока</label>' +
-      '<div class="cover-frame' + (d.app.photo ? '' : ' is-empty') + '" id="ab-app-frame">' +
-      (d.app.photo ? '<img src="' + esc(d.app.photo) + '" alt="" />' : '<span>Нет фото</span>') + '</div>' +
-      '<input type="hidden" id="ab-app-photo" value="' + esc(d.app.photo || '') + '" />' +
-      '<button type="button" class="btn btn-ghost" id="ab-app-up">Загрузить фото</button>' +
-      '<input type="file" id="ab-app-file" accept="image/*" hidden /></div></div>' +
+      photoCell('ab-app-photo', d.app.photo, 'Фото блока', 'ab-app-up', 'ab-app-file') +
+      '<div class="form-grid">' +
+      [0, 1, 2, 3].map(function (i) {
+        var l = links[i] || { label: '', href: '' };
+        return '<label class="field">Ссылка ' + (i + 1) +
+          '<input class="input" id="ab-app-l-' + i + '" value="' + esc(l.label || '') + '" placeholder="App Store" />' +
+          '<input class="input" id="ab-app-h-' + i + '" value="' + esc(l.href || '') + '" placeholder="https://" /></label>';
+      }).join('') +
+      '</div>' +
+      '<div class="field"><label>Текст</label>' + rteBar('ab-app-html', true) + '</div>' +
+      '<div class="panel-head"><h3>Авторы приложения</h3>' +
+      '<button type="button" class="btn btn-ghost" id="ab-appauth-add">+ Блок</button></div>' +
+      '<div id="ab-appauth">' + personRows(appAuthors, 'appauth') + '</div></div>' +
+
+      '<div class="panel" style="margin-bottom:12px"><div class="panel-head"><h2>Поддержите нас</h2></div>' +
+      '<p class="hint-note">Блок стоит под приложением. Два QR в ряд — для портала и для приложения.</p>' +
+      '<div class="form-grid">' +
+      '<label class="field">Надзаголовок<input class="input" id="ab-don-eye" value="' + esc(d.donate.eyebrow || '') + '" /></label>' +
+      '<label class="field">Заголовок<textarea class="textarea" id="ab-don-title" rows="2">' + esc(d.donate.titleHtml || '') + '</textarea></label>' +
+      '</div>' +
+      '<div class="form-grid">' +
+      [0, 1].map(function (i) {
+        var q = qrs[i] || { image: '', label: i ? 'Приложение' : 'Портал' };
+        return photoCell('ab-qr-' + i, q.image, 'QR ' + (i + 1), 'ab-qr-up-' + i, 'ab-qr-file-' + i) +
+          '<label class="field">Подпись QR ' + (i + 1) + '<input class="input" id="ab-qr-l-' + i + '" value="' + esc(q.label || '') + '" /></label>';
+      }).join('') +
+      '</div></div>' +
 
       '<div class="panel" style="margin-bottom:12px"><div class="panel-head"><h2>Партнёры</h2>' +
       '<button type="button" class="btn btn-ghost" id="ab-par-add">+ Партнёр</button></div>' +
       '<label class="field">Заголовок<input class="input" id="ab-par-title" value="' + esc(d.partnersTitle || '') + '" /></label>' +
       '<div id="ab-partners">' + partnersHtml(partners) + '</div></div>' +
 
-      '<div class="panel"><div class="panel-head"><h2>Контакты</h2></div>' +
-      '<p class="hint-note">Блок «Сотрудничество» убран. Три оставшихся поля редактируются здесь.</p>' +
-      [0, 1, 2].map(function (i) {
-        var c = contacts[i] || { label: '', value: '', href: '' };
+      '<div class="panel"><div class="panel-head"><h2>Контакты</h2>' +
+      '<button type="button" class="btn btn-ghost" id="ab-c-add">+ Блок</button></div>' +
+      '<p class="hint-note">Верстка как у партнёров. Для «Мы в соцсетях» ссылки добавляйте в текст, поле mailto не нужно.</p>' +
+      '<label class="field">Заголовок<input class="input" id="ab-c-title" value="' + esc(d.contactsTitle || 'Написать редакции') + '" /></label>' +
+      '<div id="ab-contacts">' + contacts.map(function (c, i) {
         return (
-          '<div class="form-grid" style="margin-bottom:8px">' +
-          '<input class="input" id="ab-c-l-' + i + '" value="' + esc(c.label) + '" placeholder="Подпись" />' +
-          '<input class="input" id="ab-c-v-' + i + '" value="' + esc(c.value) + '" placeholder="Текст" />' +
-          '<input class="input" id="ab-c-h-' + i + '" value="' + esc(c.href) + '" placeholder="mailto: или https://" />' +
-          '</div>'
+          '<div class="form-grid" data-contact="' + i + '" style="margin-bottom:8px">' +
+          '<input class="input" data-f="label" value="' + esc(c.label || '') + '" placeholder="Подпись" />' +
+          '<input class="input" data-f="value" value="' + esc(c.value || '') + '" placeholder="Короткий текст" />' +
+          '<input class="input" data-f="href" value="' + esc(c.href || '') + '" placeholder="https:// если одна ссылка" />' +
+          '<div class="field"><label>Текст со ссылками</label>' + rteBar('ab-c-html-' + i, false) + '</div>' +
+          '<button type="button" class="btn btn-ghost" data-del-contact="' + i + '">Убрать</button></div>'
         );
-      }).join('') +
-      '</div>';
+      }).join('') + '</div></div>';
 
     document.getElementById('ab-desc').innerHTML = d.descriptionHtml || '';
     document.getElementById('ab-app-html').innerHTML = d.app.html || '';
     mountRTE('ab-desc', ctx.toast);
     mountRTE('ab-app-html', ctx.toast);
+    contacts.forEach(function (c, i) {
+      var el = document.getElementById('ab-c-html-' + i);
+      if (el) {
+        el.setAttribute('data-f', 'html');
+        el.innerHTML = c.textHtml || c.value || '';
+        mountRTE('ab-c-html-' + i, ctx.toast);
+      }
+    });
     bindPhoto('ab-cover-up', 'ab-cover-file', 'ab-cover', 'ab-cover-frame', 'about', ctx.toast);
-    bindPhoto('ab-app-up', 'ab-app-file', 'ab-app-photo', 'ab-app-frame', 'about', ctx.toast);
+    bindPhoto('ab-app-up', 'ab-app-file', 'ab-app-photo', 'ab-app-photo-frame', 'about', ctx.toast);
+    bindPhoto('ab-qr-up-0', 'ab-qr-file-0', 'ab-qr-0', 'ab-qr-0-frame', 'about', ctx.toast);
+    bindPhoto('ab-qr-up-1', 'ab-qr-file-1', 'ab-qr-1', 'ab-qr-1-frame', 'about', ctx.toast);
+
+    function bindPeople(prefix) {
+      ctx.viewEl.querySelectorAll('[data-ph-up]').forEach(function (btn) {
+        var key = btn.getAttribute('data-ph-up');
+        if (!key || key.indexOf(prefix + ':') !== 0) return;
+        var file = ctx.viewEl.querySelector('[data-ph-file="' + key + '"]');
+        var row = btn.closest('[data-' + prefix + ']');
+        if (!file || !row) return;
+        btn.onclick = function () { file.click(); };
+        file.onchange = function () {
+          var f = file.files && file.files[0];
+          if (!f) return;
+          ctx.toast('Сохраняем фото…');
+          readFile(f).then(function (dataUrl) { return upload(dataUrl, 'about'); }).then(function (url) {
+            var hidden = row.querySelector('[data-f="photo"]');
+            if (hidden) hidden.value = url;
+            var i = key.split(':')[1];
+            var frame = document.getElementById(prefix + '-ph-' + i);
+            if (frame) {
+              frame.classList.remove('is-empty');
+              frame.innerHTML = '<img src="' + esc(url) + '" alt="" />';
+            }
+          }).catch(function (err) { ctx.toast(err.message || 'Не удалось загрузить', true); });
+        };
+      });
+      ctx.viewEl.querySelectorAll('[data-del-' + prefix + ']').forEach(function (btn) {
+        btn.onclick = function () {
+          var list = collectPeople(prefix);
+          list.splice(Number(btn.getAttribute('data-del-' + prefix)), 1);
+          document.getElementById(prefix === 'team' ? 'ab-team' : 'ab-appauth').innerHTML = personRows(list, prefix);
+          bindPeople(prefix);
+        };
+      });
+    }
+    bindPeople('team');
+    bindPeople('appauth');
+    document.getElementById('ab-team-add').onclick = function () {
+      var list = collectPeople('team');
+      list.push({ title: '', text: '', photo: '' });
+      document.getElementById('ab-team').innerHTML = personRows(list, 'team');
+      bindPeople('team');
+    };
+    document.getElementById('ab-appauth-add').onclick = function () {
+      var list = collectPeople('appauth');
+      list.push({ title: '', text: '', photo: '' });
+      document.getElementById('ab-appauth').innerHTML = personRows(list, 'appauth');
+      bindPeople('appauth');
+    };
 
     function bindPartnerDel() {
       ctx.viewEl.querySelectorAll('[data-del-partner]').forEach(function (btn) {
         btn.onclick = function () {
           partners = collectPartners();
-          var i = Number(btn.getAttribute('data-del-partner'));
-          partners.splice(i, 1);
+          partners.splice(Number(btn.getAttribute('data-del-partner')), 1);
           document.getElementById('ab-partners').innerHTML = partnersHtml(partners);
           bindPartnerDel();
         };
@@ -381,8 +495,12 @@
       bindPartnerDel();
     };
 
+    document.getElementById('ab-c-add').onclick = function () {
+      ctx.toast('Сохраните и откройте снова, чтобы добавить ещё один контакт — или заполните пустую строку ниже.', false);
+    };
+
     document.getElementById('ab-pub').onclick = function () {
-      var data = collect(collectPartners());
+      var data = collect(collectPartners(), collectPeople('team'), collectPeople('appauth'));
       ctx.toast('Сохраняем фото…');
       hoistHtml(data.descriptionHtml).then(function (html) {
         data.descriptionHtml = html;

@@ -79,6 +79,31 @@
   }
 
   var archiveCache = { news: [], article: [] };
+  var remoteCache = { cycles: null, authors: null, events: null, guides: null, video: null };
+
+  function authorsFromPack(pack) {
+    if (!pack) return [];
+    return Array.isArray(pack) ? pack : (pack.authors || []);
+  }
+
+  function eventsFromPack(pack) {
+    if (!pack) return [];
+    return Array.isArray(pack) ? pack : (pack.items || pack.events || []);
+  }
+
+  function orgsFromPack(pack) {
+    if (!pack || Array.isArray(pack)) return [];
+    return pack.organizers || [];
+  }
+
+  function remoteItems(type) {
+    if (type === 'cycle') return remoteCache.cycles || [];
+    if (type === 'authors') return authorsFromPack(remoteCache.authors);
+    if (type === 'event') return eventsFromPack(remoteCache.events);
+    if (type === 'organizer') return orgsFromPack(remoteCache.events);
+    if (type === 'video') return ((remoteCache.video && remoteCache.video.items) || []);
+    return [];
+  }
 
   function numericIdOf(value) {
     var n = parseInt(value, 10);
@@ -160,10 +185,51 @@
     try { return (localStorage.getItem(KEY) || '').length; } catch (e) { return 0; }
   }
 
+  function pruneRemoteCopies(data) {
+    var changed = false;
+    function slim(key, remoteList) {
+      if (!Array.isArray(data[key]) || !data[key].length || !remoteList || !remoteList.length) return;
+      var remoteBy = {};
+      remoteList.forEach(function (rec) {
+        var k = recKey(rec);
+        if (k) remoteBy[k] = rec;
+      });
+      var kept = [];
+      data[key].forEach(function (rec) {
+        if (!rec) return;
+        var rem = remoteBy[recKey(rec)];
+        if (!rem) { kept.push(rec); return; }
+        if (rec.status === 'draft' || rec.status === 'hidden') { kept.push(rec); return; }
+        var lt = String(rec.updatedAt || '');
+        var rt = String(rem.updatedAt || rem.modified || '');
+        if (lt && rt && lt > rt) kept.push(rec);
+      });
+      if (kept.length !== data[key].length) {
+        data[key] = kept;
+        changed = true;
+      }
+    }
+    slim('cycles', remoteCache.cycles);
+    slim('authors', authorsFromPack(remoteCache.authors));
+    if (remoteCache.events && !Array.isArray(remoteCache.events)) {
+      slim('events', remoteCache.events.items || remoteCache.events.events || []);
+      slim('organizers', remoteCache.events.organizers || []);
+    }
+    (data.articles || []).forEach(function (a) {
+      if (!a) return;
+      stripHeavy(a, false);
+    });
+    return changed;
+  }
+
   function paintDeskBanner() {
     var el = document.getElementById('desk-banner');
     if (!el) return;
-    el.hidden = deskBytes() < 3.5 * 1024 * 1024;
+    var over = deskBytes() >= 4.6 * 1024 * 1024;
+    el.hidden = !over;
+    if (over) {
+      el.innerHTML = '<p>В этом браузере накопилось слишком много черновиков, и старые статьи могут не сохраниться. Не очищайте сайт — откройте «Циклы» и нажмите «Опубликовать», затем обновите страницу.</p>';
+    }
   }
 
   function write(data, keepId) {
@@ -175,6 +241,7 @@
       if (!isQuota(e)) throw e;
     }
     compactDesk(data, keepId, false);
+    pruneRemoteCopies(data);
     try {
       localStorage.setItem(KEY, JSON.stringify(data));
       paintDeskBanner();
@@ -183,12 +250,13 @@
       if (!isQuota(e2)) throw e2;
     }
     compactDesk(data, keepId, true);
+    pruneRemoteCopies(data);
     try {
       localStorage.setItem(KEY, JSON.stringify(data));
       paintDeskBanner();
     } catch (e3) {
       paintDeskBanner();
-      throw new Error('Браузер переполнен. Не очищайте сайт: сначала опубликуйте циклы с этого компьютера, чтобы они ушли на сервер.');
+      throw new Error('Не хватает места в браузере для этой статьи. Опубликуйте циклы — копии уйдут на сервер, и сохранение снова заработает.');
     }
   }
 
@@ -319,6 +387,7 @@
     if (type === 'authors') return data.authors || [];
     if (type === 'organizer') return data.organizers || [];
     if (type === 'cycle') return data.cycles || [];
+    if (type === 'video-channel') return data.videoChannels || [];
     return [];
   }
 
@@ -417,6 +486,12 @@
     site.forEach(function (x) {
       if (x && x.id != null && x.id !== '') byId[String(x.id)] = x;
     });
+    remoteItems(type).forEach(function (x) {
+      if (!x) return;
+      var key = String(x.id || x.slug || '');
+      if (!key) return;
+      byId[key] = Object.assign({}, byId[key] || { status: 'published', source: 'remote' }, x);
+    });
     listOf(type).forEach(function (x) {
       if (!x || x.id == null) return;
       var cur = byId[String(x.id)] || (x.slug && byId[String(x.slug)]) || {};
@@ -493,6 +568,7 @@
       author: a.author || '',
       authorSlug: a.authorSlug || '',
       authorSlugs: a.authorSlugs || (a.authorSlug ? [a.authorSlug] : []),
+      tags: a.tags || [],
       category: slugs[0],
       rubrics: slugs,
       cycleSlug: a.cycleSlug || a.cycle_slug || '',
@@ -698,6 +774,7 @@
       : type === 'organizer' ? 'organizers'
       : type === 'guides' ? 'guides'
       : type === 'cycle' ? 'cycles'
+      : type === 'video-channel' ? 'videoChannels'
       : 'churchDays';
     var list = data[key] || [];
     item.updatedAt = new Date().toISOString();
@@ -732,6 +809,7 @@
       : type === 'organizer' ? 'organizers'
       : type === 'guides' ? 'guides'
       : type === 'cycle' ? 'cycles'
+      : type === 'video-channel' ? 'videoChannels'
       : 'churchDays';
     data[key] = (data[key] || []).filter(function (x) { return String(x.id) !== String(id); });
     write(data, id);
@@ -1208,6 +1286,10 @@
     if (type === 'news') {
       slugs = slugs.filter(function (s) { return !voices[s]; });
     }
+    (item.tags || []).forEach(function (t) {
+      var slug = 'tag:' + String((t && (t.slug || t)) || '');
+      if (slug !== 'tag:' && slugs.indexOf(slug) === -1) slugs.push(slug);
+    });
     return AdminApi.upsertArchive({
       articles: [{
         id: ensureNumericId(item),
@@ -1222,9 +1304,58 @@
         contentHtml: item.contentHtml || '',
         contentText: item.body || '',
         image: httpCover(item) || undefined,
+        authorSlug: item.authorSlug || '',
+        authorSlugs: item.authorSlugs || (item.authorSlug ? [item.authorSlug] : []),
+        tags: item.tags || [],
         source: 'desk',
       }],
     });
+  }
+
+  function catalogTags() {
+    if (window.AdminStore && AdminStore.listTags) {
+      return (AdminStore.listTags() || []).filter(function (t) { return t && (t.slug || t.id) && t.name; });
+    }
+    return [];
+  }
+
+  function collectedTags() {
+    var out = [];
+    document.querySelectorAll('#d-tags option:checked, #d-tags input:checked').forEach(function (el) {
+      var slug = el.value;
+      if (!slug) return;
+      var t = catalogTags().filter(function (x) { return String(x.slug || x.id) === slug; })[0];
+      out.push({ slug: slug, title: (t && (t.name || t.title)) || slug });
+    });
+    var sel = document.getElementById('d-tags');
+    if (sel && sel.tagName === 'SELECT') {
+      [].slice.call(sel.selectedOptions || []).forEach(function (opt) {
+        if (!opt.value) return;
+        if (out.some(function (t) { return t.slug === opt.value; })) return;
+        out.push({ slug: opt.value, title: opt.textContent || opt.value });
+      });
+    }
+    return out;
+  }
+
+  function tagPickerHtml(selected) {
+    selected = selected || [];
+    var slugs = selected.map(function (t) { return String(t.slug || t); });
+    var tags = catalogTags();
+    if (!tags.length) {
+      return '<p class="hint-note">Теги задаются в разделе «Рубрики и темы». Пока список пуст.</p>';
+    }
+    return (
+      '<div class="field"><label>Тег</label>' +
+      '<select class="select" id="d-tags" multiple size="' + Math.min(6, tags.length) + '">' +
+      tags.map(function (t) {
+        var slug = t.slug || t.id;
+        var on = slugs.indexOf(String(slug)) !== -1;
+        return '<option value="' + esc(slug) + '"' + (on ? ' selected' : '') + '>' + esc(t.name || t.title || slug) + '</option>';
+      }).join('') +
+      '</select>' +
+      '<p class="hint-note">Из меток, созданных в «Рубрики и темы». На сайте тег будет под текстом.</p></div>'
+    );
   }
 
   function rubricChecks(cats, selected) {
@@ -1294,6 +1425,7 @@
         '<div class="author-suggest" id="d-cycle-suggest" hidden></div></div>' +
         '<input class="input" id="d-cycle-order" type="number" min="1" placeholder="Номер в цикле" value="' + esc(item.cycleOrder || '') + '" />') +
       '<input class="input" id="d-date" type="date" value="' + esc(pubDate(item.date, todayIso())) + '" />' +
+      tagPickerHtml(item.tags || []) +
       '</div></div>' +
       '<div class="rte lead-rte">' +
       '<div class="rte-bar" id="d-lead-bar">' +
@@ -1481,6 +1613,11 @@
     var byId = {};
     ((window.YakCycles && YakCycles.ALL) || []).forEach(function (c) {
       if (c && c.id) byId[c.id] = Object.assign({ status: 'published', source: 'site' }, c);
+    });
+    (remoteCache.cycles || []).forEach(function (c) {
+      if (!c || !c.id) return;
+      var prev = byId[c.id] || {};
+      byId[c.id] = Object.assign({}, prev, c);
     });
     (read().cycles || []).forEach(function (c) {
       if (!c || !c.id) return;
@@ -1829,6 +1966,7 @@
         authorSlugs: author ? [author.slug] : [],
         cycleSlug: type === 'article' ? (val('d-cycle-slug') || '') : '',
         cycleOrder: type === 'article' ? (parseInt(val('d-cycle-order'), 10) || 0) : 0,
+        tags: collectedTags(),
         status: status,
         source: 'desk',
       });
@@ -2110,14 +2248,21 @@
     if (!window.AdminApi || !AdminApi.upsertArchive) {
       return Promise.reject(new Error('нет соединения с сервером'));
     }
-    var items = (read().video || []).filter(function (v) {
+    var byVid = {};
+    ((remoteCache.video && remoteCache.video.items) || []).forEach(function (v) {
+      if (v && v.id) byVid[String(v.id)] = v;
+    });
+    (read().video || []).forEach(function (v) {
+      if (v && v.id) byVid[String(v.id)] = Object.assign({}, byVid[String(v.id)] || {}, v);
+    });
+    var items = Object.keys(byVid).map(function (k) { return byVid[k]; }).filter(function (v) {
       return v && v.id && (!v.status || v.status === 'published');
     }).map(function (v) {
       var copy = Object.assign({}, v);
       delete copy.source;
       return copy;
     });
-    var channels = (read().videoChannels || []).filter(function (c) {
+    var channels = catalogVideoChannels().filter(function (c) {
       return c && c.id && (!c.status || c.status === 'published');
     });
     return AdminApi.upsertArchive({
@@ -2248,7 +2393,11 @@
       field('Название', 'd-title', item.title) +
       field('Формат', 'd-type', item.type, 'select', opts([{ id: 'long', title: 'Полнометражное' }, { id: 'short', title: 'Shorts' }], item.type || 'long')) +
       field('Спикер', 'd-speaker', item.speaker) +
-      field('Канал партнёра', 'd-channel', item.channelId) +
+      field('Канал партнёра', 'd-channel', item.channelId || '', 'select',
+        '<option value="">— нет —</option>' +
+        catalogVideoChannels().map(function (c) {
+          return '<option value="' + esc(c.id) + '"' + (c.id === item.channelId ? ' selected' : '') + '>' + esc(c.name || c.id) + '</option>';
+        }).join('')) +
       field('Цикл', 'd-cycle', item.cycle) +
       field('Описание', 'd-desc', item.description, 'textarea') +
       attachField({
@@ -2314,9 +2463,9 @@
   function saveVideo(ctx, item, status) {
     var title = val('d-title');
     if (!title) { ctx.toast('Укажите название', true); return; }
-    var url = val('d-url');
-    var ext = val('d-ext');
-    if (!url && !ext) { ctx.toast('Прикрепите файл или укажите ссылку', true); return; }
+    var url = val('d-url') || item.videoUrl || item.embedUrl || '';
+    var ext = val('d-ext') || item.externalUrl || '';
+    if (!url && !ext && !item.embedUrl && !item.videoUrl) { ctx.toast('Прикрепите файл или укажите ссылку', true); return; }
     if (url.indexOf('data:') === 0) { ctx.toast('Сначала дождитесь загрузки файла в бакет', true); return; }
     var thumbNow = val('d-thumb');
     var next = Object.assign({}, item, {
@@ -2326,7 +2475,8 @@
       channelId: val('d-channel'),
       cycle: val('d-cycle'),
       description: val('d-desc'),
-      videoUrl: url,
+      videoUrl: url || item.videoUrl || '',
+      embedUrl: item.embedUrl || '',
       externalUrl: ext,
       thumb: thumbNow,
       duration: Number(val('d-dur')) || 0,
@@ -2347,6 +2497,187 @@
     });
   }
 
+  function catalogVideoChannels() {
+    var by = {};
+    (((window.YakVideos && YakVideos.channels) || [])).forEach(function (c) {
+      if (c && c.id) by[c.id] = Object.assign({ status: 'published', source: 'site' }, c);
+    });
+    ((remoteCache.video && remoteCache.video.channels) || []).forEach(function (c) {
+      if (c && c.id) by[c.id] = Object.assign({}, by[c.id] || {}, c);
+    });
+    (read().videoChannels || []).forEach(function (c) {
+      if (c && c.id) by[c.id] = Object.assign({}, by[c.id] || {}, c);
+    });
+    return Object.keys(by).map(function (k) { return by[k]; }).filter(function (c) {
+      return !c.status || c.status === 'published';
+    });
+  }
+
+  function catalogAllVideos() {
+    var by = {};
+    (((window.YakVideos && YakVideos.items) || [])).forEach(function (v) {
+      if (v && v.id) by[String(v.id)] = v;
+    });
+    (read().video || []).forEach(function (v) {
+      if (v && v.id) by[String(v.id)] = Object.assign({}, by[String(v.id)] || {}, v);
+    });
+    return Object.keys(by).map(function (k) { return by[k]; }).filter(function (v) {
+      return v && (!v.status || v.status === 'published');
+    });
+  }
+
+  function renderVideoPartners(ctx, id) {
+    if (id) {
+      renderVideoPartnerForm(ctx, id);
+      return;
+    }
+    var items = catalogVideoChannels();
+    ctx.viewEl.innerHTML =
+      '<div class="topbar"><div><h1>Видео-партнёры</h1><p>Карточки каналов: название, логотип, описание, ссылки и привязка роликов.</p></div>' +
+      '<div class="topbar-actions">' +
+      '<a class="btn btn-ghost" href="#video">К видео</a>' +
+      '<a class="btn btn-primary" href="#video-partners/new">Добавить</a></div></div>' +
+      '<div class="panel">' +
+      (items.length
+        ? '<div class="list-stack">' + items.map(function (c) {
+          return '<a class="list-item" href="#video-partners/' + esc(c.id) + '"><div><strong>' + esc(c.name || c.id) + '</strong><small>' + esc(c.id) + '</small></div></a>';
+        }).join('') + '</div>'
+        : emptyRow('Пока нет карточек партнёров.')) +
+      '</div>';
+  }
+
+  function renderVideoPartnerForm(ctx, id) {
+    var isNew = !id || id === 'new';
+    var baked = ((window.YakVideos && YakVideos.channels) || []).filter(function (c) { return c.id === id; })[0] || {};
+    var item = isNew
+      ? { id: '', name: '', logo: '', description: '', links: [], videoIds: [], status: 'published' }
+      : Object.assign({}, baked, getItem('video-channel', id) || { id: id });
+    var links = (item.links && item.links.length) ? item.links.slice() : [{ label: '', href: '' }];
+    var videos = catalogAllVideos();
+    var picked = item.videoIds || videos.filter(function (v) { return v.channelId === item.id; }).map(function (v) { return String(v.id); });
+    composeShell(
+      ctx, isNew ? 'Новый партнёр' : (item.name || 'Партнёр'), 'video-partners',
+      field('Название', 'd-title', item.name) +
+      '<div class="field slug-row"><label>Адрес</label><span class="slug-prefix">video-channel.html?id=</span>' +
+      '<input class="input" id="d-slug" value="' + esc(item.id || '') + '" placeholder="vselenskaya-tserkov" /></div>' +
+      field('Описание', 'd-desc', item.description || item.bio || '', 'textarea') +
+      '<div class="field"><label>Логотип</label>' +
+      '<div class="cover-frame' + (item.logo ? '' : ' is-empty') + '" id="d-cover-frame" style="width:88px;height:88px;border-radius:50%;overflow:hidden">' +
+      (item.logo ? '<img src="' + esc(mediaSrc(item.logo)) + '" alt="" />' : '<span>Лого</span>') +
+      '</div>' +
+      '<input type="hidden" id="d-cover" value="' + esc(item.logo || '') + '" />' +
+      '<button type="button" class="btn btn-ghost" id="d-cover-up">Загрузить логотип</button>' +
+      '<input type="file" id="d-cover-file" accept="image/*" hidden /></div>' +
+      '<div class="field"><label>Ссылки на другие платформы</label><div id="d-links"></div>' +
+      '<button type="button" class="btn btn-ghost" id="d-link-add">+ Ссылка</button></div>' +
+      '<div class="field"><label>Привязать видео с сайта</label>' +
+      '<select class="select" id="d-videos" multiple size="8">' +
+      videos.map(function (v) {
+        var on = picked.indexOf(String(v.id)) !== -1;
+        return '<option value="' + esc(String(v.id)) + '"' + (on ? ' selected' : '') + '>' + esc(v.title || v.id) + '</option>';
+      }).join('') +
+      '</select></div>',
+      function (status) { saveVideoPartner(ctx, item, isNew, status); },
+      function () { saveVideoPartner(ctx, item, isNew, 'published'); },
+      isNew ? null : function () {
+        if (!confirm('Удалить карточку партнёра? Видео останутся в каталоге.')) return;
+        upsert('video-channel', Object.assign({}, item, { status: 'hidden' }));
+        publishVideo().then(function () { ctx.toast('Снято'); ctx.go('video-partners'); })
+          .catch(function (e) { ctx.toast(e.message || 'Снято локально', true); ctx.go('video-partners'); });
+      },
+      item.id ? ('video-channel.html?id=' + encodeURIComponent(item.id)) : 'video.html'
+    );
+    function drawLinks() {
+      var box = document.getElementById('d-links');
+      if (!box) return;
+      box.innerHTML = links.map(function (l, i) {
+        return '<div class="form-grid" data-link="' + i + '" style="margin-bottom:8px">' +
+          '<input class="input" data-f="label" value="' + esc(l.label || '') + '" placeholder="Название" />' +
+          '<input class="input" data-f="href" value="' + esc(l.href || '') + '" placeholder="https://" />' +
+          '<button type="button" class="btn btn-ghost" data-del-link="' + i + '">Убрать</button></div>';
+      }).join('');
+      box.querySelectorAll('[data-del-link]').forEach(function (btn) {
+        btn.onclick = function () {
+          collectLinks();
+          links.splice(Number(btn.getAttribute('data-del-link')), 1);
+          drawLinks();
+        };
+      });
+    }
+    function collectLinks() {
+      links = [];
+      document.querySelectorAll('#d-links [data-link]').forEach(function (row) {
+        var label = (row.querySelector('[data-f="label"]') || {}).value || '';
+        var href = (row.querySelector('[data-f="href"]') || {}).value || '';
+        if (label.trim() || href.trim()) links.push({ label: label.trim(), href: href.trim() });
+      });
+    }
+    drawLinks();
+    var add = document.getElementById('d-link-add');
+    if (add) add.onclick = function () { collectLinks(); links.push({ label: '', href: '' }); drawLinks(); };
+    var coverInp = document.getElementById('d-cover');
+    var frame = document.getElementById('d-cover-frame');
+    var up = document.getElementById('d-cover-up');
+    var file = document.getElementById('d-cover-file');
+    if (up && file) {
+      up.onclick = function () { file.click(); };
+      file.onchange = function () {
+        var f = file.files && file.files[0];
+        if (!f) return;
+        var reader = new FileReader();
+        reader.onload = function () {
+          shrinkImage(reader.result, 640, 0.86, function (src) {
+            if (coverInp) coverInp.value = src;
+            if (frame) {
+              frame.classList.remove('is-empty');
+              frame.innerHTML = '<img src="' + esc(src) + '" alt="" />';
+            }
+          });
+        };
+        reader.readAsDataURL(f);
+      };
+    }
+    item._collectLinks = collectLinks;
+    item._linksRef = function () { return links; };
+  }
+
+  function saveVideoPartner(ctx, item, isNew, status) {
+    var name = val('d-title');
+    if (!name) { ctx.toast('Укажите название', true); return; }
+    if (item._collectLinks) item._collectLinks();
+    var nextId = val('d-slug') || slugify(name);
+    var logoNow = val('d-cover');
+    var videoIds = [];
+    var sel = document.getElementById('d-videos');
+    if (sel) [].slice.call(sel.selectedOptions || []).forEach(function (o) { videoIds.push(o.value); });
+    var next = Object.assign({}, item, {
+      id: nextId,
+      name: name,
+      description: val('d-desc'),
+      logo: logoNow,
+      links: item._linksRef ? item._linksRef() : [],
+      videoIds: videoIds,
+      status: status,
+    });
+    var ready = (logoNow && logoNow.indexOf('data:') === 0)
+      ? (ctx.toast('Сохраняем логотип…'), uploadDataUrl(logoNow, 'covers').then(function (url) { next.logo = url; }))
+      : Promise.resolve();
+    ctx.toast(status === 'published' ? 'Публикуем…' : 'Сохраняем…');
+    ready.then(function () {
+      upsert('video-channel', next);
+      videoIds.forEach(function (vid) {
+        var v = getItem('video', vid) || { id: vid };
+        upsert('video', Object.assign({}, v, { id: vid, channelId: nextId, status: v.status || 'published' }));
+      });
+      if (status === 'published') return publishVideo();
+    }).then(function () {
+      ctx.toast(status === 'published' ? 'На сайте' : 'Черновик сохранён');
+      ctx.go('video-partners');
+    }).catch(function (e) {
+      ctx.toast(e.message || 'Не удалось сохранить', true);
+    });
+  }
+
   function weekdayName(iso) {
     var names = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
     var d = iso ? new Date(iso + 'T12:00:00') : new Date();
@@ -2358,6 +2689,7 @@
     { id: 'воскресный', title: 'Воскресенье' },
     { id: 'праздник', title: 'Праздник' },
     { id: 'торжество', title: 'Торжество' },
+    { id: 'память', title: 'Память' },
   ];
   var DAY_COLORS = [
     { id: '', title: '— не указан —' },
@@ -2372,6 +2704,7 @@
   function catClass(cat) {
     if (cat === 'торжество') return 'solemn';
     if (cat === 'праздник') return 'feast';
+    if (cat === 'память') return 'mem';
     if (cat === 'воскресный' || cat === 'воскресенье') return 'sun';
     return 'feria';
   }
@@ -2696,9 +3029,11 @@
         '<div id="d-pub-linked"></div></div>',
         function (status) { saveAuthor(ctx, item, status); },
         function () { saveAuthor(ctx, item, 'published'); },
-        null,
+        isNew ? null : function () { deleteAuthor(ctx, item); },
         item.slug ? 'author.html?slug=' + encodeURIComponent(item.slug) : ''
       );
+      var delAuthorBtn = document.getElementById('desk-del');
+      if (delAuthorBtn) delAuthorBtn.textContent = 'Удалить';
       var bioEl = document.getElementById('d-bio');
       if (bioEl) {
         bioEl.innerHTML = bioToEditorHtml(item.bio);
@@ -2786,6 +3121,38 @@
       '</div>';
   }
 
+  function unlinkAuthorFromArticles(slug) {
+    if (!slug) return;
+    var data = read();
+    (data.articles || []).forEach(function (a) {
+      if (!a) return;
+      if (String(a.authorSlug || '') === String(slug)) a.authorSlug = '';
+      if (Array.isArray(a.authorSlugs)) {
+        a.authorSlugs = a.authorSlugs.filter(function (s) { return String(s) !== String(slug); });
+      }
+    });
+    data.authorLinks = (data.authorLinks || []).filter(function (l) {
+      return !l || String(l.authorSlug) !== String(slug);
+    });
+    write(data, slug);
+  }
+
+  function deleteAuthor(ctx, item) {
+    var slug = item.slug || item.id;
+    if (!slug) { ctx.go('authors'); return; }
+    if (!confirm('Удалить автора? Статьи останутся на сайте, но без карточки этого автора.')) return;
+    unlinkAuthorFromArticles(slug);
+    upsert('authors', Object.assign({}, item, { id: slug, slug: slug, status: 'hidden' }));
+    ctx.toast('Удаляем…');
+    publishAuthors().then(function () {
+      ctx.toast('Автор удалён, статьи на месте');
+      ctx.go('authors');
+    }).catch(function (e) {
+      ctx.toast(e.message || 'Удалено локально', true);
+      ctx.go('authors');
+    });
+  }
+
   function saveAuthor(ctx, item, status) {
     var name = val('d-title');
     if (!name) { ctx.toast('Укажите имя', true); return; }
@@ -2828,6 +3195,8 @@
   var TOPICS_PAGE_ID = 1900000004;
   var TOPICS_PAGE_SLUG = 'yak-topics-data';
   var EVENTS_PAGE_ID = 1900000006;
+  var GUIDES_PAGE_ID = 1900000007;
+  var GUIDES_PAGE_SLUG = 'yak-guides-data';
   var AUDIO_PAGE_ID = 1900000010;
   var AUDIO_PAGE_SLUG = 'yak-audio-data';
   var VIDEO_PAGE_ID = 1900000011;
@@ -2883,43 +3252,25 @@
   }
 
   function absorbCycles(list) {
-    if (!Array.isArray(list) || !list.length) return;
-    var data = read();
-    data.cycles = mergeRecordLists(data.cycles || [], list, { preferRicherItems: true });
-    write(data);
+    if (Array.isArray(list) && list.length) remoteCache.cycles = list;
   }
 
   function absorbAuthorsPack(pack) {
-    if (!pack) return;
-    var list = Array.isArray(pack) ? pack : (pack.authors || []);
-    var hidden = Array.isArray(pack) ? [] : (pack.hiddenSlugs || []);
-    var data = read();
-    data.authors = mergeRecordLists(data.authors || [], list, {});
-    var have = {};
-    (data.hiddenSlugs || []).forEach(function (s) { have[String(s)] = 1; });
-    hidden.forEach(function (s) {
-      if (s && !have[String(s)]) {
-        data.hiddenSlugs.push(String(s));
-        have[String(s)] = 1;
-      }
-    });
-    write(data);
+    if (pack) remoteCache.authors = pack;
   }
 
   function absorbEventsPack(pack) {
-    if (!pack) return;
-    var items = Array.isArray(pack) ? pack : (pack.items || pack.events || []);
-    var orgs = Array.isArray(pack) ? [] : (pack.organizers || []);
-    var data = read();
-    if (items.length) data.events = mergeRecordLists(data.events || [], items, {});
-    if (orgs.length) data.organizers = mergeRecordLists(data.organizers || [], orgs, {});
-    write(data);
+    if (pack) remoteCache.events = pack;
   }
 
   var remoteHydrated = false;
   function hydrateRemote(done) {
     var finish = function (ok) {
       if (ok) remoteHydrated = true;
+      try {
+        var data = read();
+        if (pruneRemoteCopies(data)) write(data);
+      } catch (e) {}
       paintDeskBanner();
       if (done) done();
     };
@@ -2928,7 +3279,12 @@
       pullRemotePack(CYCLES_PAGE_SLUG).then(function (p) { if (Array.isArray(p)) absorbCycles(p); }),
       pullRemotePack(AUTHORS_PAGE_SLUG).then(absorbAuthorsPack),
       pullRemotePack(EVENTS_PAGE_SLUG).then(absorbEventsPack),
-    ]).then(function () { finish(true); }).catch(function () { finish(false); });
+      pullRemotePack(GUIDES_PAGE_SLUG).then(function (p) { if (p) remoteCache.guides = p; }),
+      pullRemotePack(VIDEO_PAGE_SLUG).then(function (p) { if (p) remoteCache.video = p; }),
+    ]).then(function () {
+      finish(true);
+      autoPublishGuides();
+    }).catch(function () { finish(false); });
   }
 
   function publishedAuthorsPack() {
@@ -2939,7 +3295,7 @@
       if (!slug) return;
       var key = String(slug).toLowerCase();
       if (a.status && a.status !== 'published') {
-        if (a.status === 'hidden') delete by[key];
+        if (a.status === 'hidden') by[key] = { slug: slug, status: 'hidden' };
         return;
       }
       var prev = by[key] || {};
@@ -2955,6 +3311,7 @@
       };
     }
     (window.YakAuthors || []).forEach(function (a) { put(a, false); });
+    authorsFromPack(remoteCache.authors).forEach(function (a) { put(a, false); });
     (read().authors || []).forEach(function (a) { put(a, true); });
     return Object.keys(by).map(function (k) { return by[k]; });
   }
@@ -2997,6 +3354,10 @@
         city: o.city || '',
         blurb: o.blurb || o.desc || '',
         website: o.website || '',
+        email: o.email || '',
+        phone: o.phone || '',
+        socials: Array.isArray(o.socials) ? o.socials : [],
+        contactsFromDesk: true,
         logo: httpUrl(o.logo) ? o.logo : '',
         coverTone: o.coverTone || '#5c5346',
         partnerTitle: o.partnerTitle || '',
@@ -3128,6 +3489,10 @@
       short: item.short || name,
       city: val('d-city'),
       website: val('d-href'),
+      email: '',
+      phone: '',
+      socials: [],
+      contactsFromDesk: true,
       blurb: val('d-desc'),
       logo: logoNow,
       coverTone: item.coverTone || orgTone(name),
@@ -3566,6 +3931,65 @@
     'church-day': renderChurchForm,
   };
 
+  function publishedGuidesPack() {
+    var by = {};
+    function put(g) {
+      if (!g) return;
+      var key = String(g.id || (g.section + ':' + g.nodeId) || '');
+      if (!key) return;
+      if (g.status && g.status !== 'published') {
+        if (g.status === 'hidden') delete by[key];
+        return;
+      }
+      by[key] = Object.assign({}, by[key] || {}, g, { status: 'published' });
+    }
+    var remote = remoteCache.guides;
+    var remoteList = !remote ? [] : (Array.isArray(remote) ? remote : (remote.guides || []));
+    remoteList.forEach(put);
+    (read().guides || []).forEach(put);
+    return { guides: Object.keys(by).map(function (k) { return by[k]; }) };
+  }
+
+  function publishGuides() {
+    if (!window.AdminApi || !AdminApi.upsertArchive) {
+      return Promise.reject(new Error('нет соединения с сервером'));
+    }
+    return pullRemotePack(GUIDES_PAGE_SLUG).then(function (remote) {
+      if (remote) remoteCache.guides = remote;
+      var pack = publishedGuidesPack();
+      remoteCache.guides = pack;
+      return AdminApi.upsertArchive({
+        articles: [{
+          id: GUIDES_PAGE_ID,
+          slug: GUIDES_PAGE_SLUG,
+          title: 'Разделы О Церкви и Духовная жизнь',
+          date: todayIso(),
+          modified: new Date().toISOString(),
+          author: '',
+          categories: [],
+          categorySlugs: ['day-by-day'],
+          excerpt: '',
+          contentHtml: '<p></p>',
+          contentText: JSON.stringify(pack),
+          source: 'desk-guides',
+        }],
+      });
+    });
+  }
+
+  function autoPublishGuides() {
+    var list = (read().guides || []).filter(function (g) {
+      return g && (!g.status || g.status === 'published');
+    });
+    if (!list.length) return;
+    try {
+      if (sessionStorage.getItem('yak_guides_auto') === '1') return;
+    } catch (e) {}
+    publishGuides().then(function () {
+      try { sessionStorage.setItem('yak_guides_auto', '1'); } catch (e2) {}
+    }).catch(function () {});
+  }
+
   function upsertGuide(item) {
     var data = read();
     var list = data.guides || [];
@@ -3683,6 +4107,10 @@
       renderOrganizers(ctx, id);
       return true;
     }
+    if (name === 'video-partners') {
+      renderVideoPartners(ctx, id);
+      return true;
+    }
     if (name === 'cycles') {
       if (!id && window.AdminGod) {
         loadPortalCycles(function () { AdminGod.paintSection(ctx, 'cycle', 'Циклы', '#cycles/new'); });
@@ -3724,6 +4152,7 @@
     read: read,
     write: write,
     upsertGuide: upsertGuide,
+    publishGuides: publishGuides,
     linkAuthor: linkAuthor,
     exportDesk: exportDesk,
     importDesk: importDesk,

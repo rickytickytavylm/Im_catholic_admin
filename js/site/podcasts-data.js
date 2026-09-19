@@ -323,6 +323,16 @@
         }
       ],
       "updated": "2019-03-26"
+    },
+    {
+      "id": "propovedi-pavla-krupy",
+      "title": "Проповеди о. Павла Крупы",
+      "host": "о. Павел Крупа",
+      "authorSlug": "",
+      "blurb": "Проповеди отца Павла Крупы — отдельная папка в аудио, оформленная так же, как Рускатолик Podcast.",
+      "cover": "assets/cards/articles-spirituality.webp",
+      "episodes": [],
+      "updated": ""
     }
   ];
 
@@ -338,11 +348,11 @@
     return (list || []).slice().sort(function (a, b) {
       var sa = Number(a.season) || 0;
       var sb = Number(b.season) || 0;
-      if (sa !== sb) return sb - sa;
+      if (sa !== sb) return sa - sb;
       var ea = Number(a.episode) || 0;
       var eb = Number(b.episode) || 0;
-      if (ea !== eb) return eb - ea;
-      return String(b.date || '').localeCompare(String(a.date || ''));
+      if (ea !== eb) return ea - eb;
+      return String(a.date || '').localeCompare(String(b.date || ''));
     });
   }
 
@@ -364,7 +374,8 @@
   }
 
   function latestEpisode(show) {
-    return sortEpisodes(show.episodes || [])[0] || show.latest || null;
+    var list = sortEpisodes(show.episodes || []);
+    return list[list.length - 1] || show.latest || null;
   }
 
   function upsertShow(incoming) {

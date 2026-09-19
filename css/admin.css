@@ -818,7 +818,7 @@ table.data .title-link:hover { color: var(--accent); }
   color: var(--ink);
 }
 .net-banner[hidden] { display: none; }
-.net-banner p { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.4; flex: 1 1 220px; }
+.net-banner p { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.45; flex: 1 1 220px; white-space: normal; word-break: normal; overflow-wrap: anywhere; }
 .net-banner .btn { flex: 0 0 auto; }
 
 .yak-loading {

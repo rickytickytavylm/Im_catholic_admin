@@ -11,24 +11,31 @@
     descriptionHtml:
       '<p class="lead-paragraph">ЯКатолик — независимое католическое медиа на русском языке. Мы пишем о Церкви и о людях: о том, что происходит в приходах, о культуре и истории, о вопросах, которые человек задаёт себе сам, когда остаётся в тишине.</p>' +
       '<p>Портал продолжает работу РУСКАТОЛИК.РФ — издания, которое выходит с 2013 года. За это время накопилось почти четыре тысячи публикаций, сотни интервью и свидетельств, архив фотографий и биографий репрессированных католиков. Всё это переносится на новую платформу целиком, без потерь и сокращений.</p>',
-    principlesTitle: 'Во что мы верим как редакция',
+    principlesTitle: 'Наша команда',
     principles: [
-      { title: 'Точность', text: 'Проверяем факты и называем источники. Не публикуем то, в чём не уверены.' },
-      { title: 'Спокойствие', text: 'Не торгуем тревогой и не давим на эмоции. Сложное объясняем, а не упрощаем.' },
-      { title: 'Открытость', text: 'Пишем для верующих и невоцерковлённых одинаково понятно, без внутреннего жаргона.' },
-      { title: 'Память', text: 'Сохраняем архив: биографии, свидетельства и документы должны остаться доступными.' },
+      { title: 'Точность', text: 'Проверяем факты и называем источники. Не публикуем то, в чём не уверены.', photo: '' },
+      { title: 'Спокойствие', text: 'Не торгуем тревогой и не давим на эмоции. Сложное объясняем, а не упрощаем.', photo: '' },
+      { title: 'Открытость', text: 'Пишем для верующих и невоцерковлённых одинаково понятно, без внутреннего жаргона.', photo: '' },
+      { title: 'Память', text: 'Сохраняем архив: биографии, свидетельства и документы должны остаться доступными.', photo: '' },
     ],
     donate: {
       eyebrow: 'Поддержите нас',
       titleHtml: 'Издание живёт<br />на пожертвования читателей.',
-      text: 'У нас нет рекламы и платной подписки. Всё, что мы делаем, остаётся открытым для всех — и это возможно, пока проект поддерживают те, кому он нужен.',
-      mailto: 'mailto:red@yacatholic.ru?subject=%D0%9F%D0%BE%D0%B4%D0%B4%D0%B5%D1%80%D0%B6%D0%BA%D0%B0%20%D0%BF%D1%80%D0%BE%D0%B5%D0%BA%D1%82%D0%B0',
+      qrs: [{ image: '', label: 'Портал' }, { image: '', label: 'Приложение' }],
     },
     app: {
       eyebrow: 'Приложение',
       title: 'ЯКатолик уже в телефоне',
+      subtitle: '',
       html: '<p>App Store, RuStore и AppGallery. Google Play — скоро. Тот же архив, календарь и «Спросить», что на сайте.</p>',
       photo: '',
+      links: [
+        { label: 'App Store', href: 'https://apps.apple.com/ru/app/%D1%8F%D0%BA%D0%B0%D1%82%D0%BE%D0%BB%D0%B8%D0%BA/id6742419988' },
+        { label: 'Google Play', href: 'https://play.google.com/store/apps/details?id=ru.yacatholic.mobile' },
+        { label: 'FAQ', href: 'https://telegra.ph/CHasto-zadavaemye-voprosy-05-09-6' },
+        { label: 'Поддержка', href: 'https://t.me/yacatholicapp' },
+      ],
+      authors: [],
     },
     partnersTitle: 'С кем мы работаем',
     partners: [
@@ -56,13 +63,19 @@
   function mergePack(pack) {
     if (!pack || typeof pack !== 'object') return current;
     var next = clone(current);
-    ['eyebrow', 'titleHtml', 'cover', 'descriptionHtml', 'principlesTitle', 'partnersTitle'].forEach(function (k) {
+    ['eyebrow', 'titleHtml', 'cover', 'descriptionHtml', 'principlesTitle', 'partnersTitle', 'contactsTitle'].forEach(function (k) {
       if (pack[k] != null && pack[k] !== '') next[k] = pack[k];
     });
-    if (pack.principles && pack.principles.length) next.principles = pack.principles.slice(0, 4);
-    while (next.principles.length < 4) next.principles.push({ title: '', text: '' });
-    if (pack.donate) next.donate = Object.assign({}, next.donate, pack.donate);
-    if (pack.app) next.app = Object.assign({}, next.app, pack.app);
+    if (pack.principles && pack.principles.length) next.principles = pack.principles.filter(function (p) { return p && (p.title || p.text || p.photo); });
+    if (pack.donate) {
+      next.donate = Object.assign({}, next.donate, pack.donate);
+      if (Array.isArray(pack.donate.qrs)) next.donate.qrs = pack.donate.qrs;
+    }
+    if (pack.app) {
+      next.app = Object.assign({}, next.app, pack.app);
+      if (Array.isArray(pack.app.links)) next.app.links = pack.app.links;
+      if (Array.isArray(pack.app.authors)) next.app.authors = pack.app.authors;
+    }
     if (Array.isArray(pack.partners)) next.partners = pack.partners.filter(function (p) { return p && p.name; });
     if (Array.isArray(pack.contacts)) next.contacts = pack.contacts.filter(function (c) { return c && c.label; });
     current = next;

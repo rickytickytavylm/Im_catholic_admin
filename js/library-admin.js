@@ -516,7 +516,16 @@
         '<label class="field"><span>' + (church ? 'Русское название' : 'Оригинальное название') + '</span>' +
         '<input class="input" id="lib-title-alt" value="' + esc(church ? (item.titleRu || '') : (item.titleOriginal || '')) + '" /></label>' +
         '<label class="field"><span>Автор</span><input class="input" id="lib-author" value="' + esc(item.author || '') + '" placeholder="Как на карточке сайта. Клик ведёт на все книги автора." /></label>' +
-        '<label class="field"><span>Аннотация</span><textarea class="textarea" id="lib-ann" rows="4">' + esc(item.annotation || '') + '</textarea></label>' +
+        '<label class="field"><span>Аннотация</span>' +
+        '<div class="rte lead-rte">' +
+        '<div class="rte-bar" id="lib-ann-bar">' +
+        '<button type="button" data-cmd="bold">Жирный</button>' +
+        '<button type="button" data-cmd="italic">Курсив</button>' +
+        '<button type="button" data-cmd="insertUnorderedList">Список</button>' +
+        '<button type="button" data-act="link">Ссылка</button>' +
+        '</div>' +
+        '<div class="rte-body excerpt-input" id="lib-ann" contenteditable="true" data-placeholder="Абзацы сохранятся. Можно вставить готовый текст.">' +
+        (item.annotation || '') + '</div></div></label>' +
         '<label class="field"><span>Текст на странице</span>' +
         '<div class="rte">' +
         '<div class="rte-bar" id="lib-rte-bar">' +
@@ -632,7 +641,10 @@
       titleOriginal: church ? main : alt,
       titleRu: church ? alt : main,
       author: val('lib-author'),
-      annotation: val('lib-ann'),
+      annotation: (function () {
+        var el = document.getElementById('lib-ann');
+        return el ? (el.innerHTML || '') : '';
+      })(),
       contentHtml: textEl ? textEl.innerHTML : '',
       firstPublished: val('lib-first'),
       editionDate: val('lib-edition'),
@@ -799,6 +811,22 @@
   function bind(ctx, item, isNew, downloads, pickedThemes, draw) {
     bindSlug(item, isNew);
     mountLibRTE();
+    var annBar = document.getElementById('lib-ann-bar');
+    var annEl = document.getElementById('lib-ann');
+    if (annBar && annEl) {
+      annBar.onclick = function (e) {
+        var btn = e.target.closest('button');
+        if (!btn) return;
+        annEl.focus();
+        var cmd = btn.getAttribute('data-cmd');
+        var act = btn.getAttribute('data-act');
+        if (cmd) document.execCommand(cmd, false, null);
+        if (act === 'link') {
+          var href = prompt('Ссылка', 'https://');
+          if (href) document.execCommand('createLink', false, href);
+        }
+      };
+    }
     function persist() {
       Object.assign(item, collect(item, isNew, downloads, item.status || 'published'));
       return item;

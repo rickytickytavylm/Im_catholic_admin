@@ -88,7 +88,8 @@
         id: 'structure',
         title: 'Как устроена Католическая Церковь',
         sub: 'Папа, епископ, приход, монашествующие и миряне',
-        tone: 'e',
+        tone: 'wide',
+        wide: true,
         image: 'assets/cards/church-become-parish.webp',
       },
       {
@@ -662,15 +663,17 @@
             ],
           },
           {
-            title: 'Таинства и литургия',
+            title: 'Таинства и Литургия',
             items: [
-              { title: 'Что происходит на Мессе', href: 'church.html?path=nav-mass', note: 'Путеводитель' },
+              { title: 'Таинства: как Христос действует в Церкви', href: 'church.html?path=nav-sacraments-christ' },
+              { title: 'Крещение: начало новой жизни', href: 'church.html?path=nav-baptism' },
+              { title: 'Миропомазание: сила Святого Духа', href: 'church.html?path=nav-confirmation' },
               { title: 'Евхаристия — сердце жизни Церкви', href: 'church.html?path=nav-eucharist' },
-              { title: 'Что такое Церковь и зачем она нужна', href: 'church.html?path=nav-church-what' },
-              { title: 'Что такое таинства и как к ним приступить', href: 'church.html?path=deepen-sacraments' },
               { title: 'Исповедь: как подготовиться и не бояться', href: 'church.html?path=return-confession' },
-              { title: 'Жизнь вечная: воскресение, рай, ад, чистилище', href: 'church.html?path=nav-eternal' },
-              { title: 'Цвета литургического года и католический календарь', href: 'church.html?path=nav-liturgical-year' },
+              { title: 'Что происходит на Мессе', href: 'church.html?path=nav-mass' },
+              { title: 'Елеопомазание: Таинство исцеления', href: 'church.html?path=nav-anointing' },
+              { title: 'Священство и Брак: призвание к служению и любви', href: 'church.html?path=nav-orders-marriage' },
+              { title: 'Как подготовиться к Таинствам и кто может их принимать', href: 'church.html?path=nav-prepare-sacraments' },
             ],
           },
           {
@@ -983,6 +986,12 @@
           { title: 'Что происходит на Мессе', href: 'church.html?path=nav-mass' },
         ],
       }),
+      'nav-sacraments-christ': Object.assign(page('Таинства: как Христос действует в Церкви'), { siblingsOf: 'navigator' }),
+      'nav-baptism': Object.assign(page('Крещение: начало новой жизни'), { siblingsOf: 'navigator' }),
+      'nav-confirmation': Object.assign(page('Миропомазание: сила Святого Духа'), { siblingsOf: 'navigator' }),
+      'nav-anointing': Object.assign(page('Елеопомазание: Таинство исцеления'), { siblingsOf: 'navigator' }),
+      'nav-orders-marriage': Object.assign(page('Священство и Брак: призвание к служению и любви'), { siblingsOf: 'navigator' }),
+      'nav-prepare-sacraments': Object.assign(page('Как подготовиться к Таинствам и кто может их принимать'), { siblingsOf: 'navigator' }),
       'nav-liturgical-year': Object.assign(page('Цвета литургического года и католический календарь'), {
         siblingsOf: 'navigator',
         also: [

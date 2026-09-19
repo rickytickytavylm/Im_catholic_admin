@@ -452,10 +452,19 @@
       if (!f) return;
       var reader = new FileReader();
       reader.onload = function () {
-        document.getElementById('g-image').value = reader.result;
+        var dataUrl = reader.result;
+        document.getElementById('g-image').value = dataUrl;
         var frame = document.getElementById('g-cover-frame');
         frame.classList.remove('is-empty');
-        frame.innerHTML = '<img src="' + reader.result + '" alt="" />';
+        frame.innerHTML = '<img src="' + dataUrl + '" alt="" />';
+        if (window.AdminDesk && AdminDesk.uploadDataUrl) {
+          AdminDesk.uploadDataUrl(dataUrl, 'guides').then(function (url) {
+            if (url) {
+              document.getElementById('g-image').value = url;
+              frame.innerHTML = '<img src="' + url + '" alt="" />';
+            }
+          }).catch(function () {});
+        }
         var prev = document.getElementById('g-preview');
         if (prev) prev.dispatchEvent(new Event('refresh'));
       };
@@ -498,9 +507,24 @@
     next.id = section + ':' + item.id;
     next.section = section;
     next.nodeId = item.id;
-    AdminDesk.upsertGuide(next);
-    ctx.toast(status === 'published' ? 'Опубликовано — откройте страницу на портале' : 'Черновик сохранён');
-    if (status === 'published') ctx.go(section);
+    var image = next.image || '';
+    var ready = (image.indexOf('data:') === 0 && window.AdminDesk && AdminDesk.uploadDataUrl)
+      ? (ctx.toast('Сохраняем обложку…'), AdminDesk.uploadDataUrl(image, 'guides').then(function (url) { next.image = url; }))
+      : Promise.resolve();
+    ready.then(function () {
+      AdminDesk.upsertGuide(next);
+      if (status !== 'published') {
+        ctx.toast('Черновик сохранён');
+        return;
+      }
+      ctx.toast('Публикуем на сайт…');
+      return AdminDesk.publishGuides().then(function () {
+        ctx.toast('На сайте — откроется на всех устройствах');
+        ctx.go(section);
+      });
+    }).catch(function (e) {
+      ctx.toast((e && e.message) || 'Не удалось сохранить', true);
+    });
   }
 
   function bindLive(item) {

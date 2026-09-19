@@ -312,6 +312,7 @@
         (canBackup ? '<button type="button" class="btn btn-ghost" id="god-export">Выгрузить контент</button>' +
           '<button type="button" class="btn btn-ghost" id="god-import">Загрузить контент</button>' : '') +
         (type === 'event' ? '<a class="btn btn-ghost" href="#organizers">Организаторы</a>' : '') +
+        (type === 'video' ? '<a class="btn btn-ghost" href="#video-partners">Партнёры</a>' : '') +
         (addHref ? '<a class="btn btn-primary" href="' + addHref + '">Добавить</a>' : '') +
         '</div></div>' +
         archiveBar(list) +
