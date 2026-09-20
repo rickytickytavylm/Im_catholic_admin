@@ -30,11 +30,12 @@
       eyebrow: 'О проекте',
       titleHtml: '',
       cover: '',
+      coverMobile: '',
       descriptionHtml: '',
       principlesTitle: 'Наша команда',
       principles: [],
       donate: { eyebrow: 'Поддержите нас', titleHtml: '', qrs: [{ image: '', label: 'Портал' }, { image: '', label: 'Приложение' }] },
-      app: { eyebrow: 'Приложение', title: '', subtitle: '', html: '', photo: '', links: DEFAULT_LINKS.slice(), authors: [] },
+      app: { eyebrow: 'Приложение', title: '', subtitle: '', html: '', photo: '', photoMobile: '', links: DEFAULT_LINKS.slice(), authors: [] },
       partnersTitle: 'С кем мы работаем',
       partners: [],
       contacts: [],
@@ -262,6 +263,7 @@
       eyebrow: ((document.getElementById('ab-eye') || {}).value || '').trim(),
       titleHtml: ((document.getElementById('ab-title') || {}).value || '').trim(),
       cover: ((document.getElementById('ab-cover') || {}).value || '').trim(),
+      coverMobile: ((document.getElementById('ab-cover-m') || {}).value || '').trim(),
       descriptionHtml: desc ? desc.innerHTML : '',
       principlesTitle: ((document.getElementById('ab-pr-title') || {}).value || '').trim(),
       principles: principles || collectPeople('team'),
@@ -281,6 +283,7 @@
         subtitle: ((document.getElementById('ab-app-sub') || {}).value || '').trim(),
         html: appHtml ? appHtml.innerHTML : '',
         photo: ((document.getElementById('ab-app-photo') || {}).value || '').trim(),
+        photoMobile: ((document.getElementById('ab-app-photo-m') || {}).value || '').trim(),
         links: links,
         authors: authors || collectPeople('appauth'),
       },
@@ -349,7 +352,9 @@
       '<label class="field">Надзаголовок<input class="input" id="ab-eye" value="' + esc(d.eyebrow || '') + '" /></label>' +
       '<label class="field">Заголовок (можно с &lt;br&gt; и &lt;em&gt;)<textarea class="textarea" id="ab-title" rows="3">' + esc(d.titleHtml || '') + '</textarea></label>' +
       '</div>' +
-      photoCell('ab-cover', d.cover, 'Обложка', 'ab-cover-up', 'ab-cover-file') +
+      photoCell('ab-cover', d.cover, 'Обложка — десктоп', 'ab-cover-up', 'ab-cover-file') +
+      photoCell('ab-cover-m', d.coverMobile, 'Обложка — телефон, кадр 4:5', 'ab-cover-m-up', 'ab-cover-m-file') +
+      '<p class="hint-note">На телефоне берётся отдельный кадр. Если пусто — сайт подставит вертикальный WebP.</p>' +
       '<div class="field"><label>Описание</label>' + rteBar('ab-desc', true) + '</div></div>' +
 
       '<div class="panel" style="margin-bottom:12px"><div class="panel-head"><h2>Наша команда</h2>' +
@@ -364,7 +369,8 @@
       '<label class="field">Заголовок<input class="input" id="ab-app-title" value="' + esc(d.app.title || '') + '" /></label>' +
       '<label class="field">Подзаголовок<input class="input" id="ab-app-sub" value="' + esc(d.app.subtitle || '') + '" /></label>' +
       '</div>' +
-      photoCell('ab-app-photo', d.app.photo, 'Фото блока', 'ab-app-up', 'ab-app-file') +
+      photoCell('ab-app-photo', d.app.photo, 'Фото блока — десктоп', 'ab-app-up', 'ab-app-file') +
+      photoCell('ab-app-photo-m', d.app.photoMobile, 'Фото блока — телефон, кадр 4:5', 'ab-app-m-up', 'ab-app-m-file') +
       '<div class="form-grid">' +
       [0, 1, 2, 3].map(function (i) {
         var l = links[i] || { label: '', href: '' };
@@ -425,7 +431,9 @@
       }
     });
     bindPhoto('ab-cover-up', 'ab-cover-file', 'ab-cover', 'ab-cover-frame', 'about', ctx.toast);
+    bindPhoto('ab-cover-m-up', 'ab-cover-m-file', 'ab-cover-m', 'ab-cover-m-frame', 'about', ctx.toast);
     bindPhoto('ab-app-up', 'ab-app-file', 'ab-app-photo', 'ab-app-photo-frame', 'about', ctx.toast);
+    bindPhoto('ab-app-m-up', 'ab-app-m-file', 'ab-app-photo-m', 'ab-app-photo-m-frame', 'about', ctx.toast);
     bindPhoto('ab-qr-up-0', 'ab-qr-file-0', 'ab-qr-0', 'ab-qr-0-frame', 'about', ctx.toast);
     bindPhoto('ab-qr-up-1', 'ab-qr-file-1', 'ab-qr-1', 'ab-qr-1-frame', 'about', ctx.toast);
 

@@ -8,6 +8,7 @@
     eyebrow: 'О проекте',
     titleHtml: 'Мы рассказываем о вере<br />языком, которому<br /><em>можно доверять.</em>',
     cover: '',
+    coverMobile: 'assets/about-cover-mobile.webp',
     descriptionHtml:
       '<p class="lead-paragraph">ЯКатолик — независимое католическое медиа на русском языке. Мы пишем о Церкви и о людях: о том, что происходит в приходах, о культуре и истории, о вопросах, которые человек задаёт себе сам, когда остаётся в тишине.</p>' +
       '<p>Портал продолжает работу РУСКАТОЛИК.РФ — издания, которое выходит с 2013 года. За это время накопилось почти четыре тысячи публикаций, сотни интервью и свидетельств, архив фотографий и биографий репрессированных католиков. Всё это переносится на новую платформу целиком, без потерь и сокращений.</p>',
@@ -29,6 +30,7 @@
       subtitle: '',
       html: '<p>App Store, RuStore и AppGallery. Google Play — скоро. Тот же архив, календарь и «Спросить», что на сайте.</p>',
       photo: '',
+      photoMobile: 'assets/about-app-mobile.webp',
       links: [
         { label: 'App Store', href: 'https://apps.apple.com/ru/app/%D1%8F%D0%BA%D0%B0%D1%82%D0%BE%D0%BB%D0%B8%D0%BA/id6742419988' },
         { label: 'Google Play', href: 'https://play.google.com/store/apps/details?id=ru.yacatholic.mobile' },
@@ -63,7 +65,7 @@
   function mergePack(pack) {
     if (!pack || typeof pack !== 'object') return current;
     var next = clone(current);
-    ['eyebrow', 'titleHtml', 'cover', 'descriptionHtml', 'principlesTitle', 'partnersTitle', 'contactsTitle'].forEach(function (k) {
+    ['eyebrow', 'titleHtml', 'cover', 'coverMobile', 'descriptionHtml', 'principlesTitle', 'partnersTitle', 'contactsTitle'].forEach(function (k) {
       if (pack[k] != null && pack[k] !== '') next[k] = pack[k];
     });
     if (pack.principles && pack.principles.length) next.principles = pack.principles.filter(function (p) { return p && (p.title || p.text || p.photo); });
