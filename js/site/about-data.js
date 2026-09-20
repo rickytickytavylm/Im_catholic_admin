@@ -30,7 +30,6 @@
       subtitle: '',
       html: '<p>App Store, RuStore и AppGallery. Google Play — скоро. Тот же архив, календарь и «Спросить», что на сайте.</p>',
       photo: '',
-      photoMobile: 'assets/about-app-mobile.webp',
       links: [
         { label: 'App Store', href: 'https://apps.apple.com/ru/app/%D1%8F%D0%BA%D0%B0%D1%82%D0%BE%D0%BB%D0%B8%D0%BA/id6742419988' },
         { label: 'Google Play', href: 'https://play.google.com/store/apps/details?id=ru.yacatholic.mobile' },
