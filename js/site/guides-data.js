@@ -663,7 +663,7 @@
             ],
           },
           {
-            title: 'Таинства и Литургия',
+            title: 'Таинства и литургия',
             items: [
               { title: 'Таинства: как Христос действует в Церкви', href: 'church.html?path=nav-sacraments-christ' },
               { title: 'Крещение: начало новой жизни', href: 'church.html?path=nav-baptism' },
@@ -681,7 +681,7 @@
             items: [
               { title: 'Десять заповедей сегодня', href: 'church.html?path=nav-commandments', note: 'Простое объяснение' },
               { title: 'Заповеди блаженств: путь к счастью, предложенный Иисусом', href: 'church.html?path=nav-beatitudes' },
-              { title: 'Добродетели и грех: главное, что нужно знать', href: 'church.html?path=nav-conscience' },
+              { title: 'Добродетели и грех', href: 'church.html?path=nav-conscience' },
               { title: 'Воспитание совести и как принимать решения', href: 'church.html?path=nav-decisions' },
               { title: 'Социальное учение Церкви', href: 'church.html?path=nav-social', note: 'Достоинство, справедливость, мир, экология' },
               { title: 'Биоэтика и защита жизни', href: 'church.html?path=nav-bioethics' },
@@ -865,7 +865,7 @@
         ],
       }),
       'nav-conscience': Object.assign(page(
-        'Добродетели и грех: главное, что нужно знать',
+        'Добродетели и грех',
         'Совесть — способность распознавать добро. Её нужно образовывать, а не только «слушать как настроение».',
         [
           { h2: 'Добродетели', p: 'Устойчивые навыки добра: вера, надежда, любовь; благоразумие, справедливость, мужество, умеренность. Они растут повторением добрых актов с помощью благодати.' },
@@ -914,66 +914,28 @@
         showMore: false,
         cardKicker: 'Тема',
         cards: withSiblings('structure', [
-          { id: 'structure-pope', title: 'Папа Римский', image: 'assets/cards/church-deepen.webp' },
-          { id: 'structure-vatican', title: 'Ватикан', image: 'assets/cards/church-first-time.webp' },
-          { id: 'structure-dicasteries', title: 'Дикастерии Римской курии', image: 'assets/cards/church-deepen-daily.webp' },
-          { id: 'structure-cardinals', title: 'Коллегия кардиналов', image: 'assets/cards/church-become.webp' },
-          { id: 'structure-nunciatures', title: 'Апостольские нунциатуры', image: 'assets/cards/church-become-know.webp' },
-          { id: 'structure-bishop', title: 'Епархии и епископы', image: 'assets/cards/church-become-parish.webp' },
-          { id: 'structure-parish', title: 'Приходы и настоятели', image: 'assets/cards/church-first-visit.webp' },
-          { id: 'structure-religious', title: 'Монашествующие и ордена', image: 'assets/cards/church-deepen-pray.webp' },
-          { id: 'structure-movements', title: 'Движения мирян', image: 'assets/cards/church-deepen-serve.webp' },
-          { id: 'structure-charity', title: 'Благотворительные организации', image: 'assets/cards/church-return-community.webp' },
+          { id: 'structure-pope', title: 'Папа Римский' },
+          { id: 'structure-vatican', title: 'Ватикан' },
+          { id: 'structure-dicasteries', title: 'Дикастерии Римской курии' },
+          { id: 'structure-cardinals', title: 'Коллегия кардиналов' },
+          { id: 'structure-nunciatures', title: 'Апостольские нунциатуры' },
+          { id: 'structure-bishop', title: 'Епархии и епископы' },
+          { id: 'structure-parish', title: 'Приходы и настоятели' },
+          { id: 'structure-religious', title: 'Монашествующие и ордена' },
+          { id: 'structure-movements', title: 'Движения мирян' },
+          { id: 'structure-charity', title: 'Благотворительные организации' },
         ]),
       },
-      'structure-pope': Object.assign(page('Папа Римский'), {
-        siblingsOf: 'structure',
-        also: [
-          { title: 'Епископ и епархия', href: 'church.html?path=structure-bishop' },
-          { title: 'Что такое Церковь', href: 'church.html?path=nav-church-what' },
-        ],
-      }),
-      'structure-vatican': Object.assign(page('Ватикан'), { siblingsOf: 'structure' }),
-      'structure-dicasteries': Object.assign(page('Дикастерии Римской курии'), { siblingsOf: 'structure' }),
-      'structure-cardinals': Object.assign(page('Коллегия кардиналов'), { siblingsOf: 'structure' }),
-      'structure-nunciatures': Object.assign(page('Апостольские нунциатуры'), { siblingsOf: 'structure' }),
-      'structure-movements': Object.assign(page('Движения мирян'), { siblingsOf: 'structure' }),
-      'structure-charity': Object.assign(page('Благотворительные организации'), { siblingsOf: 'structure' }),
-      'structure-bishop': Object.assign(page('Епархии и епископы'), {
-        siblingsOf: 'structure',
-        also: [
-          { title: 'Приход и настоятель', href: 'church.html?path=structure-parish' },
-          { title: 'Папа Римский', href: 'church.html?path=structure-pope' },
-        ],
-      }),
-      'structure-parish': Object.assign(page('Приходы и настоятели'), {
-        siblingsOf: 'structure',
-        also: [
-          { title: 'Как найти свой приход', href: 'church.html?path=nav-parish' },
-          { title: 'Священники и диаконы', href: 'church.html?path=structure-clergy' },
-        ],
-      }),
-      'structure-clergy': Object.assign(page('Священники и диаконы'), {
-        siblingsOf: 'structure',
-        also: [
-          { title: 'Приход и настоятель', href: 'church.html?path=structure-parish' },
-          { title: 'Различение призвания', href: 'church.html?path=nav-vocation' },
-        ],
-      }),
-      'structure-religious': Object.assign(page('Монашествующие и ордена'), {
-        siblingsOf: 'structure',
-        also: [
-          { title: 'Миряне, движения, молодёжь', href: 'church.html?path=structure-laity' },
-          { title: 'Различение призвания', href: 'church.html?path=nav-vocation' },
-        ],
-      }),
-      'structure-laity': Object.assign(page('Миряне, движения, молодёжь'), {
-        siblingsOf: 'structure',
-        also: [
-          { title: 'Церковные движения', href: 'church.html?path=nav-movements' },
-          { title: 'Молодёжка', href: 'church.html?path=nav-youth' },
-        ],
-      }),
+      'structure-pope': { type: 'page', title: 'Папа Римский', lead: '', body: null, siblingsOf: 'structure' },
+      'structure-vatican': { type: 'page', title: 'Ватикан', lead: '', body: null, siblingsOf: 'structure' },
+      'structure-dicasteries': { type: 'page', title: 'Дикастерии Римской курии', lead: '', body: null, siblingsOf: 'structure' },
+      'structure-cardinals': { type: 'page', title: 'Коллегия кардиналов', lead: '', body: null, siblingsOf: 'structure' },
+      'structure-nunciatures': { type: 'page', title: 'Апостольские нунциатуры', lead: '', body: null, siblingsOf: 'structure' },
+      'structure-bishop': { type: 'page', title: 'Епархии и епископы', lead: '', body: null, siblingsOf: 'structure' },
+      'structure-parish': { type: 'page', title: 'Приходы и настоятели', lead: '', body: null, siblingsOf: 'structure' },
+      'structure-religious': { type: 'page', title: 'Монашествующие и ордена', lead: '', body: null, siblingsOf: 'structure' },
+      'structure-movements': { type: 'page', title: 'Движения мирян', lead: '', body: null, siblingsOf: 'structure' },
+      'structure-charity': { type: 'page', title: 'Благотворительные организации', lead: '', body: null, siblingsOf: 'structure' },
 
       'nav-ecumenism': Object.assign(page('Экуменизм и отношение к другим христианам'), {
         siblingsOf: 'navigator',

@@ -79,7 +79,7 @@
   }
 
   var archiveCache = { news: [], article: [] };
-  var remoteCache = { cycles: null, authors: null, events: null, guides: null, video: null };
+  var remoteCache = { cycles: null, authors: null, events: null, guides: null, video: null, photostock: null };
 
   function authorsFromPack(pack) {
     if (!pack) return [];
@@ -3290,9 +3290,9 @@
       pullRemotePack(EVENTS_PAGE_SLUG).then(absorbEventsPack),
       pullRemotePack(GUIDES_PAGE_SLUG).then(function (p) { if (p) remoteCache.guides = p; }),
       pullRemotePack(VIDEO_PAGE_SLUG).then(function (p) { if (p) remoteCache.video = p; }),
+      pullRemotePack(PHOTO_PAGE_SLUG).then(function (p) { if (p) absorbPhotostock(p); }),
     ]).then(function () {
       finish(true);
-      autoPublishGuides();
     }).catch(function () { finish(false); });
   }
 
@@ -3615,27 +3615,94 @@
     };
   }
 
+  function photostockKey(p) {
+    return String((p && (p.slug || p.id)) || '').toLowerCase();
+  }
+
+  function isSeedPhotographer(p) {
+    if (!p) return false;
+    return p.id === 'ph_test_1' || p.slug === 'olga-fotograf' || p.email === 'shooter@yakatolik.local';
+  }
+
+  function isSeedOnlyPhotographers(list) {
+    if (!list || !list.length) return true;
+    return list.every(isSeedPhotographer);
+  }
+
+  function absorbPhotostock(pack) {
+    if (!pack || typeof pack !== 'object') return;
+    remoteCache.photostock = pack;
+    var remotePh = pack.photographers || [];
+    if (window.AdminStore && remotePh.length && AdminStore.savePhotographers) {
+      var local = AdminStore.listPhotographers() || [];
+      var by = {};
+      function put(p, overwrite) {
+        if (!p || !(p.id || p.slug)) return;
+        var key = photostockKey(p);
+        if (!key) return;
+        if (!by[key] || overwrite) by[key] = Object.assign({}, by[key] || {}, p);
+      }
+      if (isSeedOnlyPhotographers(local)) {
+        remotePh.forEach(function (p) { put(p, true); });
+      } else {
+        remotePh.forEach(function (p) { put(p, false); });
+        local.forEach(function (p) { put(p, true); });
+      }
+      AdminStore.savePhotographers(Object.keys(by).map(function (k) { return by[k]; }));
+    }
+    (pack.photos || []).forEach(function (p) {
+      if (!p || !p.id || !p.url || !window.AdminStore || !AdminStore.getMedia) return;
+      if (AdminStore.getMedia(p.id)) return;
+      AdminStore.upsertMedia({
+        id: p.id,
+        kind: 'image',
+        url: p.url,
+        thumb: p.thumb || p.url,
+        title: p.title || '',
+        tags: p.tags || [],
+        photographerId: p.photographerId || '',
+        photographerSlug: p.photographerSlug || '',
+        photographerName: p.photographerName || '',
+        photographerTag: p.photographerTag || '',
+        status: 'approved',
+        license: p.license || 'CC BY 4.0',
+        createdAt: p.createdAt || '',
+      });
+    });
+  }
+
   function publishPhotostock() {
     if (!window.AdminApi || !AdminApi.upsertArchive) {
       return Promise.reject(new Error('нет соединения с сервером'));
     }
-    var photos = ((window.AdminStore && AdminStore.listPhotos()) || []).map(slimPhoto).filter(Boolean);
-    var photographers = ((window.AdminStore && AdminStore.listPhotographers()) || []).map(slimPhotographer).filter(Boolean);
-    return AdminApi.upsertArchive({
-      articles: [{
-        id: PHOTO_PAGE_ID,
-        slug: PHOTO_PAGE_SLUG,
-        title: 'Фотосток редакции',
-        date: todayIso(),
-        modified: new Date().toISOString(),
-        author: '',
-        categories: [],
-        categorySlugs: ['day-by-day'],
-        excerpt: '',
-        contentHtml: '<p></p>',
-        contentText: JSON.stringify({ photographers: photographers, photos: photos }),
-        source: 'desk-photostock',
-      }],
+    return pullRemotePack(PHOTO_PAGE_SLUG).then(function (remote) {
+      if (remote) absorbPhotostock(remote);
+      var remotePh = ((remote && remote.photographers) || []).map(slimPhotographer).filter(Boolean);
+      var remotePhotos = ((remote && remote.photos) || []).map(slimPhoto).filter(Boolean);
+      var localPh = ((window.AdminStore && AdminStore.listPhotographers()) || []).map(slimPhotographer).filter(Boolean);
+      var localPhotos = ((window.AdminStore && AdminStore.listPhotos()) || []).map(slimPhoto).filter(Boolean);
+      var photographers = (isSeedOnlyPhotographers(localPh) && remotePh.length > localPh.length)
+        ? remotePh
+        : mergeRecordLists(localPh, remotePh);
+      var photos = mergeRecordLists(localPhotos, remotePhotos);
+      if (remotePh.length > 1 && photographers.length <= 1) photographers = remotePh;
+      if (remotePhotos.length > photos.length) photos = mergeRecordLists(localPhotos, remotePhotos);
+      return AdminApi.upsertArchive({
+        articles: [{
+          id: PHOTO_PAGE_ID,
+          slug: PHOTO_PAGE_SLUG,
+          title: 'Фотосток редакции',
+          date: todayIso(),
+          modified: new Date().toISOString(),
+          author: '',
+          categories: [],
+          categorySlugs: ['day-by-day'],
+          excerpt: '',
+          contentHtml: '<p></p>',
+          contentText: JSON.stringify({ photographers: photographers, photos: photos }),
+          source: 'desk-photostock',
+        }],
+      });
     });
   }
 
@@ -3940,9 +4007,42 @@
     'church-day': renderChurchForm,
   };
 
+  var STRUCTURE_TITLES = {
+    'structure-pope': 'Папа Римский',
+    'structure-vatican': 'Ватикан',
+    'structure-dicasteries': 'Дикастерии Римской курии',
+    'structure-cardinals': 'Коллегия кардиналов',
+    'structure-nunciatures': 'Апостольские нунциатуры',
+    'structure-bishop': 'Епархии и епископы',
+    'structure-parish': 'Приходы и настоятели',
+    'structure-religious': 'Монашествующие и ордена',
+    'structure-movements': 'Движения мирян',
+    'structure-charity': 'Благотворительные организации',
+  };
+
+  function guideNodeId(g) {
+    if (g && g.nodeId) return String(g.nodeId);
+    var parts = String((g && g.id) || '').split(/[:/]/);
+    return parts[parts.length - 1] || '';
+  }
+
+  function sanitizeGuideRecord(g) {
+    if (!g) return null;
+    var id = guideNodeId(g);
+    var title = String(g.title || '').trim();
+    if (g.added && (g.siblingsOf === 'structure' || STRUCTURE_TITLES[id])) return null;
+    if (id.indexOf('structure-') === 0 || id === 'structure-clergy' || id === 'structure-laity') {
+      if (!STRUCTURE_TITLES[id] || (title && title !== STRUCTURE_TITLES[id])) return null;
+      g = Object.assign({}, g, { title: STRUCTURE_TITLES[id], image: '', sub: '' });
+    }
+    return g;
+  }
+
   function publishedGuidesPack() {
     var by = {};
     function put(g) {
+      if (!g) return;
+      g = sanitizeGuideRecord(g);
       if (!g) return;
       var key = String(g.id || (g.section + ':' + g.nodeId) || '');
       if (!key) return;
@@ -3950,7 +4050,13 @@
         if (g.status === 'hidden') delete by[key];
         return;
       }
-      by[key] = Object.assign({}, by[key] || {}, g, { status: 'published' });
+      var prev = by[key];
+      var next = Object.assign({}, prev || {}, g, { status: 'published' });
+      if (prev && String(prev.contentHtml || '').length > String(g.contentHtml || '').length) {
+        next.contentHtml = prev.contentHtml;
+        if (prev.lead) next.lead = prev.lead;
+      }
+      by[key] = next;
     }
     var remote = remoteCache.guides;
     var remoteList = !remote ? [] : (Array.isArray(remote) ? remote : (remote.guides || []));
@@ -3987,16 +4093,8 @@
   }
 
   function autoPublishGuides() {
-    var list = (read().guides || []).filter(function (g) {
-      return g && (!g.status || g.status === 'published');
-    });
-    if (!list.length) return;
-    try {
-      if (sessionStorage.getItem('yak_guides_auto') === '1') return;
-    } catch (e) {}
-    publishGuides().then(function () {
-      try { sessionStorage.setItem('yak_guides_auto', '1'); } catch (e2) {}
-    }).catch(function () {});
+    /* Больше не публикуем гиды сами при открытии админки.
+       Локальный стол мог перетереть пакет на сервере. */
   }
 
   function upsertGuide(item) {
@@ -4153,6 +4251,7 @@
     publishAudio: publishAudio,
     publishVideo: publishVideo,
     publishPhotostock: publishPhotostock,
+    absorbPhotostock: absorbPhotostock,
     listTopics: listTopics,
     upsertTopic: upsertTopic,
     deleteTopic: deleteTopic,
@@ -4169,6 +4268,13 @@
   };
 
   try {
+    var stored = read();
+    var guides = stored.guides || [];
+    var cleaned = guides.map(sanitizeGuideRecord).filter(Boolean);
+    if (cleaned.length !== guides.length) {
+      stored.guides = cleaned;
+      write(stored);
+    }
     loadSeed(function () {});
     loadArchive('news', function () {});
     loadArchive('article', function () {});

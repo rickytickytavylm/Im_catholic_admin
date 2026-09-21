@@ -71,41 +71,48 @@
       return;
     }
 
-    var rows = AdminStore.listPhotographers().slice().sort(function (a, b) {
-      return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
-    });
+    function paint() {
+      var rows = AdminStore.listPhotographers().slice().sort(function (a, b) {
+        return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+      });
 
-    viewEl.innerHTML =
-      '<div class="topbar"><div><h1>Фотографы</h1><p>Карточки фотографов портала.</p></div>' +
-      '<div class="topbar-actions"><button type="button" class="btn btn-primary" id="ph-add">Добавить карточку</button></div></div>' +
-      '<div class="panel"><div class="table-wrap"><table class="data"><thead><tr>' +
-      '<th>Имя</th><th>Дата</th><th>Тег</th><th>Email</th><th></th></tr></thead><tbody>' +
-      (rows.map(function (p) {
-        return (
-          '<tr><td><strong>' + esc(p.name) + '</strong><div><code>' + esc(p.slug) + '</code></div></td>' +
-          '<td>' + esc(fmtDate(p.createdAt)) + '</td>' +
-          '<td>#' + esc(p.tagSlug || (p.slug + '-photos')) + '</td>' +
-          '<td>' + esc(p.email || '—') + '</td>' +
-          '<td class="row-actions">' +
-          '<button type="button" class="btn btn-ghost" data-edit="' + esc(p.id) + '">Редактировать</button>' +
-          '<button type="button" class="btn btn-danger" data-del="' + esc(p.id) + '">Удалить</button>' +
-          '</td></tr>'
-        );
-      }).join('') || '<tr><td colspan="5" class="empty">Нет карточек</td></tr>') +
-      '</tbody></table></div></div>';
+      viewEl.innerHTML =
+        '<div class="topbar"><div><h1>Фотографы</h1><p>Карточки фотографов портала.</p></div>' +
+        '<div class="topbar-actions"><button type="button" class="btn btn-primary" id="ph-add">Добавить карточку</button></div></div>' +
+        '<div class="panel"><div class="table-wrap"><table class="data"><thead><tr>' +
+        '<th>Имя</th><th>Дата</th><th>Тег</th><th>Email</th><th></th></tr></thead><tbody>' +
+        (rows.map(function (p) {
+          return (
+            '<tr><td><strong>' + esc(p.name) + '</strong><div><code>' + esc(p.slug) + '</code></div></td>' +
+            '<td>' + esc(fmtDate(p.createdAt)) + '</td>' +
+            '<td>#' + esc(p.tagSlug || (p.slug + '-photos')) + '</td>' +
+            '<td>' + esc(p.email || '—') + '</td>' +
+            '<td class="row-actions">' +
+            '<button type="button" class="btn btn-ghost" data-edit="' + esc(p.id) + '">Редактировать</button>' +
+            '<button type="button" class="btn btn-danger" data-del="' + esc(p.id) + '">Удалить</button>' +
+            '</td></tr>'
+          );
+        }).join('') || '<tr><td colspan="5" class="empty">Нет карточек</td></tr>') +
+        '</tbody></table></div></div>';
 
-    document.getElementById('ph-add').onclick = function () { go('photographer-edit', 'new'); };
-    viewEl.querySelectorAll('[data-edit]').forEach(function (btn) {
-      btn.onclick = function () { go('photographer-edit', btn.getAttribute('data-edit')); };
-    });
-    viewEl.querySelectorAll('[data-del]').forEach(function (btn) {
-      btn.onclick = function () {
-        if (!confirm('Удалить карточку фотографа?')) return;
-        AdminStore.deletePhotographer(btn.getAttribute('data-del'), session.email);
-        toast('Удалено');
-        renderPhotographers(ctx);
-      };
-    });
+      document.getElementById('ph-add').onclick = function () { go('photographer-edit', 'new'); };
+      viewEl.querySelectorAll('[data-edit]').forEach(function (btn) {
+        btn.onclick = function () { go('photographer-edit', btn.getAttribute('data-edit')); };
+      });
+      viewEl.querySelectorAll('[data-del]').forEach(function (btn) {
+        btn.onclick = function () {
+          if (!confirm('Удалить карточку фотографа?')) return;
+          AdminStore.deletePhotographer(btn.getAttribute('data-del'), session.email);
+          toast('Удалено');
+          renderPhotographers(ctx);
+        };
+      });
+    }
+
+    paint();
+    if (window.AdminDesk && AdminDesk.hydrateRemote) {
+      AdminDesk.hydrateRemote(function () { paint(); });
+    }
   }
 
   function renderPhotographerEdit(ctx, id) {

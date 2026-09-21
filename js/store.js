@@ -1064,6 +1064,7 @@
     publicImages: publicImages,
     mediaStatusTitle: mediaStatusTitle,
     listPhotographers: listPhotographers,
+    savePhotographers: savePhotographers,
     getPhotographer: getPhotographer,
     getPhotographerByEmail: getPhotographerByEmail,
     upsertPhotographer: upsertPhotographer,
