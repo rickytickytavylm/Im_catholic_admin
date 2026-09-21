@@ -909,17 +909,21 @@
       'structure': {
         type: 'cards',
         title: 'Как устроена Католическая Церковь',
-        desc: 'От Папы до настоятеля: как Церковь собрана и кто за что отвечает',
-        tip: 'Это карта устройства, не экзамен. С неё удобно перейти в Навигатор, если нужна конкретная тема веры.',
-        showMore: true,
+        desc: 'От Папы до вашего настоятеля: как всё устроено в Церкви',
+        tip: '',
+        showMore: false,
         cardKicker: 'Тема',
         cards: withSiblings('structure', [
-          { id: 'structure-pope', title: 'Папа Римский', sub: 'Преемник Петра и единство Церкви', image: 'assets/cards/church-deepen.webp' },
-          { id: 'structure-bishop', title: 'Епископ и епархия', sub: 'Местная Церковь', image: 'assets/cards/church-become.webp' },
-          { id: 'structure-parish', title: 'Приход и настоятель', sub: 'Ближайшая община', image: 'assets/cards/church-become-parish.webp' },
-          { id: 'structure-clergy', title: 'Священники и диаконы', sub: 'Служение Слова и таинств', image: 'assets/cards/church-first-visit.webp' },
-          { id: 'structure-religious', title: 'Монашествующие и ордена', sub: 'Посвящённая жизнь', image: 'assets/cards/church-deepen-pray.webp' },
-          { id: 'structure-laity', title: 'Миряне, движения, молодёжь', sub: 'Народ Божий в миру', wide: true, image: 'assets/cards/church-deepen-serve.webp' },
+          { id: 'structure-pope', title: 'Папа Римский', image: 'assets/cards/church-deepen.webp' },
+          { id: 'structure-vatican', title: 'Ватикан', image: 'assets/cards/church-first-time.webp' },
+          { id: 'structure-dicasteries', title: 'Дикастерии Римской курии', image: 'assets/cards/church-deepen-daily.webp' },
+          { id: 'structure-cardinals', title: 'Коллегия кардиналов', image: 'assets/cards/church-become.webp' },
+          { id: 'structure-nunciatures', title: 'Апостольские нунциатуры', image: 'assets/cards/church-become-know.webp' },
+          { id: 'structure-bishop', title: 'Епархии и епископы', image: 'assets/cards/church-become-parish.webp' },
+          { id: 'structure-parish', title: 'Приходы и настоятели', image: 'assets/cards/church-first-visit.webp' },
+          { id: 'structure-religious', title: 'Монашествующие и ордена', image: 'assets/cards/church-deepen-pray.webp' },
+          { id: 'structure-movements', title: 'Движения мирян', image: 'assets/cards/church-deepen-serve.webp' },
+          { id: 'structure-charity', title: 'Благотворительные организации', image: 'assets/cards/church-return-community.webp' },
         ]),
       },
       'structure-pope': Object.assign(page('Папа Римский'), {
@@ -929,14 +933,20 @@
           { title: 'Что такое Церковь', href: 'church.html?path=nav-church-what' },
         ],
       }),
-      'structure-bishop': Object.assign(page('Епископ и епархия'), {
+      'structure-vatican': Object.assign(page('Ватикан'), { siblingsOf: 'structure' }),
+      'structure-dicasteries': Object.assign(page('Дикастерии Римской курии'), { siblingsOf: 'structure' }),
+      'structure-cardinals': Object.assign(page('Коллегия кардиналов'), { siblingsOf: 'structure' }),
+      'structure-nunciatures': Object.assign(page('Апостольские нунциатуры'), { siblingsOf: 'structure' }),
+      'structure-movements': Object.assign(page('Движения мирян'), { siblingsOf: 'structure' }),
+      'structure-charity': Object.assign(page('Благотворительные организации'), { siblingsOf: 'structure' }),
+      'structure-bishop': Object.assign(page('Епархии и епископы'), {
         siblingsOf: 'structure',
         also: [
           { title: 'Приход и настоятель', href: 'church.html?path=structure-parish' },
           { title: 'Папа Римский', href: 'church.html?path=structure-pope' },
         ],
       }),
-      'structure-parish': Object.assign(page('Приход и настоятель'), {
+      'structure-parish': Object.assign(page('Приходы и настоятели'), {
         siblingsOf: 'structure',
         also: [
           { title: 'Как найти свой приход', href: 'church.html?path=nav-parish' },
@@ -1763,9 +1773,9 @@
         title: 'Паломничества',
         desc: 'Анонсы, направления, свидетельства и практические советы',
         cards: [
-          { id: 'pil-announce', title: 'Анонсы', href: 'archive.html?category=announcement', image: 'assets/cards/pil-announce.webp' },
-          { id: 'pil-places', title: 'Святилища / Направления', href: 'archive.html?category=puteshestviya', image: 'assets/cards/pil-places.webp' },
-          { id: 'pil-witness', title: 'Свидетельства', href: 'archive.html?category=svidetelstva', image: 'assets/cards/pil-witness.webp' },
+          { id: 'pil-announce', title: 'Анонсы', href: 'events.html?cat=pilgrimage', image: 'assets/cards/pil-announce.webp' },
+          { id: 'pil-places', title: 'Направления', href: 'archive.html?category=puteshestviya', image: 'assets/cards/pil-places.webp' },
+          { id: 'pil-witness', title: 'Свидетельства', href: 'tag.html?slug=svidetelstva-palomnikov', image: 'assets/cards/pil-witness.webp' },
           { id: 'pil-need', title: 'Что нужно паломнику', wide: true, image: 'assets/cards/pil-need.webp' },
         ],
       },
@@ -1791,7 +1801,7 @@
       ), {
         siblingsOf: 'pilgrimage',
         also: [
-          { title: 'Анонсы', href: 'archive.html?category=announcement' },
+          { title: 'Анонсы', href: 'events.html?cat=pilgrimage' },
           { title: 'Направления', href: 'archive.html?category=puteshestviya' },
           { title: 'Афиша', href: 'events.html' },
         ],
@@ -1804,7 +1814,7 @@
         cards: [
           { id: 'retreat-what', title: 'Что такое духовные упражнения', image: 'assets/cards/retreat-what.webp' },
           { id: 'retreat-ignatian', title: 'Игнатианские упражнения', image: 'assets/cards/retreat-ignatian.webp' },
-          { id: 'retreat-announce', title: 'Анонсы', href: 'archive.html?category=announcement', image: 'assets/cards/pil-announce.webp' },
+          { id: 'retreat-announce', title: 'Анонсы', href: 'events.html?cat=retreat', image: 'assets/cards/pil-announce.webp' },
           { id: 'retreat-online', title: 'Реколлекции онлайн', wide: true, image: 'assets/cards/retreat-online.webp' },
         ],
       },

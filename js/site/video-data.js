@@ -607,18 +607,7 @@
         { label: 'Vimeo', href: 'https://vimeo.com/userstudiomama' },
         { label: 'ВК', href: 'https://vk.ru/studiomama' },
       ],
-      cycles: [
-        {
-          title: 'Символ веры',
-          href: 'https://vkvideo.ru/playlist/-26685443_13',
-          thumb: '',
-        },
-        {
-          title: 'Семь даров Святого Духа',
-          href: 'https://vkvideo.ru/playlist/-26685443_2',
-          thumb: '',
-        },
-      ],
+      cycles: [],
     },
     {
       id: 'tvkana',

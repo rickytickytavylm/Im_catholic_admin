@@ -1081,8 +1081,17 @@
       seen[key] = out.length + 1;
       out.push({ slug: slug, name: name, photo: a.photo || '', role: a.role || '' });
     }
-    (window.YakAuthors || []).forEach(add);
-    (read().authors || []).forEach(add);
+    var hidden = {};
+    (read().authors || []).forEach(function (a) {
+      if (a && a.status === 'hidden') hidden[String(a.slug || a.id || '').toLowerCase()] = 1;
+    });
+    function skipHidden(a) {
+      var key = String((a && (a.slug || a.id)) || '').toLowerCase();
+      return hidden[key];
+    }
+    (window.YakAuthors || []).forEach(function (a) { if (!skipHidden(a)) add(a); });
+    authorsFromPack(remoteCache.authors).forEach(function (a) { if (!skipHidden(a)) add(a); });
+    (read().authors || []).forEach(function (a) { if (!skipHidden(a)) add(a); });
     return out.sort(function (a, b) {
       return String(a.name).localeCompare(String(b.name), 'ru');
     });
@@ -3103,7 +3112,7 @@
       };
       return;
     }
-    var items = mergedList('authors');
+    var items = mergedList('authors').filter(function (a) { return !a || a.status !== 'hidden'; });
     ctx.viewEl.innerHTML =
       '<div class="topbar"><div><h1>Авторы</h1><p>Карточки, описания и привязка публикаций.</p></div>' +
       '<div class="topbar-actions"><a class="btn btn-primary" href="#authors/new">Добавить автора</a></div></div>' +
