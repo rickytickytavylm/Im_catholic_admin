@@ -4033,7 +4033,7 @@
     if (g.added && (g.siblingsOf === 'structure' || STRUCTURE_TITLES[id])) return null;
     if (id.indexOf('structure-') === 0 || id === 'structure-clergy' || id === 'structure-laity') {
       if (!STRUCTURE_TITLES[id] || (title && title !== STRUCTURE_TITLES[id])) return null;
-      g = Object.assign({}, g, { title: STRUCTURE_TITLES[id], image: '', sub: '' });
+      g = Object.assign({}, g, { title: STRUCTURE_TITLES[id] });
     }
     return g;
   }
@@ -4056,6 +4056,8 @@
         next.contentHtml = prev.contentHtml;
         if (prev.lead) next.lead = prev.lead;
       }
+      if (!String(next.image || '').trim() && prev && prev.image) next.image = prev.image;
+      if (!String(next.sub || '').trim() && prev && prev.sub) next.sub = prev.sub;
       by[key] = next;
     }
     var remote = remoteCache.guides;
