@@ -41,6 +41,7 @@
   function connect() {
     if (connect._p) return connect._p;
     var list = candidates();
+    var TIMEWEB = 'https://rickytickytavylm-fides-at-ratio-server-d4c9.twc1.net';
     connect._p = new Promise(function (resolve) {
       var settled = false;
       var pending = list.length;
@@ -52,6 +53,8 @@
           connect.ok = true;
           showNetBanner(false);
         } else {
+          // Не уходим в «пустой» API — оставляем Timeweb для «Повторить»
+          setBase(TIMEWEB);
           connect.ok = false;
           showNetBanner(true);
         }
@@ -67,18 +70,21 @@
           try {
             if (ctrl) ctrl.abort();
           } catch (e) {}
-        }, 2000);
+        }, 12000);
         fetch(url + '/health', {
           method: 'GET',
           headers: { Accept: 'application/json' },
           mode: 'cors',
           credentials: 'omit',
+          cache: 'no-store',
           signal: ctrl ? ctrl.signal : undefined,
         })
           .then(function (res) {
             clearTimeout(timer);
             if (!res.ok) throw new Error('HTTP ' + res.status);
-            done(url);
+            return res.json().then(function () {
+              done(url);
+            });
           })
           .catch(function () {
             clearTimeout(timer);
@@ -86,9 +92,10 @@
             if (pending <= 0) done(null);
           });
       });
+      // Timeweb иногда отвечает 3–8с; 2.5с давало ложное «нет связи»
       setTimeout(function () {
-        done(null);
-      }, 2500);
+        if (!settled) done(null);
+      }, 15000);
     });
     return connect._p;
   }

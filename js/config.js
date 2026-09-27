@@ -19,7 +19,8 @@
     storedApi = localStorage.getItem('yak_admin_api_override') || '';
   } catch (e) {}
 
-  if (/railway\.app|sslip\.io/i.test(storedApi)) {
+  // Любой старый override кроме актуального Timeweb — сбрасываем
+  if (storedApi && storedApi.replace(/\/$/, '') !== TIMEWEB) {
     storedApi = '';
     try {
       localStorage.removeItem('yak_admin_api_override');
@@ -29,7 +30,7 @@
   global.AdminConfig = {
     BRAND: 'ЯКатолик',
     APP_NAME: 'Редакция',
-    API_BASE: String(override.API_BASE || params.api || storedApi || TIMEWEB).replace(/\/$/, ''),
+    API_BASE: String(override.API_BASE || params.api || TIMEWEB).replace(/\/$/, ''),
     API_FALLBACKS: [TIMEWEB],
     ADMIN_TOKEN: override.ADMIN_TOKEN || params.token || storedToken || '',
     PORTAL_URL: override.PORTAL_URL || (
