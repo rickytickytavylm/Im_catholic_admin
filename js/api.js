@@ -31,25 +31,6 @@
     return list;
   }
 
-  function probe(url) {
-    var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 5000);
-    return fetch(url + '/health', {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      mode: 'cors',
-      credentials: 'omit',
-      signal: ctrl ? ctrl.signal : undefined,
-    }).then(function (res) {
-      clearTimeout(timer);
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      return url;
-    }).catch(function (err) {
-      clearTimeout(timer);
-      throw err;
-    });
-  }
-
   function showNetBanner(on) {
     var el = document.getElementById('net-banner');
     if (!el) return;
@@ -60,21 +41,55 @@
   function connect() {
     if (connect._p) return connect._p;
     var list = candidates();
-    connect._p = (function next(i) {
-      if (i >= list.length) {
-        connect.ok = false;
-        showNetBanner(true);
-        return Promise.resolve(base());
+    connect._p = new Promise(function (resolve) {
+      var settled = false;
+      var pending = list.length;
+      function done(url) {
+        if (settled) return;
+        settled = true;
+        if (url) {
+          setBase(url);
+          connect.ok = true;
+          showNetBanner(false);
+        } else {
+          connect.ok = false;
+          showNetBanner(true);
+        }
+        resolve(base());
       }
-      return probe(list[i]).then(function (url) {
-        setBase(url);
-        connect.ok = true;
-        showNetBanner(false);
-        return url;
-      }).catch(function () {
-        return next(i + 1);
+      if (!pending) {
+        done(null);
+        return;
+      }
+      list.forEach(function (url) {
+        var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        var timer = setTimeout(function () {
+          try {
+            if (ctrl) ctrl.abort();
+          } catch (e) {}
+        }, 2000);
+        fetch(url + '/health', {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+          mode: 'cors',
+          credentials: 'omit',
+          signal: ctrl ? ctrl.signal : undefined,
+        })
+          .then(function (res) {
+            clearTimeout(timer);
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            done(url);
+          })
+          .catch(function () {
+            clearTimeout(timer);
+            pending -= 1;
+            if (pending <= 0) done(null);
+          });
       });
-    })(0);
+      setTimeout(function () {
+        done(null);
+      }, 2500);
+    });
     return connect._p;
   }
 
