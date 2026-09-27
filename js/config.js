@@ -1,12 +1,11 @@
 /**
  * Конфиг админки ЯКатолик.
- * Основной API — Timeweb. Railway — запас при VPN.
+ * Прод API — только Timeweb. Без Railway.
  */
 (function (global) {
   'use strict';
 
   var TIMEWEB = 'https://rickytickytavylm-fides-at-ratio-server-d4c9.twc1.net';
-  var RAILWAY = 'https://fides-at-ratioserver-production.up.railway.app';
   var params = {};
   try {
     params = Object.fromEntries(new URLSearchParams(location.search));
@@ -20,7 +19,7 @@
     storedApi = localStorage.getItem('yak_admin_api_override') || '';
   } catch (e) {}
 
-  if (/sslip\.io/i.test(storedApi)) {
+  if (/railway\.app|sslip\.io/i.test(storedApi)) {
     storedApi = '';
     try {
       localStorage.removeItem('yak_admin_api_override');
@@ -31,7 +30,7 @@
     BRAND: 'ЯКатолик',
     APP_NAME: 'Редакция',
     API_BASE: String(override.API_BASE || params.api || storedApi || TIMEWEB).replace(/\/$/, ''),
-    API_FALLBACKS: [TIMEWEB, RAILWAY],
+    API_FALLBACKS: [TIMEWEB],
     ADMIN_TOKEN: override.ADMIN_TOKEN || params.token || storedToken || '',
     PORTAL_URL: override.PORTAL_URL || (
       /github\.io/i.test(location.host)

@@ -22,7 +22,7 @@
     var seen = {};
     function add(u) {
       u = String(u || '').replace(/\/$/, '');
-      if (!u || seen[u]) return;
+      if (!u || seen[u] || /railway\.app/i.test(u)) return;
       seen[u] = 1;
       list.push(u);
     }
