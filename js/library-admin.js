@@ -643,7 +643,14 @@
       author: val('lib-author'),
       annotation: (function () {
         var el = document.getElementById('lib-ann');
-        return el ? (el.innerHTML || '') : '';
+        var raw = el ? (el.innerHTML || '') : '';
+        return raw
+          .replace(/<!--\[if[\s\S]*?<!\[endif\]-->/gi, '')
+          .replace(/<!-+\s*StartFragment\s*-*>/gi, '')
+          .replace(/<!-+\s*EndFragment\s*-*>/gi, '')
+          .replace(/&lt;!-+\s*StartFragment\s*-*&gt;/gi, '')
+          .replace(/&lt;!-+\s*EndFragment\s*-*&gt;/gi, '')
+          .replace(/\uFEFF/g, '');
       })(),
       contentHtml: textEl ? textEl.innerHTML : '',
       firstPublished: val('lib-first'),
