@@ -46,20 +46,49 @@
     }
   }
 
-  function overrideMap(section) {
+  function nodeKey(g) {
+    if (!g) return '';
+    if (g.nodeId) return String(g.nodeId);
+    if (!g.id) return '';
+    var parts = String(g.id).split(/[:/]/);
+    return parts[parts.length - 1];
+  }
+
+  function remoteGuides() {
+    if (global.AdminDesk && AdminDesk.remoteGuides) return AdminDesk.remoteGuides() || [];
+    return [];
+  }
+
+  function overrideMapFrom(list, section) {
     var map = {};
-    deskGuides().forEach(function (g) {
+    (list || []).forEach(function (g) {
       if (!g) return;
-      var key = g.nodeId || '';
-      if (!key && g.id) {
-        var parts = String(g.id).split(/[:/]/);
-        key = parts[parts.length - 1];
-      }
+      var key = nodeKey(g);
+      if (!key) return;
       if (g.section && g.section !== section) return;
       if (!g.section && String(g.id || '').indexOf(section) === -1) return;
-      if (key) map[key] = g;
+      map[key] = g;
     });
     return map;
+  }
+
+  function isNewer(a, b) {
+    return String((a && a.updatedAt) || '') > String((b && b.updatedAt) || '');
+  }
+
+  function overlayItem(item, ov) {
+    if (!ov) return item;
+    return Object.assign({}, item, ov, {
+      id: item.id,
+      kind: ov.kind || item.kind,
+      siblingsOf: ov.siblingsOf || item.siblingsOf,
+      href: item.href,
+    });
+  }
+
+  function whenRemote(done) {
+    if (global.AdminDesk && AdminDesk.hydrateRemote) AdminDesk.hydrateRemote(done);
+    else done();
   }
 
   function findCard(tree, nodeId) {
@@ -105,18 +134,16 @@
   function catalog(section) {
     var tree = treeOf(section);
     if (!tree) return [];
-    var ovs = overrideMap(section);
+    var rem = overrideMapFrom(remoteGuides(), section);
+    var loc = overrideMapFrom(deskGuides(), section);
     var out = [];
 
     function merge(item) {
-      var ov = ovs[item.id];
-      if (!ov) return item;
-      return Object.assign({}, item, ov, {
-        id: item.id,
-        kind: ov.kind || item.kind,
-        siblingsOf: ov.siblingsOf || item.siblingsOf,
-        href: item.href,
-      });
+      var remote = rem[item.id];
+      var local = loc[item.id];
+      var cur = remote ? overlayItem(item, remote) : item;
+      if (local && (!remote || isNewer(local, remote))) cur = overlayItem(cur, local);
+      return cur;
     }
 
     out.push(merge({
@@ -156,19 +183,23 @@
       }));
     });
 
-    Object.keys(ovs).forEach(function (key) {
-      if (out.some(function (x) { return x.id === key; })) return;
-      var ov = ovs[key];
-      if (ov.status === 'hidden') return;
-      out.push(Object.assign({
-        kind: 'page',
-        group: ov.siblingsOf || '',
-        groupTitle: (nodes[ov.siblingsOf] && nodes[ov.siblingsOf].title) || '',
-        contentHtml: '',
-        prayers: [],
-        added: true,
-      }, ov, { id: key }));
-    });
+    function addExtra(map) {
+      Object.keys(map).forEach(function (key) {
+        if (out.some(function (x) { return x.id === key; })) return;
+        var ov = map[key];
+        if (ov.status === 'hidden') return;
+        out.push(Object.assign({
+          kind: 'page',
+          group: ov.siblingsOf || '',
+          groupTitle: (nodes[ov.siblingsOf] && nodes[ov.siblingsOf].title) || '',
+          contentHtml: '',
+          prayers: [],
+          added: true,
+        }, ov, { id: key }));
+      });
+    }
+    addExtra(rem);
+    addExtra(loc);
 
     return out.filter(function (x) { return x.status !== 'hidden'; });
   }
@@ -188,6 +219,10 @@
   }
 
   function renderList(ctx, section) {
+    whenRemote(function () { drawList(ctx, section); });
+  }
+
+  function drawList(ctx, section) {
     var items = catalog(section);
     var title = sectionTitle(section);
     var groups = [];
@@ -292,6 +327,10 @@
   }
 
   function renderEditor(ctx, section, id) {
+    whenRemote(function () { drawEditor(ctx, section, id); });
+  }
+
+  function drawEditor(ctx, section, id) {
     id = resolveId(section, id);
     var item = getItem(section, id);
     if (!item) {

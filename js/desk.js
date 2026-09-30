@@ -3283,7 +3283,7 @@
       paintDeskBanner();
       if (done) done();
     };
-    if (remoteHydrated) { finish(true); return Promise.resolve(); }
+    if (remoteHydrated && remoteCache.guides) { finish(true); return Promise.resolve(); }
     return Promise.all([
       pullRemotePack(CYCLES_PAGE_SLUG).then(function (p) { if (Array.isArray(p)) absorbCycles(p); }),
       pullRemotePack(AUTHORS_PAGE_SLUG).then(absorbAuthorsPack),
@@ -4040,7 +4040,11 @@
 
   function publishedGuidesPack() {
     var by = {};
-    function put(g) {
+    function weakImage(u) {
+      u = String(u || '').trim();
+      return !u || /assets\/cards/i.test(u);
+    }
+    function put(g, fromLocal) {
       if (!g) return;
       g = sanitizeGuideRecord(g);
       if (!g) return;
@@ -4051,19 +4055,21 @@
         return;
       }
       var prev = by[key];
+      if (fromLocal && prev && String(g.updatedAt || '') <= String(prev.updatedAt || '')) return;
       var next = Object.assign({}, prev || {}, g, { status: 'published' });
       if (prev && String(prev.contentHtml || '').length > String(g.contentHtml || '').length) {
         next.contentHtml = prev.contentHtml;
         if (prev.lead) next.lead = prev.lead;
       }
+      if (prev && weakImage(g.image) && !weakImage(prev.image)) next.image = prev.image;
       if (!String(next.image || '').trim() && prev && prev.image) next.image = prev.image;
       if (!String(next.sub || '').trim() && prev && prev.sub) next.sub = prev.sub;
       by[key] = next;
     }
     var remote = remoteCache.guides;
     var remoteList = !remote ? [] : (Array.isArray(remote) ? remote : (remote.guides || []));
-    remoteList.forEach(put);
-    (read().guides || []).forEach(put);
+    remoteList.forEach(function (g) { put(g, false); });
+    (read().guides || []).forEach(function (g) { put(g, true); });
     return { guides: Object.keys(by).map(function (k) { return by[k]; }) };
   }
 
@@ -4263,6 +4269,11 @@
     write: write,
     upsertGuide: upsertGuide,
     publishGuides: publishGuides,
+    remoteGuides: function () {
+      var remote = remoteCache.guides;
+      if (!remote) return [];
+      return Array.isArray(remote) ? remote : (remote.guides || []);
+    },
     linkAuthor: linkAuthor,
     exportDesk: exportDesk,
     importDesk: importDesk,
