@@ -3204,7 +3204,7 @@
   var TOPICS_PAGE_ID = 1900000004;
   var TOPICS_PAGE_SLUG = 'yak-topics-data';
   var EVENTS_PAGE_ID = 1900000006;
-  var GUIDES_PAGE_ID = 1900000007;
+  var GUIDES_PAGE_ID = 1900000013;
   var GUIDES_PAGE_SLUG = 'yak-guides-data';
   var AUDIO_PAGE_ID = 1900000010;
   var AUDIO_PAGE_SLUG = 'yak-audio-data';
