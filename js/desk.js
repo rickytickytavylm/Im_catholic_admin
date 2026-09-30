@@ -79,7 +79,7 @@
   }
 
   var archiveCache = { news: [], article: [] };
-  var remoteCache = { cycles: null, authors: null, events: null, guides: null, video: null, photostock: null };
+  var remoteCache = { cycles: null, authors: null, events: null, guides: null, video: null, photostock: null, home: null, about: null, calendar: null, topics: null, audio: null, library: null };
 
   function authorsFromPack(pack) {
     if (!pack) return [];
@@ -1950,6 +1950,7 @@
         });
     }
 
+    var saved = null;
     ready.then(function (pack) {
       html = pack.html;
       lead = pack.lead;
@@ -1979,6 +1980,7 @@
         status: status,
         source: 'desk',
       });
+      saved = next;
       if (status === 'published') ensureNumericId(next);
       upsert(type, next);
       if (type === 'article') syncArticleToCycle(next);
@@ -2004,7 +2006,10 @@
         ctx.go(type === 'news' ? 'news' : 'articles');
       });
     }).catch(function (e) {
-      ctx.toast(e.message || 'Не удалось сохранить', true);
+      if (saved && status === 'published') {
+        upsert(type, Object.assign({}, saved, { status: 'draft' }));
+      }
+      ctx.toast(e.message || 'Не ушло на сайт — осталось черновиком здесь', true);
     });
   }
 
@@ -2057,21 +2062,12 @@
         if (e && e.status === 'hidden' && e.id) by[e.id] = { id: e.id, slug: e.slug || e.id, status: 'hidden' };
       });
       var items = Object.keys(by).map(function (k) { return by[k]; });
-      return AdminApi.upsertArchive({
-        articles: [{
-          id: EVENTS_PAGE_ID,
-          slug: EVENTS_PAGE_SLUG,
-          title: 'Афиша редакции',
-          date: todayIso(),
-          modified: new Date().toISOString(),
-          author: '',
-          categories: [],
-          categorySlugs: ['day-by-day'],
-          excerpt: '',
-          contentHtml: '<p></p>',
-          contentText: JSON.stringify({ items: items, organizers: publishedOrganizers() }),
-          source: 'desk-events',
-        }],
+      return upsertJsonPack({
+        fallbackId: EVENTS_PAGE_ID,
+        slug: EVENTS_PAGE_SLUG,
+        title: 'Афиша редакции',
+        source: 'desk-events',
+        body: { items: items, organizers: publishedOrganizers() },
       });
     });
   }
@@ -2215,12 +2211,16 @@
     ready.then(function () {
       if (item.id && item.id !== next.id) hideItem('event', item.id);
       upsert('event', next);
-      if (status === 'published') return publishEvents();
+      if (status !== 'published') return;
+      return publishEvents().catch(function (err) {
+        upsert('event', Object.assign({}, next, { status: 'draft' }));
+        throw err;
+      });
     }).then(function () {
       ctx.toast(status === 'published' ? 'На сайте' : 'Черновик сохранён');
       ctx.go('afisha');
     }).catch(function (e) {
-      ctx.toast(e.message || 'Не удалось сохранить', true);
+      ctx.toast(e.message || 'Не ушло на сайт — осталось в этом браузере', true);
     });
   }
 
@@ -2235,21 +2235,12 @@
       delete copy.source;
       return copy;
     });
-    return AdminApi.upsertArchive({
-      articles: [{
-        id: AUDIO_PAGE_ID,
-        slug: AUDIO_PAGE_SLUG,
-        title: 'Аудио редакции',
-        date: todayIso(),
-        modified: new Date().toISOString(),
-        author: '',
-        categories: [],
-        categorySlugs: ['day-by-day'],
-        excerpt: '',
-        contentHtml: '<p></p>',
-        contentText: JSON.stringify({ tracks: tracks }),
-        source: 'desk-audio',
-      }],
+    return upsertJsonPack({
+      fallbackId: AUDIO_PAGE_ID,
+      slug: AUDIO_PAGE_SLUG,
+      title: 'Аудио редакции',
+      source: 'desk-audio',
+      body: { tracks: tracks },
     });
   }
 
@@ -2274,21 +2265,12 @@
     var channels = catalogVideoChannels().filter(function (c) {
       return c && c.id && (!c.status || c.status === 'published');
     });
-    return AdminApi.upsertArchive({
-      articles: [{
-        id: VIDEO_PAGE_ID,
-        slug: VIDEO_PAGE_SLUG,
-        title: 'Видео редакции',
-        date: todayIso(),
-        modified: new Date().toISOString(),
-        author: '',
-        categories: [],
-        categorySlugs: ['day-by-day'],
-        excerpt: '',
-        contentHtml: '<p></p>',
-        contentText: JSON.stringify({ items: items, channels: channels }),
-        source: 'desk-video',
-      }],
+    return upsertJsonPack({
+      fallbackId: VIDEO_PAGE_ID,
+      slug: VIDEO_PAGE_SLUG,
+      title: 'Видео редакции',
+      source: 'desk-video',
+      body: { items: items, channels: channels },
     });
   }
 
@@ -2865,21 +2847,12 @@
     var items = (read().churchDays || []).filter(function (d) {
       return d && d.date && (!d.status || d.status === 'published');
     });
-    return AdminApi.upsertArchive({
-      articles: [{
-        id: CALENDAR_PAGE_ID,
-        slug: CALENDAR_PAGE_SLUG,
-        title: 'Дни Церкви',
-        date: todayIso(),
-        modified: new Date().toISOString(),
-        author: '',
-        categories: [],
-        categorySlugs: ['day-by-day'],
-        excerpt: '',
-        contentHtml: '<p></p>',
-        contentText: JSON.stringify({ days: items }),
-        source: 'desk-calendar',
-      }],
+    return upsertJsonPack({
+      fallbackId: CALENDAR_PAGE_ID,
+      slug: CALENDAR_PAGE_SLUG,
+      title: 'Дни Церкви',
+      source: 'desk-calendar',
+      body: { days: items },
     });
   }
 
@@ -2890,7 +2863,7 @@
     var saintBox = document.getElementById('d-saint');
     var saintHtml = saintBox ? saintBox.innerHTML : '';
     var saintName = saintBox ? (saintBox.textContent || '').replace(/\s+/g, ' ').trim() : '';
-    upsert('church-day', Object.assign({}, item, {
+    var nextDay = Object.assign({}, item, {
       date: date,
       weekday: weekdayName(date),
       title: title,
@@ -2904,7 +2877,8 @@
         prayer: val('d-prayer'),
         quote: val('d-quote'),
       },
-    }));
+    });
+    upsert('church-day', nextDay);
     if (status !== 'published' && status !== 'draft') {
       ctx.toast('Черновик сохранён');
       ctx.go('church-day');
@@ -2915,7 +2889,10 @@
       ctx.toast(status === 'published' ? 'День на сайте' : 'Черновик сохранён');
       ctx.go('church-day');
     }).catch(function (err) {
-      ctx.toast((err && err.message) || 'Сохранено только в этом браузере', true);
+      if (status === 'published') {
+        upsert('church-day', Object.assign({}, nextDay, { status: 'draft' }));
+      }
+      ctx.toast((err && err.message) || 'Не ушло на сайт — осталось в этом браузере', true);
       ctx.go('church-day');
     });
   }
@@ -3201,12 +3178,12 @@
   var AUTHORS_PAGE_SLUG = 'yak-authors-data';
   var PHOTO_PAGE_ID = 1900000003;
   var PHOTO_PAGE_SLUG = 'yak-photostock-data';
-  var TOPICS_PAGE_ID = 1900000004;
+  var TOPICS_PAGE_ID = 1910000004;
   var TOPICS_PAGE_SLUG = 'yak-topics-data';
   var EVENTS_PAGE_ID = 1900000006;
   var GUIDES_PAGE_ID = 1900000013;
   var GUIDES_PAGE_SLUG = 'yak-guides-data';
-  var AUDIO_PAGE_ID = 1900000010;
+  var AUDIO_PAGE_ID = 1910000010;
   var AUDIO_PAGE_SLUG = 'yak-audio-data';
   var VIDEO_PAGE_ID = 1900000011;
   var VIDEO_PAGE_SLUG = 'yak-video-data';
@@ -3221,6 +3198,81 @@
   function pullRemotePack(slug) {
     if (!window.AdminApi || !AdminApi.getArticle) return Promise.resolve(null);
     return AdminApi.getArticle(slug).then(parseArchivePack).catch(function () { return null; });
+  }
+
+  function pullRemoteArticle(idOrSlug) {
+    if (!window.AdminApi || !AdminApi.getArticle) return Promise.resolve(null);
+    return AdminApi.getArticle(idOrSlug).catch(function () { return null; });
+  }
+
+  function safePackId(fallbackId) {
+    var n = Number(fallbackId) || 0;
+    if (n >= 1910000000) return n;
+    return 1910000000 + (n % 100);
+  }
+
+  function resolvePackTarget(slug, fallbackId) {
+    return pullRemoteArticle(slug).then(function (bySlug) {
+      if (bySlug && bySlug.id) {
+        return { id: bySlug.id, slug: slug, article: bySlug, pack: parseArchivePack(bySlug) };
+      }
+      return pullRemoteArticle(fallbackId).then(function (byId) {
+        if (byId && byId.slug && byId.slug !== slug) {
+          return { id: safePackId(fallbackId), slug: slug, article: null, pack: null };
+        }
+        if (byId && byId.id && (!byId.slug || byId.slug === slug)) {
+          return { id: byId.id, slug: slug, article: byId, pack: parseArchivePack(byId) };
+        }
+        return { id: safePackId(fallbackId), slug: slug, article: null, pack: null };
+      });
+    });
+  }
+
+  function rememberPack(slug, pack) {
+    if (!pack) return;
+    if (slug === GUIDES_PAGE_SLUG) remoteCache.guides = pack;
+    else if (slug === EVENTS_PAGE_SLUG) remoteCache.events = pack;
+    else if (slug === AUTHORS_PAGE_SLUG) remoteCache.authors = pack;
+    else if (slug === VIDEO_PAGE_SLUG) remoteCache.video = pack;
+    else if (slug === PHOTO_PAGE_SLUG) remoteCache.photostock = pack;
+    else if (slug === CYCLES_PAGE_SLUG) remoteCache.cycles = pack;
+    else if (slug === AUDIO_PAGE_SLUG) remoteCache.audio = pack;
+    else if (slug === TOPICS_PAGE_SLUG) remoteCache.topics = pack;
+    else if (slug === CALENDAR_PAGE_SLUG) remoteCache.calendar = pack;
+    else if (slug === 'yak-home-data') remoteCache.home = pack;
+    else if (slug === 'yak-about-data') remoteCache.about = pack;
+    else if (slug === 'yak-library-data') remoteCache.library = pack;
+  }
+
+  function upsertJsonPack(opts) {
+    if (!window.AdminApi || !AdminApi.upsertArchive) {
+      return Promise.reject(new Error('нет соединения с сервером'));
+    }
+    var slug = opts.slug;
+    var body = opts.body;
+    var contentText = opts.contentText != null ? opts.contentText : JSON.stringify(body == null ? {} : body);
+    return resolvePackTarget(slug, opts.fallbackId).then(function (target) {
+      return AdminApi.upsertArchive({
+        articles: [{
+          id: target.id,
+          slug: slug,
+          title: opts.title,
+          date: todayIso(),
+          modified: new Date().toISOString(),
+          author: '',
+          categories: [],
+          categorySlugs: ['day-by-day'],
+          excerpt: '',
+          contentHtml: '<p></p>',
+          contentText: contentText,
+          source: opts.source,
+        }],
+      }).then(function () {
+        var pack = body != null ? body : parseArchivePack({ contentText: contentText });
+        rememberPack(slug, pack);
+        return pack;
+      });
+    });
   }
 
   function recKey(rec) {
@@ -3272,28 +3324,34 @@
     if (pack) remoteCache.events = pack;
   }
 
-  var remoteHydrated = false;
   function hydrateRemote(done) {
-    var finish = function (ok) {
-      if (ok) remoteHydrated = true;
-      try {
-        var data = read();
-        if (pruneRemoteCopies(data)) write(data);
-      } catch (e) {}
-      paintDeskBanner();
-      if (done) done();
-    };
-    if (remoteHydrated && remoteCache.guides) { finish(true); return Promise.resolve(); }
-    return Promise.all([
+    if (hydrateRemote._p) {
+      return hydrateRemote._p.then(function () { if (done) done(); });
+    }
+    hydrateRemote._p = Promise.all([
       pullRemotePack(CYCLES_PAGE_SLUG).then(function (p) { if (Array.isArray(p)) absorbCycles(p); }),
       pullRemotePack(AUTHORS_PAGE_SLUG).then(absorbAuthorsPack),
       pullRemotePack(EVENTS_PAGE_SLUG).then(absorbEventsPack),
       pullRemotePack(GUIDES_PAGE_SLUG).then(function (p) { if (p) remoteCache.guides = p; }),
       pullRemotePack(VIDEO_PAGE_SLUG).then(function (p) { if (p) remoteCache.video = p; }),
       pullRemotePack(PHOTO_PAGE_SLUG).then(function (p) { if (p) absorbPhotostock(p); }),
+      pullRemotePack('yak-home-data').then(function (p) { if (p) remoteCache.home = p; }),
+      pullRemotePack('yak-about-data').then(function (p) { if (p) remoteCache.about = p; }),
+      pullRemotePack(CALENDAR_PAGE_SLUG).then(function (p) { if (p) remoteCache.calendar = p; }),
+      pullRemotePack('yak-library-data').then(function (p) { if (p) remoteCache.library = p; }),
     ]).then(function () {
-      finish(true);
-    }).catch(function () { finish(false); });
+      try {
+        var data = read();
+        if (pruneRemoteCopies(data)) write(data);
+      } catch (e) {}
+      paintDeskBanner();
+    }).catch(function () {
+      paintDeskBanner();
+    }).then(function () {
+      hydrateRemote._p = null;
+      if (done) done();
+    });
+    return hydrateRemote._p;
   }
 
   function publishedAuthorsPack() {
@@ -3332,21 +3390,12 @@
     return pullRemotePack(AUTHORS_PAGE_SLUG).then(function (remote) {
       absorbAuthorsPack(remote);
       var list = publishedAuthorsPack();
-      return AdminApi.upsertArchive({
-        articles: [{
-          id: AUTHORS_PAGE_ID,
-          slug: AUTHORS_PAGE_SLUG,
-          title: 'Авторы редакции',
-          date: todayIso(),
-          modified: new Date().toISOString(),
-          author: '',
-          categories: [],
-          categorySlugs: ['day-by-day'],
-          excerpt: '',
-          contentHtml: '<p></p>',
-          contentText: JSON.stringify({ authors: list, hiddenSlugs: read().hiddenSlugs || [] }),
-          source: 'desk-authors',
-        }],
+      return upsertJsonPack({
+        fallbackId: AUTHORS_PAGE_ID,
+        slug: AUTHORS_PAGE_SLUG,
+        title: 'Авторы редакции',
+        source: 'desk-authors',
+        body: { authors: list, hiddenSlugs: read().hiddenSlugs || [] },
       });
     });
   }
@@ -3559,21 +3608,12 @@
         note: t.note || '',
       };
     });
-    return AdminApi.upsertArchive({
-      articles: [{
-        id: TOPICS_PAGE_ID,
-        slug: TOPICS_PAGE_SLUG,
-        title: 'Темы раздела Статьи',
-        date: todayIso(),
-        modified: new Date().toISOString(),
-        author: '',
-        categories: [],
-        categorySlugs: ['day-by-day'],
-        excerpt: '',
-        contentHtml: '<p></p>',
-        contentText: JSON.stringify(list),
-        source: 'desk-topics',
-      }],
+    return upsertJsonPack({
+      fallbackId: TOPICS_PAGE_ID,
+      slug: TOPICS_PAGE_SLUG,
+      title: 'Темы раздела Статьи',
+      source: 'desk-topics',
+      body: list,
     });
   }
 
@@ -3687,21 +3727,12 @@
       var photos = mergeRecordLists(localPhotos, remotePhotos);
       if (remotePh.length > 1 && photographers.length <= 1) photographers = remotePh;
       if (remotePhotos.length > photos.length) photos = mergeRecordLists(localPhotos, remotePhotos);
-      return AdminApi.upsertArchive({
-        articles: [{
-          id: PHOTO_PAGE_ID,
-          slug: PHOTO_PAGE_SLUG,
-          title: 'Фотосток редакции',
-          date: todayIso(),
-          modified: new Date().toISOString(),
-          author: '',
-          categories: [],
-          categorySlugs: ['day-by-day'],
-          excerpt: '',
-          contentHtml: '<p></p>',
-          contentText: JSON.stringify({ photographers: photographers, photos: photos }),
-          source: 'desk-photostock',
-        }],
+      return upsertJsonPack({
+        fallbackId: PHOTO_PAGE_ID,
+        slug: PHOTO_PAGE_SLUG,
+        title: 'Фотосток редакции',
+        source: 'desk-photostock',
+        body: { photographers: photographers, photos: photos },
       });
     });
   }
@@ -3728,21 +3759,12 @@
     }
     return pullRemotePack(CYCLES_PAGE_SLUG).then(function (remote) {
       if (Array.isArray(remote)) absorbCycles(remote);
-      return AdminApi.upsertArchive({
-        articles: [{
-          id: CYCLES_PAGE_ID,
-          slug: CYCLES_PAGE_SLUG,
-          title: 'Циклы редакции',
-          date: todayIso(),
-          modified: new Date().toISOString(),
-          author: '',
-          categories: [],
-          categorySlugs: ['day-by-day'],
-          excerpt: '',
-          contentHtml: '<p></p>',
-          contentText: JSON.stringify(catalogCycles()),
-          source: 'desk-cycles',
-        }],
+      return upsertJsonPack({
+        fallbackId: CYCLES_PAGE_ID,
+        slug: CYCLES_PAGE_SLUG,
+        title: 'Циклы редакции',
+        source: 'desk-cycles',
+        body: catalogCycles(),
       });
     });
   }
@@ -4038,7 +4060,7 @@
     return g;
   }
 
-  function publishedGuidesPack() {
+  function publishedGuidesPack(extra) {
     var by = {};
     function weakImage(u) {
       u = String(u || '').trim();
@@ -4070,32 +4092,23 @@
     var remoteList = !remote ? [] : (Array.isArray(remote) ? remote : (remote.guides || []));
     remoteList.forEach(function (g) { put(g, false); });
     (read().guides || []).forEach(function (g) { put(g, true); });
+    if (extra) put(extra, true);
     return { guides: Object.keys(by).map(function (k) { return by[k]; }) };
   }
 
-  function publishGuides() {
+  function publishGuides(pending) {
     if (!window.AdminApi || !AdminApi.upsertArchive) {
       return Promise.reject(new Error('нет соединения с сервером'));
     }
     return pullRemotePack(GUIDES_PAGE_SLUG).then(function (remote) {
       if (remote) remoteCache.guides = remote;
-      var pack = publishedGuidesPack();
-      remoteCache.guides = pack;
-      return AdminApi.upsertArchive({
-        articles: [{
-          id: GUIDES_PAGE_ID,
-          slug: GUIDES_PAGE_SLUG,
-          title: 'Разделы О Церкви и Духовная жизнь',
-          date: todayIso(),
-          modified: new Date().toISOString(),
-          author: '',
-          categories: [],
-          categorySlugs: ['day-by-day'],
-          excerpt: '',
-          contentHtml: '<p></p>',
-          contentText: JSON.stringify(pack),
-          source: 'desk-guides',
-        }],
+      var pack = publishedGuidesPack(pending);
+      return upsertJsonPack({
+        fallbackId: GUIDES_PAGE_ID,
+        slug: GUIDES_PAGE_SLUG,
+        title: 'Разделы О Церкви и Духовная жизнь',
+        source: 'desk-guides',
+        body: pack,
       });
     });
   }
@@ -4269,11 +4282,15 @@
     write: write,
     upsertGuide: upsertGuide,
     publishGuides: publishGuides,
+    upsertJsonPack: upsertJsonPack,
     remoteGuides: function () {
       var remote = remoteCache.guides;
       if (!remote) return [];
       return Array.isArray(remote) ? remote : (remote.guides || []);
     },
+    remoteHome: function () { return remoteCache.home; },
+    remoteAbout: function () { return remoteCache.about; },
+    remoteLibrary: function () { return remoteCache.library; },
     linkAuthor: linkAuthor,
     exportDesk: exportDesk,
     importDesk: importDesk,

@@ -61,7 +61,8 @@
 
   function current() {
     var base = defaults();
-    var saved = readDesk().about;
+    var remote = window.AdminDesk && AdminDesk.remoteAbout && AdminDesk.remoteAbout();
+    var saved = remote || readDesk().about;
     if (!saved) return base;
     var next = Object.assign({}, base, saved);
     next.principles = (saved.principles && saved.principles.length ? saved.principles : base.principles).slice();
@@ -294,6 +295,15 @@
   }
 
   function publish(data) {
+    if (window.AdminDesk && AdminDesk.upsertJsonPack) {
+      return AdminDesk.upsertJsonPack({
+        fallbackId: PAGE_ID,
+        slug: PAGE_SLUG,
+        title: 'О проекте',
+        source: 'desk-about',
+        body: data,
+      });
+    }
     if (!window.AdminApi || !AdminApi.upsertArchive) {
       return Promise.reject(new Error('нет соединения с сервером'));
     }
@@ -327,6 +337,11 @@
   }
 
   function render(ctx) {
+    if (window.AdminDesk && AdminDesk.hydrateRemote && !render._hydrated) {
+      render._hydrated = true;
+      AdminDesk.hydrateRemote(function () { render(ctx); });
+      return;
+    }
     var d = current();
     var partners = (d.partners || []).slice();
     if (!partners.length) partners = [{ name: '', href: '' }];

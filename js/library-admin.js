@@ -267,6 +267,15 @@
         popes: (L() && L().POPES) || [],
         themes: allThemes(),
       };
+      if (window.AdminDesk && AdminDesk.upsertJsonPack) {
+        return AdminDesk.upsertJsonPack({
+          fallbackId: PAGE_ID,
+          slug: PAGE_SLUG,
+          title: 'Библиотека редакции',
+          source: 'desk-library',
+          body: pack,
+        });
+      }
       return AdminApi.upsertArchive({
         articles: [{
           id: PAGE_ID,

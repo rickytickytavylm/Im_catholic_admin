@@ -551,18 +551,19 @@
       ? (ctx.toast('Сохраняем обложку…'), AdminDesk.uploadDataUrl(image, 'guides').then(function (url) { next.image = url; }))
       : Promise.resolve();
     ready.then(function () {
-      AdminDesk.upsertGuide(next);
       if (status !== 'published') {
-        ctx.toast('Черновик сохранён');
+        AdminDesk.upsertGuide(next);
+        ctx.toast('Черновик сохранён — только в этом браузере');
         return;
       }
       ctx.toast('Публикуем на сайт…');
-      return AdminDesk.publishGuides().then(function () {
+      return AdminDesk.publishGuides(next).then(function () {
+        AdminDesk.upsertGuide(next);
         ctx.toast('На сайте — откроется на всех устройствах');
         ctx.go(section);
       });
     }).catch(function (e) {
-      ctx.toast((e && e.message) || 'Не удалось сохранить', true);
+      ctx.toast((e && e.message) || 'Не ушло на сайт — осталось черновиком здесь', true);
     });
   }
 

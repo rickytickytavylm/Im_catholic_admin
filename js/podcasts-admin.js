@@ -125,6 +125,15 @@
       });
       return copy;
     });
+    if (window.AdminDesk && AdminDesk.upsertJsonPack) {
+      return AdminDesk.upsertJsonPack({
+        fallbackId: PAGE_ID,
+        slug: PAGE_SLUG,
+        title: 'Подкасты редакции',
+        source: 'desk-podcasts',
+        body: { shows: shows },
+      });
+    }
     return AdminApi.upsertArchive({
       articles: [{
         id: PAGE_ID,

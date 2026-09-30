@@ -55,7 +55,8 @@
   }
 
   function currentHome() {
-    var saved = readDesk().home || {};
+    var remote = window.AdminDesk && AdminDesk.remoteHome && AdminDesk.remoteHome();
+    var saved = remote || readDesk().home || {};
     function fill(arr, n) {
       var out = [];
       for (var i = 0; i < n; i++) {
@@ -153,13 +154,22 @@
   }
 
   function publish(home) {
-    if (!window.AdminApi || !AdminApi.upsertArchive) {
-      return Promise.reject(new Error('нет соединения с сервером'));
-    }
     var clean = {
       slides: (home.slides || []).filter(function (x) { return x && x.slug; }),
       side: (home.side || []).filter(function (x) { return x && x.slug; }),
     };
+    if (window.AdminDesk && AdminDesk.upsertJsonPack) {
+      return AdminDesk.upsertJsonPack({
+        fallbackId: PAGE_ID,
+        slug: PAGE_SLUG,
+        title: 'Главное на витрине',
+        source: 'desk-home',
+        body: clean,
+      });
+    }
+    if (!window.AdminApi || !AdminApi.upsertArchive) {
+      return Promise.reject(new Error('нет соединения с сервером'));
+    }
     return AdminApi.upsertArchive({
       articles: [{
         id: PAGE_ID,
@@ -189,6 +199,11 @@
   }
 
   function render(ctx) {
+    if (window.AdminDesk && AdminDesk.hydrateRemote && !render._hydrated) {
+      render._hydrated = true;
+      AdminDesk.hydrateRemote(function () { render(ctx); });
+      return;
+    }
     var home = currentHome();
     if (!home.slides[0].slug) {
       home.slides = [
