@@ -907,9 +907,19 @@
     return /<[a-z][\s\S]*>/i.test(String(s || ''));
   }
 
+  function stripOfficeJunk(s) {
+    return String(s == null ? '' : s)
+      .replace(/<!--\[if[\s\S]*?<!\[endif\]-->/gi, '')
+      .replace(/<!-+\s*StartFragment\s*-*>/gi, '')
+      .replace(/<!-+\s*EndFragment\s*-*>/gi, '')
+      .replace(/&lt;!-+\s*StartFragment\s*-*&gt;/gi, '')
+      .replace(/&lt;!-+\s*EndFragment\s*-*&gt;/gi, '')
+      .replace(/\uFEFF/g, '');
+  }
+
   function sanitizeLead(html) {
     var box = document.createElement('div');
-    box.innerHTML = html || '';
+    box.innerHTML = stripOfficeJunk(html || '');
     box.querySelectorAll('script,style,iframe,object,img,video,figure,svg').forEach(function (n) { n.remove(); });
     var allow = { a: 1, em: 1, i: 1, strong: 1, b: 1, u: 1, br: 1, p: 1, span: 1 };
     [].slice.call(box.querySelectorAll('*')).forEach(function (n) {
@@ -947,10 +957,10 @@
   }
 
   function excerptToEditorHtml(item) {
-    var html = item.excerptHtml || '';
-    if (!html && hasMarkup(item.excerpt)) html = item.excerpt;
-    if (html) return sanitizeLead(html);
-    return item.excerpt ? esc(item.excerpt) : '';
+    var html = item.excerptHtml || item.excerpt || '';
+    if (!html) return '';
+    if (hasMarkup(html) || /<!-/.test(html)) return sanitizeLead(html);
+    return esc(stripOfficeJunk(html));
   }
 
   function leadHtml() {
