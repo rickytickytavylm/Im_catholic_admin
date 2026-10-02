@@ -179,7 +179,7 @@
     };
   }
 
-  function bindPhoto(btnId, fileId, hiddenId, frameId, folder, toast) {
+  function bindPhoto(btnId, fileId, hiddenId, frameId, folder, toast, after) {
     var btn = document.getElementById(btnId);
     var file = document.getElementById(fileId);
     if (!btn || !file) return;
@@ -196,6 +196,7 @@
           frame.classList.remove('is-empty');
           frame.innerHTML = '<img src="' + esc(url) + '" alt="" />';
         }
+        if (after) after(url);
         toast('Фото в бакете');
       }).catch(function (err) { toast(err.message || 'Не удалось загрузить', true); });
     };
@@ -326,15 +327,36 @@
     });
   }
 
-  function photoCell(id, url, label, btn, file) {
+  function onPortal(url) {
+    url = String(url || '');
+    return url && !/^(https?:|data:|blob:)/i.test(url) ? PORTAL + url.replace(/^\.?\//, '') : url;
+  }
+
+  function photoCell(id, url, label, btn, file, empty, clearBtn) {
     return (
       '<div class="field"><label>' + esc(label) + '</label>' +
       '<div class="cover-frame' + (url ? '' : ' is-empty') + '" id="' + id + '-frame">' +
-      (url ? '<img src="' + esc(url) + '" alt="" />' : '<span>Нет фото</span>') + '</div>' +
+      (url ? '<img src="' + esc(onPortal(url)) + '" alt="" />' : '<span>' + esc(empty || 'Нет фото') + '</span>') + '</div>' +
       '<input type="hidden" id="' + id + '" value="' + esc(url || '') + '" />' +
       '<button type="button" class="btn btn-ghost" id="' + btn + '">Загрузить</button>' +
+      (clearBtn ? ' <button type="button" class="btn btn-ghost" id="' + clearBtn + '">Убрать</button>' : '') +
       '<input type="file" id="' + file + '" accept="image/*" hidden /></div>'
     );
+  }
+
+  /* Встроенный кадр сайта (assets/…) при своей обложке редакции на сайте не показывается — и здесь не держим. */
+  function phoneCover(d) {
+    var m = String(d.coverMobile || '');
+    return /^assets\//.test(m) && d.cover && !/^assets\//.test(d.cover) ? '' : m;
+  }
+
+  function setPhoto(hiddenId, url, empty) {
+    var hidden = document.getElementById(hiddenId);
+    var frame = document.getElementById(hiddenId + '-frame');
+    if (hidden) hidden.value = url || '';
+    if (!frame) return;
+    frame.classList.toggle('is-empty', !url);
+    frame.innerHTML = url ? '<img src="' + esc(onPortal(url)) + '" alt="" />' : '<span>' + esc(empty || 'Нет фото') + '</span>';
   }
 
   function render(ctx) {
@@ -375,8 +397,8 @@
       '<label class="field">Заголовок (можно с &lt;br&gt; и &lt;em&gt;)<textarea class="textarea" id="ab-title" rows="3">' + esc(d.titleHtml || '') + '</textarea></label>' +
       '</div>' +
       photoCell('ab-cover', d.cover, 'Обложка — десктоп', 'ab-cover-up', 'ab-cover-file') +
-      photoCell('ab-cover-m', d.coverMobile, 'Обложка — телефон, кадр 4:5', 'ab-cover-m-up', 'ab-cover-m-file') +
-      '<p class="hint-note">На телефоне берётся отдельный кадр. Если пусто — сайт подставит вертикальный WebP.</p>' +
+      photoCell('ab-cover-m', phoneCover(d), 'Обложка — телефон, кадр 4:5', 'ab-cover-m-up', 'ab-cover-m-file', 'Как на десктопе', 'ab-cover-m-clear') +
+      '<p class="hint-note">Отдельный вертикальный кадр для телефона — по желанию. Если пусто, на телефоне будет обложка для десктопа.</p>' +
       '<div class="field"><label>Описание</label>' + rteBar('ab-desc', true) + '</div></div>' +
 
       '<div class="panel" style="margin-bottom:12px"><div class="panel-head"><h2>Наша команда</h2>' +
@@ -451,8 +473,13 @@
         mountRTE('ab-c-html-' + i, ctx.toast);
       }
     });
-    bindPhoto('ab-cover-up', 'ab-cover-file', 'ab-cover', 'ab-cover-frame', 'about', ctx.toast);
+    bindPhoto('ab-cover-up', 'ab-cover-file', 'ab-cover', 'ab-cover-frame', 'about', ctx.toast, function () {
+      var phone = document.getElementById('ab-cover-m');
+      if (phone && /^assets\//.test(phone.value)) setPhoto('ab-cover-m', '', 'Как на десктопе');
+    });
     bindPhoto('ab-cover-m-up', 'ab-cover-m-file', 'ab-cover-m', 'ab-cover-m-frame', 'about', ctx.toast);
+    var phoneClear = document.getElementById('ab-cover-m-clear');
+    if (phoneClear) phoneClear.onclick = function () { setPhoto('ab-cover-m', '', 'Как на десктопе'); };
     bindPhoto('ab-app-up', 'ab-app-file', 'ab-app-photo', 'ab-app-photo-frame', 'about', ctx.toast);
     bindPhoto('ab-qr-up-0', 'ab-qr-file-0', 'ab-qr-0', 'ab-qr-0-frame', 'about', ctx.toast);
     bindPhoto('ab-qr-up-1', 'ab-qr-file-1', 'ab-qr-1', 'ab-qr-1-frame', 'about', ctx.toast);

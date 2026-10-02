@@ -1534,6 +1534,47 @@
     if (data.articles.length !== before) write(data);
   }
 
+  /* Прежняя версия админки после удачной публикации ещё раз сохраняла статью в браузер — копия
+     оказывалась на секунды новее сайта и светилась «Не отправлено». Такие копии сверяем с сервером
+     и убираем, только если на сайте то же самое (или версия новее); настоящие неотправленные правки остаются. */
+  function samePublished(copy, srv) {
+    function text(html) { return htmlToText(stripOfficeJunk(html)); }
+    function pic(u) { return String(u || '').split('?')[0].replace(/^.*\//, ''); }
+    return String(copy.title || '').trim() === String(srv.title || '').trim() &&
+      text(copy.contentHtml) === text(srv.contentHtml || srv.content || '') &&
+      pic(httpCover(copy)) === pic(srv.image || srv.cover || '');
+  }
+
+  var healed = false;
+  function healPublishedCopies(force) {
+    if ((healed && !force) || !window.AdminApi || !AdminApi.getArticle) return Promise.resolve(0);
+    healed = true;
+    var suspects = (read().articles || []).filter(function (a) {
+      return a && a.status === 'published' && a._serverModified === undefined && a.slug;
+    });
+    var drop = {};
+    return suspects.reduce(function (chain, a) {
+      return chain.then(function () {
+        return AdminApi.getArticle(a.slug).then(function (srv) {
+          if (!srv || srv.slug !== a.slug) return;
+          var lag = Date.parse(a.updatedAt || '') - Date.parse(srv.modified || '');
+          if (isNaN(lag)) return;
+          if (lag <= 0 || (lag <= 120000 && samePublished(a, srv))) drop[String(a.id)] = String(a.updatedAt || '');
+        }, function () {});
+      });
+    }, Promise.resolve()).then(function () {
+      var ids = Object.keys(drop);
+      if (!ids.length) return 0;
+      var data = read();
+      data.articles = (data.articles || []).filter(function (a) {
+        return !(a && drop[String(a.id)] === String(a.updatedAt || ''));
+      });
+      write(data);
+      if (/^#?(dashboard|news|articles)?$/.test(location.hash) && typeof HashChangeEvent === 'function') window.dispatchEvent(new HashChangeEvent('hashchange'));
+      return ids.length;
+    });
+  }
+
   function catalogTags() {
     if (window.AdminStore && AdminStore.listTags) {
       return (AdminStore.listTags() || []).filter(function (t) { return t && (t.slug || t.id) && t.name; });
@@ -4854,6 +4895,7 @@
     exportDesk: exportDesk,
     importDesk: importDesk,
     hydrateRemote: hydrateRemote,
+    healPublishedCopies: healPublishedCopies,
   };
 
   try {
@@ -4868,5 +4910,6 @@
     loadArchive('news', function () {});
     loadArchive('article', function () {});
     hydrateRemote();
+    setTimeout(function () { healPublishedCopies().catch(function () {}); }, 2500);
   } catch (e) {}
 })(window);

@@ -897,3 +897,13 @@ table.data .title-link:hover { color: var(--accent); }
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+
+/* Главная: слот с превью обложки, которая уйдёт на сайт */
+.home-slot-row { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 12px; align-items: start; }
+.home-slot-pic {
+  display: block; width: 104px; aspect-ratio: 4 / 3; border-radius: 10px;
+  background: var(--surface-2) center / cover no-repeat; border: 1px solid var(--line);
+}
+.home-slot-pic.is-empty { background-image: none; }
+.home-slot-inputs { display: grid; gap: 6px; min-width: 0; }
+.home-slot-note { color: var(--stone-500); font-size: 12px; line-height: 1.35; }

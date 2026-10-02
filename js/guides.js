@@ -343,6 +343,14 @@
     whenRemote(function () { drawEditor(ctx, section, id); });
   }
 
+  function parentNode(section, id) {
+    var nodes = (((window.YakGuides || {})[section]) || {}).nodes || {};
+    for (var k in nodes) {
+      if (nodes[k] && (nodes[k].cards || []).some(function (c) { return c && c.id === id; })) return nodes[k];
+    }
+    return null;
+  }
+
   function drawEditor(ctx, section, id) {
     id = resolveId(section, id);
     var item = getItem(section, id);
@@ -350,6 +358,10 @@
       renderList(ctx, section);
       return;
     }
+    var parent = parentNode(section, item.id);
+    var coverNote = parent && parent.numbered
+      ? '<p class="hint-note">В «' + esc(parent.title || 'разделе') + '» подразделы идут нумерованным списком, без картинок. Обложка видна на главной, если поставить эту страницу в слайдер.</p>'
+      : '';
     var portal = fileFor(section) + (item.kind === 'hub' ? '' : '?path=' + encodeURIComponent(item.id));
     var isPage = item.kind === 'page' || item.kind === 'category';
     var isPrayers = item.kind === 'prayers';
@@ -377,6 +389,7 @@
         (item.image ? '<img src="' + mediaSrc(item.image) + '" alt="" />' : '<span>Картинка карточки</span>') +
         '</div>' +
         '<input type="hidden" id="g-image" value="' + esc(item.image || '') + '" />' +
+        coverNote +
         '<div class="post-side-actions" style="margin-top:8px">' +
         '<button type="button" class="btn btn-ghost" id="g-img-up">С устройства</button>' +
         '</div>' +
@@ -582,6 +595,13 @@
       ctx.toast('Публикуем на сайт…');
       return AdminDesk.publishGuides().then(function () {
         ctx.toast('На сайте — откроется на всех устройствах');
+        if (window.AdminHome && AdminHome.syncGuides) {
+          AdminHome.syncGuides().then(function (changed) {
+            if (changed) ctx.toast('Главная тоже обновлена: там стоит этот раздел');
+          }, function () {
+            ctx.toast('Раздел на сайте, а главная не обновилась — откройте «Главная» и нажмите «Опубликовать»', true);
+          });
+        }
         ctx.go(section);
       });
     }).catch(function (e) {

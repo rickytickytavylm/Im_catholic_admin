@@ -31,41 +31,95 @@
     localStorage.setItem('yak_desk', JSON.stringify(raw));
   }
 
+  /* Запасные значения на случай, если раздел ещё ни разу не публиковали; node — запись в редакторе разделов. */
   var STATIC_PAGES = [
-    { slug: 'guide:navigator', title: 'Навигатор по католической жизни', href: 'church.html?path=navigator', image: 'assets/cards/church-navigator.webp', kind: 'page', kicker: 'Страница · О Церкви' },
-    { slug: 'guide:structure', title: 'Как устроена Католическая Церковь', href: 'church.html?path=structure', image: 'assets/cards/church-become-parish.webp', kind: 'page', kicker: 'Страница · О Церкви' },
-    { slug: 'guide:spirit', title: 'Духовная жизнь', href: 'spiritual-life.html', image: 'assets/cards/spirit-prayer.webp', kind: 'page', kicker: 'Страница · Духовный путь' },
-    { slug: 'guide:mass', title: 'Путеводитель по Мессе', href: 'spiritual-life.html?path=mass-guide', image: 'assets/cards/liturgy-mass-guide.webp', kind: 'page', kicker: 'Страница · Духовный путь' },
-    { slug: 'guide:prayer', title: 'Молитва', href: 'spiritual-life.html?path=prayer', image: 'assets/cards/spirit-prayer.webp', kind: 'page', kicker: 'Страница · Духовный путь' },
-    { slug: 'guide:church', title: 'О Церкви', href: 'church.html', image: 'assets/cards/church-first-time.webp', kind: 'page', kicker: 'Страница · О Церкви' },
+    { slug: 'guide:navigator', node: 'church:navigator', title: 'Навигатор по католической жизни', href: 'church.html?path=navigator', image: 'assets/cards/church-navigator.webp', kind: 'page', kicker: 'Страница · О Церкви' },
+    { slug: 'guide:structure', node: 'church:structure', title: 'Как устроена Католическая Церковь', href: 'church.html?path=structure', image: 'assets/cards/church-become-parish.webp', kind: 'page', kicker: 'Страница · О Церкви' },
+    { slug: 'guide:spirit', node: 'spirit:hub', title: 'Духовная жизнь', href: 'spiritual-life.html', image: 'assets/cards/spirit-prayer.webp', kind: 'page', kicker: 'Страница · Духовный путь' },
+    { slug: 'guide:mass', node: 'spirit:mass-guide', title: 'Путеводитель по Мессе', href: 'spiritual-life.html?path=mass-guide', image: 'assets/cards/liturgy-mass-guide.webp', kind: 'page', kicker: 'Страница · Духовный путь' },
+    { slug: 'guide:prayer', node: 'spirit:prayer', title: 'Молитва', href: 'spiritual-life.html?path=prayer', image: 'assets/cards/spirit-prayer.webp', kind: 'page', kicker: 'Страница · Духовный путь' },
+    { slug: 'guide:church', node: 'church:hub', title: 'О Церкви', href: 'church.html', image: 'assets/cards/church-first-time.webp', kind: 'page', kicker: 'Страница · О Церкви' },
   ];
+  var SECTIONS = [['church', 'church.html', 'О Церкви'], ['spirit', 'spiritual-life.html', 'Духовный путь']];
 
-  /* Все разделы «О Церкви» и «Духовная жизнь» как guide:id — со ссылкой и обложкой, иначе сайт не поймёт слот. */
+  /* Разделы в том виде, в каком они сейчас на сайте (опубликованы из редактора «О Церкви» / «Духовная жизнь»). */
+  function publishedGuides() {
+    var map = {};
+    var list = (window.AdminDesk && AdminDesk.remoteGuides && AdminDesk.remoteGuides()) || [];
+    list.forEach(function (g) {
+      if (!g) return;
+      var parts = String(g.id || '').split(':');
+      var section = g.section || (parts.length > 1 ? parts[0] : '');
+      var node = g.nodeId || parts[parts.length - 1];
+      if (section && node) map[section + ':' + node] = g;
+    });
+    return map;
+  }
+
+  function withLive(page, live) {
+    var g = page.node && live[page.node];
+    if (!g || g.status === 'hidden') return page;
+    return Object.assign({}, page, { title: g.title || page.title, image: g.image || page.image });
+  }
+
+  /* Все разделы «О Церкви» и «Духовная жизнь» как guide:id — с обложкой и названием из редактора разделов. */
   function guidePages() {
-    var G = window.YakGuides;
-    if (!G) return [];
+    var G = window.YakGuides || {};
+    var live = publishedGuides();
     var out = [];
-    [['church.html', G.church, 'О Церкви'], ['spiritual-life.html', G.spirit, 'Духовный путь']].forEach(function (t) {
-      var tree = t[1];
-      if (!tree || !tree.nodes) return;
+    SECTIONS.forEach(function (t) {
+      var section = t[0];
+      var tree = G[section] || {};
+      var nodes = tree.nodes || {};
       var images = {};
       var cards = (tree.cards || []).slice();
-      Object.keys(tree.nodes).forEach(function (k) { cards = cards.concat((tree.nodes[k] && tree.nodes[k].cards) || []); });
+      Object.keys(nodes).forEach(function (k) { cards = cards.concat((nodes[k] && nodes[k].cards) || []); });
       cards.forEach(function (c) { if (c && c.id && c.image && !images[c.id]) images[c.id] = c.image; });
-      Object.keys(tree.nodes).forEach(function (id) {
-        var n = tree.nodes[id];
-        if (!n || !n.title || n.type === 'external') return;
+      var ids = Object.keys(nodes);
+      Object.keys(live).forEach(function (key) {
+        var id = key.slice(section.length + 1);
+        if (key.indexOf(section + ':') === 0 && id !== 'hub' && ids.indexOf(id) === -1) ids.push(id);
+      });
+      ids.forEach(function (id) {
+        var n = nodes[id] || {};
+        var g = live[section + ':' + id];
+        if (n.type === 'external' || (g && g.status === 'hidden')) return;
+        var title = (g && g.title) || n.title;
+        if (!title) return;
         out.push({
           slug: 'guide:' + id,
-          title: n.title,
-          href: t[0] + '?path=' + encodeURIComponent(id),
-          image: images[id] || '',
+          title: title,
+          href: t[1] + '?path=' + encodeURIComponent(id),
+          image: (g && g.image) || images[id] || n.image || '',
           kind: 'page',
           kicker: 'Страница · ' + t[2],
+          alias: STATIC_PAGES.some(function (p) { return p.node === section + ':' + id && p.slug !== 'guide:' + id; }),
         });
       });
     });
     return out;
+  }
+
+  /* Название слота, подставленное из каталога (а не вписанное редакцией), обновляется вместе с разделом. */
+  function defaultTitles(slug) {
+    var out = [];
+    STATIC_PAGES.forEach(function (p) { if (p.slug === slug) out.push(p.title); });
+    var m = /^guide:(.+)$/.exec(String(slug || ''));
+    var G = window.YakGuides || {};
+    if (m) {
+      SECTIONS.forEach(function (t) {
+        var n = G[t[0]] && G[t[0]].nodes && G[t[0]].nodes[m[1]];
+        if (n && n.title) out.push(n.title);
+      });
+    }
+    return out;
+  }
+
+  function ownTitle(slot, hit) {
+    if (!slot || !slot.title) return false;
+    if (slot.ownTitle != null) return !!slot.ownTitle;
+    if (hit && slot.title === hit.title) return false;
+    return defaultTitles(slot.slug).indexOf(slot.title) === -1;
   }
 
   function emptySlot() {
@@ -101,13 +155,15 @@
       var out = [];
       for (var i = 0; i < n; i++) {
         var x = arr[i];
-        out.push(x ? {
+        var slot = x ? {
           slug: x.slug || '',
           title: x.title || '',
           href: x.href || '',
           image: x.image || '',
           kind: x.kind || '',
-        } : emptySlot());
+        } : emptySlot();
+        if (x && x.ownTitle) slot.ownTitle = true;
+        out.push(slot);
       }
       return out;
     }
@@ -139,9 +195,11 @@
         image: it.image || it.cover || '',
         kind: it.kind || 'article',
         kicker: it.kicker || '',
+        alias: !!it.alias,
       });
     }
-    STATIC_PAGES.forEach(add);
+    var live = publishedGuides();
+    STATIC_PAGES.forEach(function (p) { add(withLive(p, live)); });
     guidePages().forEach(add);
     (extraPages || []).forEach(add);
     if (window.AdminStore && AdminStore.listPages) {
@@ -172,18 +230,79 @@
     });
   }
 
+  function catalogHit(slug) {
+    return catalogCache.filter(function (p) { return p.slug === slug; })[0] || null;
+  }
+
   function slotFromInput(slugId, titleId) {
-    var slug = (document.getElementById(slugId) || {}).value || '';
-    var title = (document.getElementById(titleId) || {}).value || '';
-    var hit = catalogCache.filter(function (p) { return p.slug === slug; })[0];
+    var titleEl = document.getElementById(titleId) || {};
+    var slug = String((document.getElementById(slugId) || {}).value || '').trim();
+    var title = String(titleEl.value || '').trim();
+    var hit = catalogHit(slug);
     var was = slotOnOpen[slugId] && slotOnOpen[slugId].slug === slug ? slotOnOpen[slugId] : null;
-    return {
+    var page = hit && hit.kind === 'page';
+    var auto = titleEl.dataset && titleEl.dataset.auto === '1';
+    var own = page && !!title && !auto && title !== hit.title && defaultTitles(slug).indexOf(title) === -1;
+    /* Разделы не загрузились — у слотов разделов оставляем то, что уже на сайте, а не запасные картинки. */
+    var trust = guidesLive || !/^guide:/.test(slug) || !was;
+    var slot = {
       slug: slug,
-      title: title || (hit && hit.title) || '',
+      title: page && !own && trust ? hit.title : (title || (hit && hit.title) || ''),
       href: (hit && hit.href) || (was && was.href) || '',
-      image: (hit && hit.image) || (was && was.image) || '',
+      image: (trust && hit && hit.image) || (was && was.image) || (hit && hit.image) || '',
       kind: (hit && hit.kind) || (was && was.kind) || '',
     };
+    if (own) slot.ownTitle = true;
+    return slot;
+  }
+
+  /* После публикации раздела слоты главной с ним получают его обложку и название — без ручной перепубликации главной. */
+  function syncGuideSlots() {
+    var D = window.AdminDesk;
+    if (!D || !D.readPackStrict || !D.publishPackSafe) return Promise.resolve(false);
+    if (!D.remoteGuides || !D.remoteGuides().length) return Promise.resolve(false);
+    function fixed(pack) {
+      catalogPosts();
+      var changed = false;
+      function fix(s) {
+        if (!s || !/^guide:/.test(String(s.slug || ''))) return s;
+        var hit = catalogHit(s.slug);
+        if (!hit) return s;
+        var next = Object.assign({}, s, {
+          title: ownTitle(s, hit) ? s.title : hit.title,
+          href: hit.href || s.href || '',
+          image: hit.image || s.image || '',
+          kind: 'page',
+        });
+        ['title', 'href', 'image', 'kind'].forEach(function (k) {
+          if (String(next[k] || '') !== String(s[k] || '')) changed = true;
+        });
+        return next;
+      }
+      var body = {
+        slides: ((pack && pack.slides) || []).map(fix),
+        side: ((pack && pack.side) || []).map(fix),
+      };
+      return changed ? body : null;
+    }
+    return D.readPackStrict(PAGE_SLUG).then(function (cur) {
+      if (!cur || !cur.pack || !fixed(cur.pack)) return false;
+      return D.publishPackSafe({
+        slug: PAGE_SLUG,
+        fallbackId: PAGE_ID,
+        title: 'Главное на витрине',
+        source: 'desk-home',
+        shrinkGuard: false,
+        build: function (remote) { return fixed(remote) || remote; },
+      }).then(function () { return true; });
+    });
+  }
+
+  function portalImage(url) {
+    url = String(url || '');
+    if (!url || /^(https?:|data:|blob:)/i.test(url)) return url;
+    var base = (window.AdminConfig && AdminConfig.PORTAL_URL) || '../Ave_Maria/';
+    return base.replace(/\/?$/, '/') + url.replace(/^\.?\//, '');
   }
 
   function collect() {
@@ -221,21 +340,42 @@
 
   function slotHtml(id, titleId, item, label, listId) {
     return (
-      '<div class="field">' +
-      '<label>' + esc(label) + '</label>' +
+      '<div class="field home-slot">' +
+      '<label for="' + id + '">' + esc(label) + '</label>' +
+      '<div class="home-slot-row">' +
+      '<span class="home-slot-pic" id="' + id + '-pic" aria-hidden="true"></span>' +
+      '<div class="home-slot-inputs">' +
       '<input class="input" id="' + id + '" list="' + listId + '" value="' + esc(item.slug) + '" placeholder="статья или страница, например guide:navigator" />' +
       '<input class="input" id="' + titleId + '" value="' + esc(item.title) + '" placeholder="Название — подсказка для редакции" />' +
-      '</div>'
+      '<small class="home-slot-note" id="' + id + '-note"></small>' +
+      '</div></div></div>'
     );
+  }
+
+  /* Обложки разделов берутся из опубликованных разделов: без них форма не открывается, иначе уйдут запасные картинки. */
+  var guidesLive = false;
+  function loadGuides(D) {
+    if (D.remoteGuides && D.remoteGuides().length) { guidesLive = true; return Promise.resolve(); }
+    return D.readPackStrict('yak-guides-data').then(function () {
+      guidesLive = !!(D.remoteGuides && D.remoteGuides().length);
+    }, function () { guidesLive = false; });
   }
 
   function render(ctx) {
     var D = window.AdminDesk;
     if (!D || !D.readPackStrict) { draw(ctx); return; }
     ctx.viewEl.innerHTML = '<div class="yak-loading yak-loading--page" role="status"><span class="yak-spin" aria-hidden="true"></span><span>Открываю главную…</span></div>';
-    D.readPackStrict(PAGE_SLUG).then(function () { draw(ctx); }, function () {
-      draw(ctx);
-      ctx.toast('Сайт не ответил — показана последняя известная версия', true);
+    var guides = loadGuides(D);
+    D.readPackStrict(PAGE_SLUG).then(function () {
+      return guides.then(function () {
+        draw(ctx);
+        if (!guidesLive) ctx.toast('Разделы сайта не загрузились — у слотов разделов останутся обложки, что уже на сайте', true);
+      });
+    }, function () {
+      return guides.then(function () {
+        draw(ctx);
+        ctx.toast('Сайт не ответил — показана последняя известная версия', true);
+      });
     });
   }
 
@@ -250,12 +390,20 @@
         Object.assign({}, STATIC_PAGES[3]),
       ];
     }
-    slotOnOpen = {};
-    home.slides.forEach(function (s, i) { slotOnOpen['home-s-' + i] = s; });
-    home.side.forEach(function (s, i) { slotOnOpen['home-c-' + i] = s; });
     var posts = catalogPosts();
+    slotOnOpen = {};
+    function open(list, prefix) {
+      list.forEach(function (s, i) {
+        slotOnOpen[prefix + i] = Object.assign({}, s);
+        var hit = s.slug && catalogHit(s.slug);
+        if (hit && hit.kind === 'page' && guidesLive && !ownTitle(s, hit)) s.title = hit.title;
+      });
+    }
+    open(home.slides, 'home-s-');
+    open(home.side, 'home-c-');
     var listId = 'home-post-list';
     function optionHtml(p) {
+      if (p.alias) return '';
       var mark = p.kind === 'page' ? 'страница · ' : '';
       return '<option value="' + esc(p.slug) + '">' + esc(mark + p.title) + (p.date ? ' · ' + esc(p.date) : '') + '</option>';
     }
@@ -284,17 +432,44 @@
       slotHtml('home-c-3', 'home-ct-3', home.side[3], 'Карточка 4', listId) +
       '</div></div>';
 
-    function syncTitle(slugId, titleId) {
+    function bindSlot(slugId, titleId) {
       var slugEl = document.getElementById(slugId);
       var titleEl = document.getElementById(titleId);
+      var pic = document.getElementById(slugId + '-pic');
+      var note = document.getElementById(slugId + '-note');
       if (!slugEl || !titleEl) return;
-      slugEl.addEventListener('change', function () {
-        var hit = posts.filter(function (p) { return p.slug === slugEl.value; })[0];
-        if (hit && !titleEl.value) titleEl.value = hit.title;
+      var was = slotOnOpen[slugId] || {};
+      titleEl.dataset.auto = !titleEl.value || !ownTitle(was, catalogHit(was.slug)) ? '1' : '0';
+      function paint() {
+        var slot = slotFromInput(slugId, titleId);
+        var hit = catalogHit(slot.slug);
+        var url = portalImage(slot.image);
+        if (pic) {
+          pic.style.backgroundImage = url ? "url('" + url.replace(/'/g, '%27') + "')" : '';
+          pic.classList.toggle('is-empty', !url);
+        }
+        if (!note) return;
+        var text;
+        if (!slot.slug) text = 'Пусто — на сайте встанет свежая публикация';
+        else if (!hit && !slot.href) text = 'Нет в каталоге — проверьте адрес';
+        else if (/^guide:/.test(slot.slug)) text = 'Обложка и название — из раздела «' + (/^spiritual/.test(slot.href) ? 'Духовная жизнь' : 'О Церкви') + '»';
+        else if (slot.kind === 'page') text = 'Страница сайта';
+        else text = 'Обложка и название — из материала';
+        if (was.slug === slot.slug && slot.image && was.image !== slot.image) text += ' · на сайте сейчас другая обложка — нажмите «Опубликовать»';
+        note.textContent = text;
+      }
+      slugEl.addEventListener('input', function () {
+        var hit = catalogHit(String(slugEl.value || '').trim());
+        if (hit && titleEl.dataset.auto === '1') titleEl.value = hit.title;
+        paint();
       });
+      titleEl.addEventListener('input', function () {
+        titleEl.dataset.auto = titleEl.value ? '0' : '1';
+      });
+      paint();
     }
-    [0, 1, 2].forEach(function (i) { syncTitle('home-s-' + i, 'home-st-' + i); });
-    [0, 1, 2, 3].forEach(function (i) { syncTitle('home-c-' + i, 'home-ct-' + i); });
+    [0, 1, 2].forEach(function (i) { bindSlot('home-s-' + i, 'home-st-' + i); });
+    [0, 1, 2, 3].forEach(function (i) { bindSlot('home-c-' + i, 'home-ct-' + i); });
 
     document.getElementById('home-pub').onclick = function () {
       var next = collect();
@@ -336,5 +511,5 @@
     }
   }
 
-  global.AdminHome = { render: render, publish: publish };
+  global.AdminHome = { render: render, publish: publish, syncGuides: syncGuideSlots };
 })(window);

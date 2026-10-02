@@ -361,7 +361,7 @@
         var n = (s.episodes || []).filter(function (e) { return e.status !== 'hidden'; }).length;
         return (
           '<a class="god-card" href="#podcasts/' + encodeURIComponent(s.id) + '">' +
-          '<span class="god-thumb" style="background-image:url(\'' + esc(s.cover || '') + '\')"></span>' +
+          '<span class="god-thumb" style="background-image:url(\'' + esc((window.AdminDesk && AdminDesk.mediaSrc ? AdminDesk.mediaSrc(s.cover || '') : s.cover) || '') + '\')"></span>' +
           '<span class="god-copy"><strong>' + esc(s.title) + '</strong>' +
           '<small>' + esc(s.host || '') + ' · ' + n + ' вып.</small>' + syncChip(s._sync) + '</span></a>'
         );
