@@ -134,28 +134,46 @@
     });
   }
 
+  /* Зависший запрос не должен навсегда занять очередь публикации. */
+  function timed(url, init, ms) {
+    var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, ms) : null;
+    if (ctrl) init.signal = ctrl.signal;
+    return fetch(url, init).then(function (res) {
+      clearTimeout(timer);
+      return parse(res);
+    }, function (err) {
+      clearTimeout(timer);
+      var e = new Error(err && err.name === 'AbortError' ? 'сервер не ответил вовремя' : 'нет связи с сервером');
+      e.status = 0;
+      e.cause = err;
+      throw e;
+    });
+  }
+
   function get(path, opts) {
     opts = opts || {};
     return ready().then(function () {
-      return fetch(base() + path, {
+      return timed(base() + path, {
         method: 'GET',
         headers: headers(opts.headers, false),
         mode: 'cors',
         credentials: 'omit',
-      }).then(parse);
+        cache: 'no-store',
+      }, opts.timeout || 25000);
     });
   }
 
   function send(method, path, body, opts) {
     opts = opts || {};
     return ready().then(function () {
-      return fetch(base() + path, {
+      return timed(base() + path, {
         method: method,
         headers: headers(opts.headers, true),
         mode: 'cors',
         credentials: 'omit',
         body: body == null ? undefined : JSON.stringify(body),
-      }).then(parse);
+      }, opts.timeout || 120000);
     });
   }
 

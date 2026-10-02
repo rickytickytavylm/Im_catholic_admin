@@ -117,10 +117,47 @@
     return Object.keys(by).map(function (k) { return by[k]; });
   }
 
+  /* Последний свежий пакет с сервера и время его записи. */
+  var remotePack = null;
+  var remoteStamp = '';
+
+  function remoteList(key) {
+    return remotePack && Array.isArray(remotePack[key]) ? remotePack[key] : [];
+  }
+
+  function rubricKey(r) { return String((r && r.section) || '') + ':' + String((r && r.id) || ''); }
+  function themeKey(t) { return String((t && t.id) || ''); }
+  function itemKey(it) { return String((it && it.id) || ''); }
+
+  function remoteTimeOf(key, keyFn, rec) {
+    var k = keyFn(rec);
+    var hit = remoteList(key).filter(function (r) { return r && keyFn(r) === k; })[0];
+    if (!hit) return '';
+    return String(hit.updatedAt || remoteStamp || '');
+  }
+
+  /* Местная запись видна поверх серверной, только если она новее. */
+  function newerHere(key, keyFn, rec) {
+    var rt = remoteTimeOf(key, keyFn, rec);
+    return !rt || String((rec && rec.updatedAt) || '') > rt;
+  }
+
+  function freshTime(key, keyFn, rec) {
+    var now = new Date().toISOString();
+    var rt = remoteTimeOf(key, keyFn, rec);
+    if (rt && rt >= now) {
+      var t = Date.parse(rt);
+      if (!isNaN(t)) now = new Date(t + 1).toISOString();
+    }
+    return now;
+  }
+
   function allThemes() {
     var by = {};
     ((L() && L().THEMES) || []).forEach(function (t) { if (t && t.id) by[t.id] = t; });
-    (readAll().libraryThemes || []).forEach(function (t) { if (t && t.id) by[t.id] = t; });
+    (readAll().libraryThemes || []).forEach(function (t) {
+      if (t && t.id && newerHere('themes', themeKey, t)) by[t.id] = t;
+    });
     return Object.keys(by).map(function (k) { return by[k]; });
   }
 
@@ -132,9 +169,9 @@
 
   function allRubrics() {
     var by = {};
-    seedRubrics().forEach(function (r) { by[r.section + ':' + r.id] = r; });
+    seedRubrics().forEach(function (r) { by[rubricKey(r)] = r; });
     (readAll().libraryRubrics || []).forEach(function (r) {
-      if (r && r.id) by[(r.section || '') + ':' + r.id] = r;
+      if (r && r.id && newerHere('rubrics', rubricKey, r)) by[rubricKey(r)] = r;
     });
     return Object.keys(by).map(function (k) { return by[k]; });
   }
@@ -153,7 +190,9 @@
       if (it && it.id) by[it.id] = Object.assign({ status: 'published' }, it);
     });
     (readAll().libraryItems || []).forEach(function (it) {
-      if (it && it.id) by[it.id] = Object.assign({}, by[it.id] || {}, it);
+      if (!it || !it.id || !newerHere('items', itemKey, it)) return;
+      var sync = it.status === 'draft' ? 'draft' : (it.status === 'hidden' ? 'hidden' : 'pending');
+      by[it.id] = Object.assign({}, by[it.id] || {}, it, { _sync: sync });
     });
     return Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) {
       return String(b.addedAt || b.editionDate || '').localeCompare(String(a.addedAt || a.editionDate || ''));
@@ -171,6 +210,8 @@
   }
 
   function upsertItem(item) {
+    delete item._sync;
+    item.updatedAt = freshTime('items', itemKey, item);
     patchDesk(function (all) {
       var i = all.libraryItems.findIndex(function (x) { return x && String(x.id) === String(item.id); });
       if (i === -1) all.libraryItems.unshift(item);
@@ -180,9 +221,16 @@
   }
 
   function hideItem(id) {
-    var cur = getItem(id) || { id: id };
+    var cur = Object.assign({}, getItem(id) || { id: id });
     cur.status = 'hidden';
     upsertItem(cur);
+  }
+
+  function syncChip(sync) {
+    if (sync === 'draft') return '<span class="badge warn">Черновик</span>';
+    if (sync === 'pending') return '<span class="badge rose" title="Правка есть только в этом браузере">Не отправлено</span>';
+    if (sync === 'hidden') return '<span class="badge rose" title="Снято здесь, на сайте ещё видно">Не снято с сайта</span>';
+    return '';
   }
 
   function titleOf(it) {
@@ -249,55 +297,37 @@
     return 'Файл';
   }
 
+  /* Свежий пакет — основа; правка отсюда заменяет запись, только если она новее.
+     Черновики на сайт не уходят. */
   function publishPack() {
-    if (!window.AdminApi || !AdminApi.upsertArchive) {
+    if (!window.AdminDesk || !AdminDesk.publishPackSafe || !AdminDesk.lwwMerge) {
       return Promise.reject(new Error('нет соединения с сервером'));
     }
-    function send() {
-      var items = allItems().map(function (it) {
-        var copy = Object.assign({}, it);
-        delete copy.source;
-        delete copy._slugLocked;
-        return copy;
-      });
-      var pack = {
-        items: items,
-        rubrics: allRubrics(),
-        docTypes: (L() && L().DOC_TYPES) || [],
-        popes: (L() && L().POPES) || [],
-        themes: allThemes(),
-      };
-      if (window.AdminDesk && AdminDesk.upsertJsonPack) {
-        return AdminDesk.upsertJsonPack({
-          fallbackId: PAGE_ID,
-          slug: PAGE_SLUG,
-          title: 'Библиотека редакции',
-          source: 'desk-library',
-          body: pack,
-        });
-      }
-      return AdminApi.upsertArchive({
-        articles: [{
-          id: PAGE_ID,
-          slug: PAGE_SLUG,
-          title: 'Библиотека редакции',
-          date: todayIso(),
-          modified: new Date().toISOString(),
-          author: '',
-          categories: [],
-          categorySlugs: ['day-by-day'],
-          excerpt: '',
-          contentHtml: '<p></p>',
-          contentText: JSON.stringify(pack),
-          source: 'desk-library',
-        }],
-      });
-    }
-    if (!AdminApi.getArticle) return send();
-    return AdminApi.getArticle(PAGE_SLUG)
-      .then(function (art) { absorbPack(parsePack(art)); })
-      .catch(function () {})
-      .then(send);
+    return AdminDesk.publishPackSafe({
+      fallbackId: PAGE_ID,
+      slug: PAGE_SLUG,
+      title: 'Библиотека редакции',
+      source: 'desk-library',
+      build: function (remote, stamp) {
+        if (remote) absorbPack(remote, stamp);
+        var r = remote && typeof remote === 'object' && !Array.isArray(remote) ? remote : {};
+        var lib = L() || {};
+        var all = readAll();
+        var baseItems = Array.isArray(r.items)
+          ? r.items
+          : (lib.ITEMS || []).map(function (it) { return Object.assign({ status: 'published' }, it); });
+        return {
+          items: AdminDesk.lwwMerge(baseItems, all.libraryItems || [], { stamp: stamp, key: itemKey }),
+          rubrics: AdminDesk.lwwMerge(Array.isArray(r.rubrics) ? r.rubrics : seedRubrics(), all.libraryRubrics || [], { stamp: stamp, key: rubricKey }),
+          docTypes: Array.isArray(r.docTypes) && r.docTypes.length ? r.docTypes : (lib.DOC_TYPES || []),
+          popes: Array.isArray(r.popes) && r.popes.length ? r.popes : (lib.POPES || []),
+          themes: AdminDesk.lwwMerge(Array.isArray(r.themes) ? r.themes : (lib.THEMES || []), all.libraryThemes || [], { stamp: stamp, key: themeKey }),
+        };
+      },
+    }).then(function (pack) {
+      absorbPack(pack, (AdminDesk.packTime && AdminDesk.packTime(PAGE_SLUG)) || new Date().toISOString());
+      return pack;
+    });
   }
 
   function parsePack(art) {
@@ -306,29 +336,21 @@
     try { return JSON.parse(raw); } catch (e) { return null; }
   }
 
-  function absorbPack(pack) {
-    if (!pack) return;
+  /* Пакет с сервера становится основой; местные копии, которые не новее серверных,
+     убираются — так стол не пухнет и старое не перетирает свежее. */
+  function absorbPack(pack, stamp) {
+    if (!pack || typeof pack !== 'object') return;
+    remotePack = pack;
+    if (stamp) remoteStamp = String(stamp);
     patchDesk(function (all) {
-      var have = {};
-      (all.libraryItems || []).forEach(function (it) {
-        if (it && it.id) have[String(it.id)] = true;
+      all.libraryItems = (all.libraryItems || []).filter(function (it) {
+        return it && it.id && newerHere('items', itemKey, it);
       });
-      (pack.items || []).forEach(function (it) {
-        if (!it || !it.id || have[String(it.id)] || it.status === 'hidden') return;
-        all.libraryItems.push(it);
-        have[String(it.id)] = true;
+      all.libraryRubrics = (all.libraryRubrics || []).filter(function (r) {
+        return r && r.id && newerHere('rubrics', rubricKey, r);
       });
-      (pack.rubrics || []).forEach(function (r) {
-        if (!r || !r.id) return;
-        var exists = (all.libraryRubrics || []).some(function (x) {
-          return x && x.id === r.id && x.section === r.section;
-        });
-        if (!exists) all.libraryRubrics.push(r);
-      });
-      (pack.themes || []).forEach(function (t) {
-        if (!t || !t.id) return;
-        var exists = (all.libraryThemes || []).some(function (x) { return x && x.id === t.id; });
-        if (!exists) all.libraryThemes.push(t);
+      all.libraryThemes = (all.libraryThemes || []).filter(function (t) {
+        return t && t.id && newerHere('themes', themeKey, t);
       });
     });
     if (L() && L().mergePack) L().mergePack(pack);
@@ -349,7 +371,9 @@
       }
       if (!window.AdminApi || !AdminApi.getArticle) { finish(); return; }
       AdminApi.getArticle(PAGE_SLUG)
-        .then(function (art) { absorbPack(parsePack(art)); })
+        .then(function (art) {
+          if (art && art.slug === PAGE_SLUG) absorbPack(parsePack(art), art.modified || art.date);
+        })
         .catch(function () {})
         .then(finish);
     });
@@ -369,7 +393,7 @@
     var section = '';
     function draw() {
       var list = allItems().filter(function (it) {
-        if (it.status === 'hidden') return false;
+        if (it.status === 'hidden' && it._sync !== 'hidden') return false;
         if (section && it.section !== section) return false;
         if (!q) return true;
         var hay = [it.titleRu, it.titleOriginal, it.author, it.annotation].join(' ').toLowerCase();
@@ -400,7 +424,8 @@
               '<a class="god-card" href="#library/' + esc(it.id) + '">' +
               '<span class="god-thumb" style="' + cover + '"></span>' +
               '<span class="god-copy"><strong>' + esc(titleOf(it)) + '</strong>' +
-              '<small>' + esc(sectionLabel(it.section) + ' · ' + (it.author || '')) + '</small></span></a>'
+              '<small>' + esc(sectionLabel(it.section) + ' · ' + (it.author || '')) + '</small>' +
+              syncChip(it._sync) + '</span></a>'
             );
           }).join('') + '</div>'
           : '<div class="panel"><div class="empty">Пока нет карточек в этом фильтре.</div></div>');
@@ -704,20 +729,22 @@
       ? AdminDesk.uploadDataUrl(cover, 'covers').then(function (url) { next.cover = url; })
       : Promise.resolve();
     ctx.toast(status === 'published' ? 'Публикуем…' : 'Сохраняем…');
+    var stored = false;
     return ready.then(function () {
       return hoistHtmlImages(next.contentHtml).then(function (html) { next.contentHtml = html; });
     }).then(function () {
-      if (item.id && item.id !== next.id) hideItem(item.id);
+      if (status === 'published' && item.id && item.id !== next.id) hideItem(item.id);
       upsertItem(next);
-      if (status === 'published') {
-        hydrated = false;
-        return publishPack();
-      }
+      stored = true;
+      if (status === 'published') return publishPack();
     }).then(function () {
-      ctx.toast(status === 'published' ? 'На сайте' : 'Черновик сохранён');
+      ctx.toast(status === 'published' ? 'На сайте' : 'Черновик сохранён — на сайт не отправлен');
       ctx.go('library');
     }).catch(function (err) {
-      ctx.toast((err && err.message) || 'Не удалось сохранить', true);
+      var msg = (err && err.message) || 'нет связи';
+      if (err && err.readFailed) ctx.toast(msg, true);
+      else if (stored) ctx.toast('Не ушло на сайт: ' + msg + '. Правка сохранена здесь — нажмите «Опубликовать» ещё раз.', true);
+      else ctx.toast('Не сохранено: ' + msg, true);
     });
   }
 
@@ -931,11 +958,9 @@
         var label = val('lib-theme-new');
         if (!label) { ctx.toast('Напишите название темы', true); return; }
         var rec = { id: slugify(label), label: label };
-        patchDesk(function (all) {
-          var exists = all.libraryThemes.some(function (t) { return t && t.id === rec.id; });
-          if (exists) rec.id = rec.id + '-' + Date.now().toString(36).slice(-3);
-          all.libraryThemes.push(rec);
-        });
+        if (allThemes().some(function (t) { return t && t.id === rec.id; })) rec.id = rec.id + '-' + Date.now().toString(36).slice(-3);
+        rec.updatedAt = new Date().toISOString();
+        patchDesk(function (all) { all.libraryThemes.push(rec); });
         pickedThemes.push(rec.id);
         persist();
         draw();
@@ -950,10 +975,14 @@
       del.onclick = function () {
         if (!confirm('Снять карточку с сайта?')) return;
         hideItem(item.id);
+        ctx.toast('Снимаем с сайта…');
         publishPack().then(function () {
-          ctx.toast('Снято');
+          ctx.toast('Снято с публикации');
           ctx.go('library');
-        }).catch(function (err) { ctx.toast(err.message || 'Не удалось снять', true); });
+        }).catch(function (err) {
+          var msg = (err && err.message) || 'нет связи';
+          ctx.toast(err && err.readFailed ? msg : ('Не снято с сайта: ' + msg + '. Нажмите «Снять» ещё раз.'), true);
+        });
       };
     }
   }
@@ -1022,16 +1051,14 @@
           var label = val('lib-theme-new');
           if (!label) { ctx.toast('Напишите название темы', true); return; }
           var rec = { id: slugify(label), label: label.trim() };
-          patchDesk(function (all) {
-            var exists = all.libraryThemes.some(function (t) { return t && t.id === rec.id; });
-            if (exists) rec.id = rec.id + '-' + Date.now().toString(36).slice(-3);
-            all.libraryThemes.push(rec);
-          });
+          if (allThemes().some(function (t) { return t && t.id === rec.id; })) rec.id = rec.id + '-' + Date.now().toString(36).slice(-3);
+          rec.updatedAt = new Date().toISOString();
+          patchDesk(function (all) { all.libraryThemes.push(rec); });
           publishPack().then(function () {
             ctx.toast('Тема на сайте');
             draw();
           }).catch(function (err) {
-            ctx.toast('Сохранено локально. ' + ((err && err.message) || ''), true);
+            ctx.toast(failText(err), true);
             draw();
           });
         };
@@ -1044,16 +1071,16 @@
     var label = prompt(parentId ? 'Название подрубрики' : 'Название рубрики');
     if (!label) return;
     var rec = { id: slugify(label), section: section, label: label.trim(), parentId: parentId || '' };
-    patchDesk(function (all) {
-      var exists = all.libraryRubrics.some(function (r) { return r.id === rec.id && r.section === section; });
-      if (exists) rec.id = rec.id + '-' + Date.now().toString(36).slice(-3);
-      all.libraryRubrics.push(rec);
-    });
+    if (allRubrics().some(function (r) { return r.id === rec.id && r.section === section; })) {
+      rec.id = rec.id + '-' + Date.now().toString(36).slice(-3);
+    }
+    rec.updatedAt = new Date().toISOString();
+    patchDesk(function (all) { all.libraryRubrics.push(rec); });
     publishPack().then(function () {
       ctx.toast('Рубрика на сайте');
       draw();
     }).catch(function (err) {
-      ctx.toast('Сохранено локально. ' + ((err && err.message) || ''), true);
+      ctx.toast(failText(err), true);
       draw();
     });
   }
@@ -1063,18 +1090,25 @@
     if (!cur) return;
     var label = prompt('Новое название', cur.label);
     if (!label) return;
+    var next = Object.assign({}, cur, { label: label.trim() });
+    next.updatedAt = freshTime('rubrics', rubricKey, next);
     patchDesk(function (all) {
-      var i = all.libraryRubrics.findIndex(function (r) { return r.id === id; });
-      if (i === -1) all.libraryRubrics.push(Object.assign({}, cur, { label: label.trim() }));
-      else all.libraryRubrics[i] = Object.assign({}, all.libraryRubrics[i], { label: label.trim() });
+      var i = all.libraryRubrics.findIndex(function (r) { return rubricKey(r) === rubricKey(next); });
+      if (i === -1) all.libraryRubrics.push(next);
+      else all.libraryRubrics[i] = Object.assign({}, all.libraryRubrics[i], next);
     });
     publishPack().then(function () {
-      ctx.toast('Обновлено');
+      ctx.toast('Обновлено на сайте');
       draw();
     }).catch(function (err) {
-      ctx.toast((err && err.message) || 'Сохранено локально', true);
+      ctx.toast(failText(err), true);
       draw();
     });
+  }
+
+  function failText(err) {
+    var msg = (err && err.message) || 'нет связи';
+    return err && err.readFailed ? msg : ('Не ушло на сайт: ' + msg + '. Правка сохранена здесь — повторите.');
   }
 
   global.AdminLibrary = {

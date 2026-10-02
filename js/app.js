@@ -70,7 +70,10 @@
     if (isErr) toastEl.classList.add('err');
     else toastEl.classList.remove('err');
     clearTimeout(toast._t);
-    toast._t = setTimeout(function () { toastEl.classList.remove('show'); }, 2400);
+    /* Ошибку нужно успеть прочитать: держим дольше и по длине текста. */
+    var len = String(msg || '').length;
+    var ms = isErr ? Math.max(6000, len * 70) : Math.max(2400, len * 45);
+    toast._t = setTimeout(function () { toastEl.classList.remove('show'); }, Math.min(ms, 12000));
   }
 
   function route() {
@@ -1329,7 +1332,7 @@
     return AdminDesk.publishPhotostock().then(function () {
       if (okMsg) toast(okMsg);
     }).catch(function (e) {
-      toast((okMsg || 'Сохранено локально') + '. На сайт не ушло: ' + (e.message || 'нет связи'), true);
+      toast(e && e.readFailed ? e.message : ('Не ушло на сайт: ' + ((e && e.message) || 'нет связи') + '. Правка сохранена здесь — повторите.'), true);
     });
   }
 
@@ -1449,8 +1452,15 @@
     });
 
     if (mediaTab === 'images') {
-      if (window.AdminDesk) AdminDesk.loadSeed(function () { paintMediaImages(); });
-      else paintMediaImages();
+      if (window.AdminDesk) {
+        AdminDesk.loadSeed(function () { paintMediaImages(); });
+        if (AdminDesk.hydrateRemote) {
+          AdminDesk.hydrateRemote(function () {
+            var q = document.getElementById('media-q');
+            if (q && !q.value && mediaTab === 'images') paintMediaImages();
+          });
+        }
+      } else paintMediaImages();
     } else paintMediaDocuments();
   }
 
@@ -1536,9 +1546,10 @@
           } else if (act === 'reject') {
             item.status = 'rejected';
             AdminStore.upsertMedia(item, session.email);
-            toast('Отклонено');
-            photos = window.AdminDesk ? AdminDesk.allPhotos() : AdminStore.listPhotos();
-            paint();
+            syncPhotostock('Отклонено').then(function () {
+              photos = window.AdminDesk ? AdminDesk.allPhotos() : AdminStore.listPhotos();
+              paint();
+            });
           } else if (act === 'del') {
             var mayDel = role.canModerateMedia || role.photostockFull || item.ownerEmail === session.email;
             if (!mayDel) return;
@@ -1832,20 +1843,28 @@
           if (!title) return;
           var slug = prompt('Slug рубрики (или пусто)', cur.slug || '');
           var q = prompt('Поиск, если слага ещё нет', cur.q || '');
-          AdminDesk.upsertTopic({ id: cur.id, title: title, slug: slug || '', q: q || '' });
-          AdminDesk.publishTopics().then(function () { toast('Тема на сайте'); }).catch(function (e) {
-            toast('Сохранено здесь. На сайт: ' + (e.message || 'нет связи'), true);
-          });
-          paintTopics();
+          AdminDesk.upsertTopic(Object.assign({}, cur, { title: title, slug: slug || '', q: q || '' }));
+          sendTopics('Тема на сайте');
         };
       });
       box.querySelectorAll('[data-topic-del]').forEach(function (btn) {
         btn.onclick = function () {
           if (!confirm('Убрать тему со страницы Статей?')) return;
           AdminDesk.deleteTopic(btn.getAttribute('data-topic-del'));
-          AdminDesk.publishTopics().catch(function () {});
-          paintTopics();
+          sendTopics('Тема убрана с сайта');
         };
+      });
+    }
+
+    function sendTopics(okText) {
+      paintTopics();
+      toast('Отправляем на сайт…');
+      AdminDesk.publishTopics().then(function () {
+        toast(okText);
+        paintTopics();
+      }).catch(function (e) {
+        toast(e && e.readFailed ? e.message : ('Не ушло на сайт: ' + ((e && e.message) || 'нет связи') + '. Правка сохранена здесь — повторите.'), true);
+        paintTopics();
       });
     }
 
@@ -1856,10 +1875,7 @@
       var slug = prompt('Slug — его же отметить у статьи в рубриках', AdminStore.slugify(title));
       var q = prompt('Или поисковая фраза, если слага нет', '');
       AdminDesk.upsertTopic({ title: title, slug: slug || '', q: q || '' });
-      AdminDesk.publishTopics().then(function () { toast('Тема добавлена на сайт'); }).catch(function (e) {
-        toast('Тема сохранена здесь. На сайт: ' + (e.message || 'нет связи'), true);
-      });
-      paintTopics();
+      sendTopics('Тема добавлена на сайт');
     };
 
     document.getElementById('btn-add-cat').onclick = function () {
@@ -1890,6 +1906,7 @@
     document.getElementById('tag-kind-filter').onchange = paintTags;
     document.getElementById('tag-q').oninput = paintTags;
     paintTopics();
+    if (window.AdminDesk && AdminDesk.hydrateRemote) AdminDesk.hydrateRemote(paintTopics);
     paintCats();
     paintTags();
   }

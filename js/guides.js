@@ -142,7 +142,10 @@
       var remote = rem[item.id];
       var local = loc[item.id];
       var cur = remote ? overlayItem(item, remote) : item;
-      if (local && (!remote || isNewer(local, remote))) cur = overlayItem(cur, local);
+      if (local && (!remote || isNewer(local, remote))) {
+        cur = overlayItem(cur, local);
+        cur._sync = local.status === 'draft' ? 'draft' : 'pending';
+      }
       return cur;
     }
 
@@ -183,23 +186,31 @@
       }));
     });
 
-    function addExtra(map) {
+    function addExtra(map, fromLocal) {
       Object.keys(map).forEach(function (key) {
-        if (out.some(function (x) { return x.id === key; })) return;
         var ov = map[key];
+        var at = -1;
+        out.forEach(function (x, i) { if (x.id === key) at = i; });
+        if (at !== -1) {
+          if (!fromLocal || !out[at].added || !isNewer(ov, rem[key])) return;
+          out[at] = Object.assign({}, out[at], ov, { id: key, _sync: ov.status === 'draft' ? 'draft' : 'pending' });
+          return;
+        }
         if (ov.status === 'hidden') return;
-        out.push(Object.assign({
+        var row = Object.assign({
           kind: 'page',
           group: ov.siblingsOf || '',
           groupTitle: (nodes[ov.siblingsOf] && nodes[ov.siblingsOf].title) || '',
           contentHtml: '',
           prayers: [],
           added: true,
-        }, ov, { id: key }));
+        }, ov, { id: key });
+        if (fromLocal) row._sync = ov.status === 'draft' ? 'draft' : 'pending';
+        out.push(row);
       });
     }
-    addExtra(rem);
-    addExtra(loc);
+    addExtra(rem, false);
+    addExtra(loc, true);
 
     return out.filter(function (x) { return x.status !== 'hidden'; });
   }
@@ -265,6 +276,8 @@
             '<a class="guide-row" href="#' + section + '/' + encodeURIComponent(it.id) + '">' +
             '<span class="guide-row-copy"><strong>' + esc(it.title || 'Без названия') + '</strong>' +
             '<small>' + esc(it.lead || it.desc || it.sub || '') + '</small></span>' +
+            (it._sync === 'draft' ? '<span class="badge warn">Черновик</span>' : '') +
+            (it._sync === 'pending' ? '<span class="badge rose" title="Правка есть только в этом браузере">Не отправлено</span>' : '') +
             '<span class="badge muted">' + esc(kindLabel(it.kind)) + '</span></a>';
         });
         html += '</div></section>';
@@ -306,10 +319,10 @@
       lead: '',
       contentHtml: '<p></p>',
       siblingsOf: parent,
-      status: 'published',
+      status: 'draft',
       added: true,
     });
-    ctx.toast('Страница создана');
+    ctx.toast('Страница создана — на сайте появится после «Опубликовать»');
     ctx.go(section, id);
   }
 
@@ -516,25 +529,30 @@
     return el ? String(el.value || '') : '';
   }
 
+  /* Поля, которых нет в форме этого вида страницы, сохраняют прежнее значение. */
+  function valOr(id, fallback) {
+    var el = document.getElementById(id);
+    return el ? String(el.value || '') : String(fallback || '');
+  }
+
   function collect(item) {
+    var body = document.getElementById('g-body');
     var next = {
       id: (item.section ? item.section + ':' : '') + item.id,
       section: item.section,
       nodeId: item.id,
       kind: item.kind,
       title: val('g-title').trim() || item.title,
-      desc: val('g-desc'),
-      intro: val('g-intro'),
-      lead: val('g-lead'),
-      sub: val('g-sub'),
+      desc: valOr('g-desc', item.desc),
+      intro: valOr('g-intro', item.intro),
+      lead: valOr('g-lead', item.lead),
+      sub: valOr('g-sub', item.sub),
       image: val('g-image') || item.image || '',
       siblingsOf: item.siblingsOf || '',
       added: !!item.added,
-      contentHtml: '',
+      contentHtml: body ? body.innerHTML : (item.contentHtml || ''),
       prayers: item.prayers || [],
     };
-    var body = document.getElementById('g-body');
-    if (body) next.contentHtml = body.innerHTML;
     if (item._prayersLive) next.prayers = item._prayersLive();
     return next;
   }
@@ -547,23 +565,31 @@
     next.section = section;
     next.nodeId = item.id;
     var image = next.image || '';
+    var stored = false;
     var ready = (image.indexOf('data:') === 0 && window.AdminDesk && AdminDesk.uploadDataUrl)
-      ? (ctx.toast('Сохраняем обложку…'), AdminDesk.uploadDataUrl(image, 'guides').then(function (url) { next.image = url; }))
+      ? (ctx.toast('Сохраняем обложку…'), AdminDesk.uploadDataUrl(image, 'guides').then(function (url) { next.image = url; }, function (e) {
+          next.image = String(item.image || '').indexOf('data:') === 0 ? '' : (item.image || '');
+          throw new Error('обложка не загрузилась (' + ((e && e.message) || 'нет связи') + ')');
+        }))
       : Promise.resolve();
     ready.then(function () {
+      AdminDesk.upsertGuide(next);
+      stored = true;
       if (status !== 'published') {
-        AdminDesk.upsertGuide(next);
-        ctx.toast('Черновик сохранён — только в этом браузере');
+        ctx.toast('Черновик сохранён — на сайт не отправлен');
         return;
       }
       ctx.toast('Публикуем на сайт…');
-      return AdminDesk.publishGuides(next).then(function () {
-        AdminDesk.upsertGuide(next);
+      return AdminDesk.publishGuides().then(function () {
         ctx.toast('На сайте — откроется на всех устройствах');
         ctx.go(section);
       });
     }).catch(function (e) {
-      ctx.toast((e && e.message) || 'Не ушло на сайт — осталось черновиком здесь', true);
+      if (!stored) {
+        try { AdminDesk.upsertGuide(next); } catch (err) {}
+      }
+      var msg = (e && e.message) || 'нет связи';
+      ctx.toast(e && e.readFailed ? msg : ('Не ушло на сайт: ' + msg + '. Правка сохранена здесь — нажмите «Опубликовать» ещё раз.'), true);
     });
   }
 

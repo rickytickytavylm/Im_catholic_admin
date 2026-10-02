@@ -16,6 +16,7 @@
     photographers: 'yak_admin_photographers',
     uploadLog: 'yak_admin_photo_uploads',
     trash: 'yak_admin_trash',
+    gone: 'yak_admin_gone',
   };
 
   var POST_SECTIONS = [
@@ -794,6 +795,21 @@
     return item;
   }
 
+  /* Отметки удаления (kind → {id: ISO}). Без них удалённое вернётся из пакета сайта
+     или из другого браузера, где запись ещё лежит. */
+  function goneLog(kind) {
+    var all = read(KEYS.gone, {}) || {};
+    return all[kind] || {};
+  }
+
+  function markGone(kind, id) {
+    if (!id) return;
+    var all = read(KEYS.gone, {}) || {};
+    all[kind] = all[kind] || {};
+    all[kind][id] = new Date().toISOString();
+    write(KEYS.gone, all);
+  }
+
   function deleteMedia(id, actor) {
     var list = listMedia();
     var item = null;
@@ -804,7 +820,8 @@
       }
       return true;
     });
-    if (!item) return false;
+    if (!item || item.kind === 'image') markGone('photos', id);
+    if (!item) return true;
     saveMedia(next);
     if (global.AdminAuth) global.AdminAuth.audit(actor, 'media.delete', item.title, { id: id });
     return true;
@@ -911,7 +928,9 @@
       }
       return true;
     });
-    if (!ph) return false;
+    var demo = ph && (ph.slug === 'olga-fotograf' || String(ph.email || '').toLowerCase() === 'shooter@yakatolik.local');
+    if (!demo) markGone('photographers', id);
+    if (!ph) return true;
     savePhotographers(next);
     if (global.AdminAuth) global.AdminAuth.audit(actor, 'photographer.delete', ph.name, { id: id });
     return true;
@@ -1054,9 +1073,11 @@
     deletePage: deletePage,
     pageTypeTitle: pageTypeTitle,
     listMedia: listMedia,
+    saveMedia: saveMedia,
     getMedia: getMedia,
     upsertMedia: upsertMedia,
     deleteMedia: deleteMedia,
+    goneLog: goneLog,
     listPhotos: listPhotos,
     savePhotos: savePhotos,
     listBooks: listBooks,

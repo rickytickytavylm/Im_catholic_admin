@@ -21,10 +21,6 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
-  function todayIso() {
-    return new Date().toISOString().slice(0, 10);
-  }
-
   function defaults() {
     return (window.YakAbout && YakAbout.DEFAULTS) ? JSON.parse(JSON.stringify(YakAbout.DEFAULTS)) : {
       eyebrow: 'О проекте',
@@ -48,6 +44,7 @@
   }
 
   function writeAbout(about) {
+    about = Object.assign({}, about, { updatedAt: new Date().toISOString() });
     if (window.AdminDesk && AdminDesk.read && AdminDesk.write) {
       var all = AdminDesk.read();
       all.about = about;
@@ -59,10 +56,25 @@
     localStorage.setItem('yak_desk', JSON.stringify(raw));
   }
 
+  /* Время версии на сайте, с которой открыта форма. */
+  var openedAt = '';
+
+  function packTime() {
+    return (window.AdminDesk && AdminDesk.packTime && AdminDesk.packTime(PAGE_SLUG)) || '';
+  }
+
+  /* Неотправленная правка этого браузера новее сайта — показываем её. */
+  function unsentAbout() {
+    var local = readDesk().about;
+    var remote = window.AdminDesk && AdminDesk.remoteAbout && AdminDesk.remoteAbout();
+    if (!local || !local.updatedAt) return null;
+    return !remote || String(local.updatedAt) > packTime() ? local : null;
+  }
+
   function current() {
     var base = defaults();
     var remote = window.AdminDesk && AdminDesk.remoteAbout && AdminDesk.remoteAbout();
-    var saved = remote || readDesk().about;
+    var saved = unsentAbout() || remote || readDesk().about;
     if (!saved) return base;
     var next = Object.assign({}, base, saved);
     next.principles = (saved.principles && saved.principles.length ? saved.principles : base.principles).slice();
@@ -294,34 +306,23 @@
     };
   }
 
-  function publish(data) {
-    if (window.AdminDesk && AdminDesk.upsertJsonPack) {
-      return AdminDesk.upsertJsonPack({
-        fallbackId: PAGE_ID,
-        slug: PAGE_SLUG,
-        title: 'О проекте',
-        source: 'desk-about',
-        body: data,
-      });
-    }
-    if (!window.AdminApi || !AdminApi.upsertArchive) {
+  function publish(data, force) {
+    if (!window.AdminDesk || !AdminDesk.publishObjectPack) {
       return Promise.reject(new Error('нет соединения с сервером'));
     }
-    return AdminApi.upsertArchive({
-      articles: [{
-        id: PAGE_ID,
-        slug: PAGE_SLUG,
-        title: 'О проекте',
-        date: todayIso(),
-        modified: new Date().toISOString(),
-        author: '',
-        categories: [],
-        categorySlugs: ['day-by-day'],
-        excerpt: '',
-        contentHtml: '<p></p>',
-        contentText: JSON.stringify(data),
-        source: 'desk-about',
-      }],
+    var body = Object.assign({}, data);
+    delete body.updatedAt;
+    return AdminDesk.publishObjectPack({
+      fallbackId: PAGE_ID,
+      slug: PAGE_SLUG,
+      title: 'О проекте',
+      source: 'desk-about',
+      body: body,
+      openedAt: openedAt,
+      force: !!force,
+    }).then(function (pack) {
+      openedAt = packTime();
+      return pack;
     });
   }
 
@@ -337,11 +338,17 @@
   }
 
   function render(ctx) {
-    if (window.AdminDesk && AdminDesk.hydrateRemote && !render._hydrated) {
-      render._hydrated = true;
-      AdminDesk.hydrateRemote(function () { render(ctx); });
-      return;
-    }
+    var D = window.AdminDesk;
+    if (!D || !D.readPackStrict) { draw(ctx); return; }
+    ctx.viewEl.innerHTML = '<div class="yak-loading yak-loading--page" role="status"><span class="yak-spin" aria-hidden="true"></span><span>Открываю страницу…</span></div>';
+    D.readPackStrict(PAGE_SLUG).then(function () { draw(ctx); }, function () {
+      draw(ctx);
+      ctx.toast('Сайт не ответил — показана последняя известная версия', true);
+    });
+  }
+
+  function draw(ctx) {
+    openedAt = packTime();
     var d = current();
     var partners = (d.partners || []).slice();
     if (!partners.length) partners = [{ name: '', href: '' }];
@@ -360,6 +367,7 @@
       '<a class="btn btn-ghost" href="' + PORTAL + 'page.html" target="_blank" rel="noopener">На сайте</a>' +
       '<button type="button" class="btn btn-primary" id="ab-pub">Опубликовать</button>' +
       '</div></div>' +
+      (unsentAbout() ? '<p class="hint-note sync-note">Здесь правка, которая ещё не ушла на сайт. Нажмите «Опубликовать».</p>' : '') +
 
       '<div class="panel" style="margin-bottom:12px">' +
       '<div class="form-grid">' +
@@ -528,12 +536,25 @@
       }).then(function (html) {
         data.app.html = html;
         writeAbout(data);
-        return publish(data);
-      }).then(function () {
-        ctx.toast('Страница на сайте');
+        return send(false);
       }).catch(function (e) {
-        ctx.toast(e.message || 'Не удалось опубликовать', true);
+        ctx.toast(AdminDesk.failText ? AdminDesk.failText(e) : ((e && e.message) || 'Не удалось опубликовать'), true);
       });
+      function send(force) {
+        ctx.toast('Отправляем на сайт…');
+        return publish(data, force).then(function () {
+          ctx.toast('Страница на сайте');
+          var note = ctx.viewEl.querySelector('.sync-note');
+          if (note) note.remove();
+        }, function (e) {
+          if (e && e.conflict) {
+            if (confirm(e.message + '\n\nЗаменить ту версию вашей?')) return send(true);
+            ctx.toast('Ничего не отправлено. Ваша правка сохранена здесь — откройте раздел заново, чтобы сравнить.', true);
+            return;
+          }
+          throw e;
+        });
+      }
     };
   }
 

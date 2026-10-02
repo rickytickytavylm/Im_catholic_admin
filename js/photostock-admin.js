@@ -51,7 +51,7 @@
     return AdminDesk.publishPhotostock().then(function () {
       if (ok) toast(ok);
     }).catch(function (e) {
-      toast((ok || 'Сохранено') + '. На сайт не ушло: ' + (e.message || 'нет связи'), true);
+      toast(e && e.readFailed ? e.message : ('Не ушло на сайт: ' + ((e && e.message) || 'нет связи') + '. Правка сохранена здесь — повторите.'), true);
     });
   }
 
@@ -103,15 +103,17 @@
         btn.onclick = function () {
           if (!confirm('Удалить карточку фотографа?')) return;
           AdminStore.deletePhotographer(btn.getAttribute('data-del'), session.email);
-          toast('Удалено');
-          renderPhotographers(ctx);
+          paint();
+          pushStock(toast, 'Карточка снята с сайта').then(paint);
         };
       });
     }
 
     paint();
     if (window.AdminDesk && AdminDesk.hydrateRemote) {
-      AdminDesk.hydrateRemote(function () { paint(); });
+      AdminDesk.hydrateRemote(function () {
+        if (String(location.hash).indexOf('photographers') !== -1) paint();
+      });
     }
   }
 
@@ -345,13 +347,18 @@
           } else if (act === 'del') {
             if (!confirm('Удалить фото?')) return;
             AdminStore.deleteMedia(id, session.email);
-            toast('Удалено');
             paint();
+            pushStock(toast, 'Удалено').then(paint);
           }
         };
       });
     }
     paint();
+    if (window.AdminDesk && AdminDesk.hydrateRemote) {
+      AdminDesk.hydrateRemote(function () {
+        if (String(location.hash).indexOf('photo-moderation') !== -1) paint();
+      });
+    }
   }
 
   function renderMyPage(ctx) {
@@ -417,8 +424,8 @@
           } else {
             if (!confirm('Удалить?')) return;
             AdminStore.deleteMedia(id, session.email);
-            toast('Удалено');
             paintOwnTable();
+            pushStock(toast, 'Удалено').then(paintOwnTable);
           }
         };
       });

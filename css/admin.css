@@ -253,11 +253,23 @@ button, input, select, textarea {
   box-shadow: var(--shadow);
   min-height: 188px;
 }
+.god-card { position: relative; }
 .god-card:active { transform: scale(.98); }
+.god-card.is-off .god-thumb, .god-card.is-off .god-copy { opacity: .55; }
 .god-thumb {
-  display: block; background: #d8cfc3 center/cover no-repeat;
+  display: block; position: relative; overflow: hidden; background: #d8cfc3 center/cover no-repeat;
 }
+.god-thumb img {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+  opacity: 0; transition: opacity .28s ease;
+}
+.god-thumb img.is-in { opacity: 1; }
 .god-thumb.is-empty { background: linear-gradient(160deg, #cfc6b8, #8f8578); }
+.god-chip { position: absolute; top: 8px; left: 8px; z-index: 1; box-shadow: 0 1px 4px rgba(0, 0, 0, .12); }
+@media (prefers-reduced-motion: reduce) {
+  .god-thumb img { transition: none; }
+  .yak-skel-card .god-thumb, .yak-spin { animation-duration: 2.4s; }
+}
 .god-copy { display: grid; gap: 4px; padding: 10px 12px 12px; min-width: 0; }
 .god-copy strong {
   font-size: 14px; line-height: 1.3;

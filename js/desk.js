@@ -79,7 +79,9 @@
   }
 
   var archiveCache = { news: [], article: [] };
-  var remoteCache = { cycles: null, authors: null, events: null, guides: null, video: null, photostock: null, home: null, about: null, calendar: null, topics: null, audio: null, library: null };
+  var remoteCache = { cycles: null, authors: null, events: null, guides: null, video: null, photostock: null, home: null, about: null, calendar: null, topics: null, audio: null, library: null, podcasts: null };
+  /* Время последней записи каждого пакета на сервере (slug → ISO). */
+  var packStamp = {};
 
   function authorsFromPack(pack) {
     if (!pack) return [];
@@ -96,13 +98,78 @@
     return pack.organizers || [];
   }
 
+  function listFromPack(pack, key) {
+    if (!pack) return [];
+    if (Array.isArray(pack)) return pack;
+    return Array.isArray(pack[key]) ? pack[key] : [];
+  }
+
   function remoteItems(type) {
-    if (type === 'cycle') return remoteCache.cycles || [];
+    if (type === 'cycle') return listFromPack(remoteCache.cycles, 'cycles');
     if (type === 'authors') return authorsFromPack(remoteCache.authors);
     if (type === 'event') return eventsFromPack(remoteCache.events);
     if (type === 'organizer') return orgsFromPack(remoteCache.events);
-    if (type === 'video') return ((remoteCache.video && remoteCache.video.items) || []);
+    if (type === 'video') return listFromPack(remoteCache.video, 'items');
+    if (type === 'video-channel') return listFromPack(remoteCache.video, 'channels');
+    if (type === 'audio') return listFromPack(remoteCache.audio, 'tracks');
+    if (type === 'church-day') return listFromPack(remoteCache.calendar, 'days').map(function (d) {
+      return d && d.date ? Object.assign({ id: d.date }, d) : d;
+    });
     return [];
+  }
+
+  function packSlugOf(type) {
+    if (type === 'event' || type === 'organizer') return EVENTS_PAGE_SLUG;
+    if (type === 'video' || type === 'video-channel') return VIDEO_PAGE_SLUG;
+    if (type === 'audio') return AUDIO_PAGE_SLUG;
+    if (type === 'church-day') return CALENDAR_PAGE_SLUG;
+    if (type === 'authors') return AUTHORS_PAGE_SLUG;
+    if (type === 'cycle') return CYCLES_PAGE_SLUG;
+    return '';
+  }
+
+  /* Время правки серверной записи. У старых записей своего времени нет —
+     берём время записи пакета: раньше него запись точно не менялась. */
+  function remoteTime(rec, type) {
+    return String((rec && (rec.updatedAt || rec.modified)) || packStamp[packSlugOf(type)] || '');
+  }
+
+  /* На проде афиша и партнёры видео целиком берутся из пакета: вшитые карточки
+     показываем, только пока пакет не загружен. */
+  function packReplacesSite(type) {
+    if (type === 'event' || type === 'organizer') return !!remoteCache.events;
+    if (type === 'video-channel') return !!(remoteCache.video && Array.isArray(remoteCache.video.channels));
+    return false;
+  }
+
+  function authorKey(a) {
+    return String((a && (a.slug || a.id)) || '').toLowerCase();
+  }
+
+  function dayKey(d) {
+    return String((d && (d.date || d.id)) || '');
+  }
+
+  function keyFnOf(type) {
+    if (type === 'authors') return authorKey;
+    if (type === 'church-day') return dayKey;
+    return recKey;
+  }
+
+  /* Новая правка всегда новее той серверной версии, с которой начали,
+     даже если часы другого компьютера спешат. */
+  function freshStamp(type, item) {
+    var now = new Date().toISOString();
+    var keyOf = keyFnOf(type);
+    var k = keyOf(item);
+    if (!k) return now;
+    var rem = remoteItems(type).filter(function (r) { return r && keyOf(r) === k; })[0];
+    var rt = rem ? remoteTime(rem, type) : String((item && (item._serverModified || item.modified)) || '');
+    if (rt && rt >= now) {
+      var t = Date.parse(rt);
+      if (!isNaN(t)) return new Date(t + 1).toISOString();
+    }
+    return now;
   }
 
   function numericIdOf(value) {
@@ -185,38 +252,58 @@
     try { return (localStorage.getItem(KEY) || '').length; } catch (e) { return 0; }
   }
 
+  /* Копии в столе, которые уже есть на сервере в той же или более свежей версии,
+     больше не нужны: список и форма берут серверную. Черновики не трогаем. */
   function pruneRemoteCopies(data) {
     var changed = false;
-    function slim(key, remoteList) {
-      if (!Array.isArray(data[key]) || !data[key].length || !remoteList || !remoteList.length) return;
+    function slim(key, type) {
+      var remoteList = remoteItems(type);
+      if (!Array.isArray(data[key]) || !data[key].length || !remoteList.length) return;
+      var keyOf = keyFnOf(type);
       var remoteBy = {};
       remoteList.forEach(function (rec) {
-        var k = recKey(rec);
+        var k = keyOf(rec);
         if (k) remoteBy[k] = rec;
       });
-      var kept = [];
-      data[key].forEach(function (rec) {
-        if (!rec) return;
-        var rem = remoteBy[recKey(rec)];
-        if (!rem) { kept.push(rec); return; }
-        if (rec.status === 'draft' || rec.status === 'hidden') { kept.push(rec); return; }
-        var lt = String(rec.updatedAt || '');
-        var rt = String(rem.updatedAt || rem.modified || '');
-        if (lt && rt && lt > rt) kept.push(rec);
+      var kept = data[key].filter(function (rec) {
+        if (!rec) return false;
+        var rem = remoteBy[keyOf(rec)];
+        if (!rem || rec.status === 'draft') return true;
+        return String(rec.updatedAt || '') > remoteTime(rem, type);
       });
       if (kept.length !== data[key].length) {
         data[key] = kept;
         changed = true;
       }
     }
-    slim('cycles', remoteCache.cycles);
-    slim('authors', authorsFromPack(remoteCache.authors));
-    if (remoteCache.events && !Array.isArray(remoteCache.events)) {
-      slim('events', remoteCache.events.items || remoteCache.events.events || []);
-      slim('organizers', remoteCache.events.organizers || []);
+    slim('cycles', 'cycle');
+    slim('authors', 'authors');
+    slim('events', 'event');
+    slim('organizers', 'organizer');
+    slim('audio', 'audio');
+    slim('video', 'video');
+    slim('videoChannels', 'video-channel');
+    slim('churchDays', 'church-day');
+    /* Статьи: опубликованная копия не нужна, если на сервере та же или более свежая версия. */
+    var served = {};
+    ['news', 'article'].forEach(function (t) {
+      (archiveCache[t] || []).forEach(function (x) {
+        if (!x || !x.modified) return;
+        if (x.id) served['id:' + x.id] = String(x.modified);
+        if (x.slug) served['slug:' + x.slug] = String(x.modified);
+      });
+    });
+    var arts = (data.articles || []).filter(function (a) {
+      if (!a) return false;
+      if (a.status === 'draft') return true;
+      var m = served['id:' + a.id] || (a.slug ? served['slug:' + a.slug] : '') || '';
+      return !m || String(a.updatedAt || '') > m;
+    });
+    if (arts.length !== (data.articles || []).length) {
+      data.articles = arts;
+      changed = true;
     }
     (data.articles || []).forEach(function (a) {
-      if (!a) return;
       stripHeavy(a, false);
     });
     return changed;
@@ -367,9 +454,15 @@
 
   function allPhotos() {
     var local = (AdminStore.listPhotos() || []).filter(function (p) { return p.url; });
-    var ids = {};
-    local.forEach(function (p) { ids[p.id] = 1; });
-    return seedPhotos.filter(function (p) { return !ids[p.id]; }).concat(local);
+    var skip = {};
+    local.forEach(function (p) { skip[p.id] = 1; });
+    var gone = (AdminStore.goneLog && AdminStore.goneLog('photos')) || {};
+    Object.keys(gone).forEach(function (id) { skip[id] = 1; });
+    var remote = remoteCache.photostock && remoteCache.photostock.photos;
+    (Array.isArray(remote) ? remote : []).forEach(function (p) {
+      if (p && p.id && p.status === 'hidden') skip[p.id] = 1;
+    });
+    return seedPhotos.filter(function (p) { return !skip[p.id]; }).concat(local);
   }
 
   function blockById(id) {
@@ -432,6 +525,11 @@
         return Object.assign({ status: 'published', source: 'site' }, o);
       });
     }
+    if (type === 'video-channel' && window.YakVideos) {
+      return (YakVideos.channels || []).map(function (c) {
+        return Object.assign({ status: 'published', source: 'site' }, c);
+      });
+    }
     return [];
   }
 
@@ -468,16 +566,21 @@
 
   function hiddenSlugSet() {
     var set = {};
-    (read().hiddenSlugs || []).forEach(function (s) {
+    mergeHiddenSlugs(remoteCache.authors, read()).slugs.forEach(function (s) {
       if (s) set[String(s)] = 1;
     });
     return set;
   }
 
+  /* Что показывать в админке: вшитое в сайт → пакет с сервера → правки этого браузера.
+     Правка браузера перекрывает серверную запись, только если она новее.
+     _sync: 'draft' — черновик здесь; 'pending' — ещё не на сайте; 'hidden' — снято. */
   function mergedList(type, q) {
     q = String(q || '').trim().toLowerCase();
     var byId = {};
-    var site = (type === 'news' || type === 'article') ? (archiveCache[type] || []) : siteItems(type);
+    var fromRemote = {};
+    var isArchive = type === 'news' || type === 'article';
+    var site = isArchive ? (archiveCache[type] || []) : (packReplacesSite(type) ? [] : siteItems(type));
     if (type === 'article') {
       authorWorkItems(q).forEach(function (x) {
         if (x && x.id != null && x.id !== '') byId[String(x.id)] = x;
@@ -485,19 +588,37 @@
     }
     site.forEach(function (x) {
       if (x && x.id != null && x.id !== '') byId[String(x.id)] = x;
+      if (isArchive && x) {
+        fromRemote[String(x.id)] = 1;
+        if (x.slug) fromRemote[String(x.slug)] = 1;
+      }
     });
     remoteItems(type).forEach(function (x) {
       if (!x) return;
-      var key = String(x.id || x.slug || '');
+      var key = String(x.id || x.slug || x.date || '');
       if (!key) return;
-      byId[key] = Object.assign({}, byId[key] || { status: 'published', source: 'remote' }, x);
+      var base = byId[key] || (x.slug && byId[String(x.slug)]) || { status: 'published', source: 'remote' };
+      var merged = Object.assign({}, base, x, { id: x.id || base.id || key });
+      byId[key] = merged;
+      fromRemote[key] = 1;
+      if (x.slug) { byId[String(x.slug)] = merged; fromRemote[String(x.slug)] = 1; }
     });
     listOf(type).forEach(function (x) {
       if (!x || x.id == null) return;
-      var cur = byId[String(x.id)] || (x.slug && byId[String(x.slug)]) || {};
-      var merged = Object.assign({}, cur, x);
+      var key = String(x.id);
+      var skey = x.slug ? String(x.slug) : '';
+      var cur = byId[key] || (skey && byId[skey]) || null;
+      var onServer = !!(fromRemote[key] || (skey && fromRemote[skey]));
+      if (cur && onServer && String(x.updatedAt || '') <= remoteTime(cur, type)) return;
+      var merged = Object.assign({}, cur || {}, x);
+      merged._sync = x.status === 'draft' ? 'draft' : 'pending';
+      merged._live = !!(onServer && cur && cur.status !== 'hidden');
       byId[String(merged.id)] = merged;
       if (merged.slug) byId[String(merged.slug)] = merged;
+    });
+    Object.keys(byId).forEach(function (k) {
+      var x = byId[k];
+      if (x && !x._sync && x.status === 'hidden') byId[k] = Object.assign({}, x, { _sync: 'hidden' });
     });
     var seen = {};
     return Object.keys(byId).map(function (k) { return byId[k]; }).filter(function (x) {
@@ -533,15 +654,14 @@
     return null;
   }
 
+  /* Свежая версия записи: серверная, если правка в этом браузере не новее её. */
   function getItem(type, id) {
     id = String(id || '');
-    var saved = deskRecord(type, id);
-    if (saved) return saved;
     var list = mergedList(type);
     for (var i = 0; i < list.length; i++) {
       if (String(list[i].id) === id || list[i].date === id || list[i].slug === id) return list[i];
     }
-    return null;
+    return deskRecord(type, id);
   }
 
   function mapArchive(a, type) {
@@ -573,7 +693,8 @@
       rubrics: slugs,
       cycleSlug: a.cycleSlug || a.cycle_slug || '',
       cycleOrder: a.cycleOrder || a.cycle_order || 0,
-      status: 'published',
+      modified: a.modified || '',
+      status: slugs.length === 1 && slugs[0] === 'hidden' ? 'hidden' : 'published',
       source: 'site',
     };
   }
@@ -777,7 +898,9 @@
       : type === 'video-channel' ? 'videoChannels'
       : 'churchDays';
     var list = data[key] || [];
-    item.updatedAt = new Date().toISOString();
+    delete item._sync;
+    delete item._live;
+    item.updatedAt = freshStamp(type, item);
     if (!item.createdAt) item.createdAt = item.updatedAt;
     var i = list.findIndex(function (x) {
       if (String(x.id) === String(item.id)) return true;
@@ -1007,12 +1130,34 @@
     });
     load.then(function (a) {
       if (!a || !a.title) throw new Error('empty');
-      var mapped = mapArchive(a, type);
-      if (desk) mapped = Object.assign({}, mapped, desk, { source: 'desk' });
+      var server = mapArchive(a, type);
+      server._serverModified = String(a.modified || '');
+      server._serverSlug = String(a.slug || '');
       archiveCache[type] = (archiveCache[type] || []).filter(function (x) {
-        return String(x.id) !== String(mapped.id);
-      }).concat([mapped]);
-      renderFn(mapped);
+        return String(x.id) !== String(server.id);
+      }).concat([server]);
+      /* Правка этого браузера открывается, только если она новее сайта. */
+      var deskNewer = desk && String(desk.updatedAt || '') > server._serverModified;
+      function withDesk() {
+        return Object.assign({}, server, desk, {
+          id: server.id,
+          archiveId: server.id,
+          source: 'desk',
+          _serverModified: server._serverModified,
+          _serverSlug: server._serverSlug,
+        });
+      }
+      renderFn(deskNewer ? withDesk() : server);
+      if (desk && !deskNewer && desk.status === 'draft') {
+        var host = ctx.viewEl.querySelector('.post-main') || ctx.viewEl;
+        var note = document.createElement('p');
+        note.className = 'hint-note';
+        note.innerHTML = 'На сайте версия новее вашего черновика от ' + esc(String(desk.updatedAt || '').slice(0, 16).replace('T', ' ')) +
+          ' — открыта она. <button type="button" class="btn btn-ghost" id="desk-old-draft">Открыть мой черновик</button>';
+        host.insertBefore(note, host.firstChild);
+        var oldBtn = document.getElementById('desk-old-draft');
+        if (oldBtn) oldBtn.onclick = function () { renderFn(withDesk()); };
+      }
     }).catch(function () {
       if (hasText) {
         renderFn(desk || cached);
@@ -1127,6 +1272,12 @@
     return id;
   }
 
+  /* Номер новой статьи — случайный из верхнего диапазона; занятость проверяет сервер
+     (expectModified: null), и при совпадении берём другой. */
+  function mintArticleId() {
+    return 2000000000 + Math.floor(Math.random() * 147483000);
+  }
+
   function ensureNumericId(item) {
     var n = numericIdOf(item.id) || numericIdOf(item.archiveId);
     if (n) {
@@ -1135,7 +1286,7 @@
       item.archiveId = n;
       return n;
     }
-    var minted = 2000000000 + (Date.now() % 100000000);
+    var minted = mintArticleId();
     item._prevDeskId = item.id;
     item.id = minted;
     item.archiveId = minted;
@@ -1286,7 +1437,10 @@
     return next();
   }
 
-  function publishToArchive(item, type) {
+  /* opts.expectModified — версия на сервере, с которой открыли форму (null — статьи ещё нет).
+     Возвращает modified записанной версии. */
+  function publishToArchive(item, type, opts) {
+    opts = opts || {};
     if (!window.AdminApi || !AdminApi.upsertArchive) {
       return Promise.reject(new Error('нет соединения с сервером'));
     }
@@ -1309,26 +1463,75 @@
       var slug = 'tag:' + String((t && (t.slug || t)) || '');
       if (slug !== 'tag:' && slugs.indexOf(slug) === -1) slugs.push(slug);
     });
-    return AdminApi.upsertArchive({
-      articles: [{
-        id: ensureNumericId(item),
-        slug: item.slug,
-        title: item.title,
-        date: item.date,
-        modified: new Date().toISOString(),
-        author: item.author || '',
-        categories: slugs.map(rubricTitle),
-        categorySlugs: slugs,
-        excerpt: item.excerptHtml || item.excerpt || '',
-        contentHtml: item.contentHtml || '',
-        contentText: item.body || '',
-        image: httpCover(item) || undefined,
-        authorSlug: item.authorSlug || '',
-        authorSlugs: item.authorSlugs || (item.authorSlug ? [item.authorSlug] : []),
-        tags: item.tags || [],
-        source: 'desk',
-      }],
+    var modified = new Date().toISOString();
+    if (opts.after && opts.after >= modified) {
+      var bump = Date.parse(opts.after);
+      if (!isNaN(bump)) modified = new Date(bump + 1).toISOString();
+    }
+    var row = {
+      id: ensureNumericId(item),
+      slug: item.slug,
+      title: item.title,
+      date: item.date,
+      modified: modified,
+      author: item.author || '',
+      categories: slugs.map(rubricTitle),
+      categorySlugs: slugs,
+      excerpt: item.excerptHtml || item.excerpt || '',
+      contentHtml: item.contentHtml || '',
+      contentText: item.body || '',
+      image: httpCover(item) || undefined,
+      authorSlug: item.authorSlug || '',
+      authorSlugs: item.authorSlugs || (item.authorSlug ? [item.authorSlug] : []),
+      tags: item.tags || [],
+      source: 'desk',
+    };
+    if (opts.expectModified !== undefined) row.expectModified = opts.expectModified;
+    return AdminApi.upsertArchive({ articles: [row] }).then(function (res) {
+      var n = res && res.articles && res.articles.upserted;
+      if (!res || res.ok === false || n === 0) throw new Error('сервер не сохранил статью');
+      return modified;
+    }, function (err) {
+      if (err && err.status === 409) {
+        var e = new Error(opts.expectModified === null
+          ? 'номер статьи оказался занят'
+          : 'Эту публикацию изменили с другого устройства, пока она была открыта здесь.');
+        e.conflict = true;
+        e.idTaken = opts.expectModified === null;
+        throw e;
+      }
+      throw err;
     });
+  }
+
+  /* Адрес уже занят другой публикацией на сервере? Сбой проверки — не повод не публиковать:
+     сервер ищет адрес в базе первым, и до запасного источника доходит, только если его там нет. */
+  function slugTakenOnServer(slug, id) {
+    if (!slug || !window.AdminApi || !AdminApi.getArticle) return Promise.resolve(false);
+    return AdminApi.getArticle(slug).then(function (a) {
+      return !!(a && a.slug === slug && a.id != null && String(a.id) !== String(id));
+    }, function () { return false; });
+  }
+
+  /* Сервер подтвердил запись: список показывает серверную версию,
+     копия в этом браузере больше не нужна (стол не пухнет). */
+  function settleArchive(type, rec, modified) {
+    var shown = Object.assign({}, rec, { modified: modified, source: 'site' });
+    delete shown._sync;
+    delete shown._live;
+    archiveCache[type] = (archiveCache[type] || []).filter(function (x) {
+      return String(x.id) !== String(shown.id) && !(shown.slug && x.slug === shown.slug);
+    }).concat([shown]);
+    var data = read();
+    var before = data.articles.length;
+    data.articles = data.articles.filter(function (a) {
+      if (!a) return false;
+      var same = String(a.id) === String(rec.id) ||
+        (rec.slug && a.slug === rec.slug) ||
+        (rec._prevDeskId && String(a.id) === String(rec._prevDeskId));
+      return !same || String(a.updatedAt || '') > modified;
+    });
+    if (data.articles.length !== before) write(data);
   }
 
   function catalogTags() {
@@ -1509,38 +1712,57 @@
   }
 
   function hidePublication(ctx, type, item, back) {
-    var slug = item.slug || item.id;
+    var slug = String(item.slug || item.id || '');
+    var onServer = !!(numericIdOf(item.id) || numericIdOf(item.archiveId) ||
+      item._serverModified !== undefined || item.source === 'site' || item.source === 'author-work');
+    if (!onServer) {
+      remove(type, item.id);
+      ctx.toast('Черновик удалён — на сайте его не было');
+      ctx.go(back);
+      return;
+    }
+    if (savingArticle) { ctx.toast('Уже отправляем — подождите', true); return; }
+    savingArticle = true;
     hideItem(type, item.id || slug);
-    var data = read();
-    data.hiddenSlugs = data.hiddenSlugs || [];
-    if (slug && data.hiddenSlugs.indexOf(String(slug)) === -1) data.hiddenSlugs.push(String(slug));
-    write(data);
-    (window.YakAuthors || []).forEach(function (a) {
-      if (!a || !a.slug) return;
-      if ((a.recent || []).some(function (p) { return p && String(p.slug) === String(slug); })) {
-        unlinkAuthor(a.slug, slug);
-      }
+    markHiddenSlug(slug, true);
+    var linked = {};
+    (window.YakAuthors || []).concat(authorsFromPack(remoteCache.authors)).forEach(function (a) {
+      if (!a || !a.slug || linked[a.slug]) return;
+      if ((a.recent || []).some(function (p) { return p && String(p.slug) === slug; })) linked[a.slug] = 1;
     });
+    if (item.authorSlug) linked[item.authorSlug] = 1;
+    Object.keys(linked).forEach(function (a) { unlinkAuthor(a, slug); });
+    var cyclesDirty = type === 'article' && syncArticleToCycle({ slug: slug, status: 'hidden' });
     ctx.toast('Снимаем с сайта…');
-    var tasks = [publishAuthors().catch(function () {})];
+    var hidden = null;
+    var main = Promise.resolve(null);
     if (item.source !== 'author-work' || item.contentHtml || item.body) {
-      var hidden = Object.assign({}, item, {
+      hidden = Object.assign({}, item, {
         slug: slug,
         title: item.title || slug,
         date: item.date || todayIso(),
         rubrics: ['hidden'],
+        status: 'hidden',
         excerpt: item.excerpt || '',
         contentHtml: item.contentHtml || '',
         body: item.body || '',
       });
-      tasks.push(publishToArchive(hidden, type).catch(function () {}));
+      main = publishToArchive(hidden, type, { after: item._serverModified || '' });
     }
-    Promise.all(tasks).then(function () {
-      ctx.toast('Снято с публикации');
+    Promise.all([main, publishAuthors()]).then(function (res) {
+      if (hidden && res[0]) settleArchive(type, hidden, res[0]);
+      if (!cyclesDirty) return '';
+      return publishCycles().then(function () { return ''; }, function (e) {
+        return 'Снято, но цикл не обновился (' + ((e && e.message) || 'нет связи') + ') — откройте цикл и нажмите «Опубликовать».';
+      });
+    }).then(function (warn) {
+      ctx.toast(warn || 'Снято с публикации', !!warn);
       ctx.go(back);
-    }).catch(function (err) {
-      ctx.toast((err && err.message) || 'Снято локально', true);
-      ctx.go(back);
+    }, function (err) {
+      var msg = (err && err.message) || 'нет связи';
+      ctx.toast(err && err.readFailed ? msg : ('Не снято с сайта: ' + msg + '. Нажмите «Снять» ещё раз.'), true);
+    }).then(function () {
+      savingArticle = false;
     });
   }
 
@@ -1628,28 +1850,40 @@
     });
   }
 
+  /* Циклы, как они стоят на сайте, плюс опубликованные здесь правки новее серверных. */
   function catalogCycles() {
+    var stamp = packStamp[CYCLES_PAGE_SLUG] || '';
     var byId = {};
-    ((window.YakCycles && YakCycles.ALL) || []).forEach(function (c) {
-      if (c && c.id) byId[c.id] = Object.assign({ status: 'published', source: 'site' }, c);
-    });
-    (remoteCache.cycles || []).forEach(function (c) {
-      if (!c || !c.id) return;
-      var prev = byId[c.id] || {};
-      byId[c.id] = Object.assign({}, prev, c);
-    });
-    (read().cycles || []).forEach(function (c) {
-      if (!c || !c.id) return;
-      var prev = byId[c.id] || {};
-      var next = Object.assign({}, prev, c);
+    var order = [];
+    var onServer = {};
+    function put(id, rec) {
+      if (!byId[id]) order.push(id);
+      byId[id] = rec;
+    }
+    function inherit(next, prev) {
+      if (!prev) return next;
       if (!next.authorSlug && prev.authorSlug) next.authorSlug = prev.authorSlug;
       if ((!next.authorSlugs || !next.authorSlugs.length) && prev.authorSlugs && prev.authorSlugs.length) {
         next.authorSlugs = prev.authorSlugs;
       }
-      if ((prev.items || []).length > (next.items || []).length) next.items = prev.items;
-      byId[c.id] = next;
+      return next;
+    }
+    ((window.YakCycles && YakCycles.ALL) || []).forEach(function (c) {
+      if (c && c.id) put(c.id, Object.assign({ status: 'published', source: 'site' }, c));
     });
-    return Object.keys(byId).map(function (k) { return byId[k]; }).filter(function (c) {
+    (Array.isArray(remoteCache.cycles) ? remoteCache.cycles : []).forEach(function (c) {
+      if (!c || !c.id) return;
+      var prev = byId[c.id];
+      onServer[c.id] = 1;
+      put(c.id, inherit(Object.assign({}, prev || {}, c, { updatedAt: c.updatedAt || stamp }), prev));
+    });
+    (read().cycles || []).forEach(function (c) {
+      if (!c || !c.id || c.status === 'draft') return;
+      var prev = byId[c.id];
+      if (prev && onServer[c.id] && String(prev.updatedAt || '') >= String(c.updatedAt || '')) return;
+      put(c.id, inherit(Object.assign({}, prev || {}, c), prev));
+    });
+    return order.map(function (k) { return byId[k]; }).filter(function (c) {
       return !c.status || c.status === 'published';
     });
   }
@@ -1946,21 +2180,24 @@
     var author = type === 'article' ? findAuthor(val('d-author-slug') || val('d-author-q')) : null;
     var slug = val('d-slug') || slugify(title);
     var coverNow = val('d-cover');
+    if (savingArticle) { ctx.toast('Уже отправляем — подождите', true); return; }
+    savingArticle = true;
 
     var ready = Promise.resolve({ cover: coverNow, html: html, lead: lead });
     if (status === 'published' && (String(coverNow).indexOf('data:') === 0 || /src="data:image/.test(html + lead))) {
       ctx.toast('Сохраняем фото на сервер…');
-      ready = uploadDataUrl(coverNow, 'covers')
-        .then(function (cover) {
-          return hoistHtmlImages(html, 'inline').then(function (h) {
-            return hoistHtmlImages(lead, 'inline').then(function (l) {
-              return { cover: cover, html: h, lead: l };
-            });
+      ready = Promise.resolve().then(function () {
+        return uploadDataUrl(coverNow, 'covers');
+      }).then(function (cover) {
+        return hoistHtmlImages(html, 'inline').then(function (h) {
+          return hoistHtmlImages(lead, 'inline').then(function (l) {
+            return { cover: cover, html: h, lead: l };
           });
         });
+      });
     }
 
-    var saved = null;
+    var stored = false;
     ready.then(function (pack) {
       html = pack.html;
       lead = pack.lead;
@@ -1990,36 +2227,102 @@
         status: status,
         source: 'desk',
       });
-      saved = next;
-      if (status === 'published') ensureNumericId(next);
-      upsert(type, next);
-      if (type === 'article') syncArticleToCycle(next);
-      if (author && status === 'published') {
-        linkAuthor(author.slug, {
-          slug: slug,
-          title: title,
-          date: next.date,
-          excerpt: next.excerpt,
-        });
+      /* Номер присваиваем до записи в стол: повтор после сбоя пишет ту же статью, а не новую. */
+      var fresh = false;
+      if (status === 'published') {
+        fresh = !numericIdOf(next.id) && !numericIdOf(next.archiveId);
+        ensureNumericId(next);
+        item.id = next.id;
+        item.archiveId = next.archiveId;
+        if (next._prevDeskId) item._prevDeskId = next._prevDeskId;
       }
+      upsert(type, next);
+      stored = true;
       if (status !== 'published') {
-        ctx.toast('Черновик сохранён');
+        ctx.toast(item._serverModified ? 'Черновик сохранён здесь — на сайте пока прежняя версия' : 'Черновик сохранён — на сайт не отправлен');
         ctx.go(type === 'news' ? 'news' : 'articles');
         return;
       }
       ctx.toast('Отправляем на сайт…');
-      return publishToArchive(next, type).then(function () {
-        upsert(type, next);
-        if (type === 'article' && next.cycleSlug) return publishCycles().catch(function () {});
-      }).then(function () {
-        ctx.toast('Опубликовано на сайте');
-        ctx.go(type === 'news' ? 'news' : 'articles');
+      return sendArticle(ctx, item, next, type, fresh, false, 3).then(function (modified) {
+        if (modified == null) return;
+        return afterArticlePublished(ctx, item, next, type, author, modified);
       });
     }).catch(function (e) {
-      if (saved && status === 'published') {
-        upsert(type, Object.assign({}, saved, { status: 'draft' }));
+      var msg = (e && e.message) || 'нет связи';
+      ctx.toast(stored
+        ? 'Не ушло на сайт: ' + msg + '. Правка сохранена здесь — нажмите «Опубликовать» ещё раз.'
+        : 'Не сохранено: ' + msg + '. Текст остался в форме — повторите.', true);
+    }).then(function () {
+      savingArticle = false;
+    });
+  }
+
+  var savingArticle = false;
+
+  /* Запись статьи без перезаписи чужой правки. null — редактор решил не заменять. */
+  function sendArticle(ctx, item, next, type, fresh, force, left) {
+    var opts = { after: item._serverModified || '' };
+    if (fresh) opts.expectModified = null;
+    else if (!force && item._serverModified !== undefined) opts.expectModified = item._serverModified;
+    var slugCheck = (!fresh && item._serverSlug && next.slug === item._serverSlug)
+      ? Promise.resolve(false)
+      : slugTakenOnServer(next.slug, next.id);
+    return slugCheck.then(function (taken) {
+      if (taken) throw new Error('адрес «' + next.slug + '» уже занят другой публикацией — поменяйте адрес');
+      return publishToArchive(next, type, opts);
+    }).catch(function (e) {
+      if (e && e.idTaken && left > 0) {
+        next.id = mintArticleId();
+        next.archiveId = next.id;
+        item.id = next.id;
+        item.archiveId = next.id;
+        upsert(type, next);
+        return sendArticle(ctx, item, next, type, true, force, left - 1);
       }
-      ctx.toast(e.message || 'Не ушло на сайт — осталось черновиком здесь', true);
+      if (e && e.conflict && !e.idTaken) {
+        if (confirm(e.message + '\n\nЗаменить ту версию вашей?')) return sendArticle(ctx, item, next, type, false, true, left);
+        ctx.toast('Ничего не отправлено. Ваша правка сохранена здесь — откройте публикацию заново, чтобы увидеть версию с сайта.', true);
+        return null;
+      }
+      throw e;
+    });
+  }
+
+  /* Сервер принял статью: убираем копию из стола, возвращаем адрес из снятых,
+     обновляем авторов и циклы. Сбой этих шагов показываем, а не глотаем. */
+  function afterArticlePublished(ctx, item, next, type, author, modified) {
+    var prevSlug = item._serverSlug || item.slug || '';
+    var prevAuthor = item.authorSlug || (item.authorSlugs && item.authorSlugs[0]) || '';
+    item._serverModified = modified;
+    item._serverSlug = next.slug;
+    settleArchive(type, next, modified);
+    var authorsDirty = false;
+    if (isSlugHidden(next.slug)) {
+      markHiddenSlug(next.slug, false);
+      authorsDirty = true;
+    }
+    if (prevAuthor && (!author || prevAuthor !== author.slug || (prevSlug && prevSlug !== next.slug))) {
+      unlinkAuthor(prevAuthor, prevSlug || next.slug);
+      authorsDirty = true;
+    }
+    if (author) {
+      linkAuthor(author.slug, { slug: next.slug, title: next.title, date: next.date, excerpt: next.excerpt });
+      authorsDirty = true;
+    }
+    function note(what) {
+      return function (e) { return what + ' (' + ((e && e.message) || 'нет связи') + ')'; };
+    }
+    var follow = [];
+    if (authorsDirty) follow.push(publishAuthors().then(function () { return ''; }, note('карточки авторов')));
+    if (type === 'article' && syncArticleToCycle(next, prevSlug)) {
+      follow.push(publishCycles().then(function () { return ''; }, note('цикл')));
+    }
+    return Promise.all(follow).then(function (res) {
+      var bad = res.filter(Boolean);
+      if (bad.length) ctx.toast('Статья на сайте, но не обновились: ' + bad.join('; ') + '. Нажмите «Опубликовать» ещё раз.', true);
+      else ctx.toast('Опубликовано на сайте');
+      ctx.go(type === 'news' ? 'news' : 'articles');
     });
   }
 
@@ -2049,36 +2352,29 @@
   }
 
   function cleanEventPack(e) {
-    var copy = Object.assign({}, e);
-    delete copy.source;
-    delete copy._slugLocked;
-    delete copy._prevDeskId;
+    var copy = cleanPackItem(e);
+    if (copy && copy.status !== 'hidden') copy.status = 'published';
     return copy;
   }
 
+  /* Афиша на проде целиком из пакета, поэтому пакет должен быть полным:
+     серверный список + правки этого браузера, новее — побеждает. */
   function publishEvents() {
-    if (!window.AdminApi || !AdminApi.upsertArchive) {
-      return Promise.reject(new Error('нет соединения с сервером'));
-    }
-    return pullRemotePack(EVENTS_PAGE_SLUG).then(function (remote) {
-      absorbEventsPack(remote);
-      var by = {};
-      mergedList('event').forEach(function (e) {
-        if (!e || !e.id) return;
-        if (e.status && e.status !== 'published') return;
-        by[e.id] = cleanEventPack(e);
-      });
-      (read().events || []).forEach(function (e) {
-        if (e && e.status === 'hidden' && e.id) by[e.id] = { id: e.id, slug: e.slug || e.id, status: 'hidden' };
-      });
-      var items = Object.keys(by).map(function (k) { return by[k]; });
-      return upsertJsonPack({
-        fallbackId: EVENTS_PAGE_ID,
-        slug: EVENTS_PAGE_SLUG,
-        title: 'Афиша редакции',
-        source: 'desk-events',
-        body: { items: items, organizers: publishedOrganizers() },
-      });
+    return publishPackSafe({
+      slug: EVENTS_PAGE_SLUG,
+      fallbackId: EVENTS_PAGE_ID,
+      title: 'Афиша редакции',
+      source: 'desk-events',
+      build: function (remote, stamp) {
+        absorbEventsPack(remote);
+        var data = read();
+        var baseItems = remote ? eventsFromPack(remote) : siteItems('event').map(cleanEventPack);
+        var baseOrgs = remote ? orgsFromPack(remote) : siteItems('organizer').map(function (o) { return shapeOrganizer(o); });
+        return {
+          items: lwwMerge(baseItems, data.events || [], { stamp: stamp, shape: cleanEventPack }),
+          organizers: lwwMerge(baseOrgs, data.organizers || [], { stamp: stamp, shape: shapeOrganizer }),
+        };
+      },
     });
   }
 
@@ -2134,15 +2430,7 @@
       function () { saveEvent(ctx, item, isNew, 'published'); },
       isNew ? null : function () {
         if (!confirm('Снять событие с публикации?')) return;
-        hideItem('event', item.id);
-        ctx.toast('Снимаем с сайта…');
-        publishEvents().then(function () {
-          ctx.toast('Снято с публикации');
-          ctx.go('afisha');
-        }).catch(function (err) {
-          ctx.toast((err && err.message) || 'Снято локально', true);
-          ctx.go('afisha');
-        });
+        hideAndPublish(ctx, function () { hideItem('event', item.id); }, publishEvents, 'afisha');
       },
       slug ? ('event.html?id=' + encodeURIComponent(slug)) : 'events.html'
     );
@@ -2219,68 +2507,72 @@
       : Promise.resolve();
     ctx.toast(status === 'published' ? 'Публикуем…' : 'Сохраняем…');
     ready.then(function () {
-      if (item.id && item.id !== next.id) hideItem('event', item.id);
+      if (item.id && item.id !== next.id && status === 'published') hideItem('event', item.id);
       upsert('event', next);
       if (status !== 'published') return;
-      return publishEvents().catch(function (err) {
-        upsert('event', Object.assign({}, next, { status: 'draft' }));
-        throw err;
-      });
+      return publishEvents();
     }).then(function () {
-      ctx.toast(status === 'published' ? 'На сайте' : 'Черновик сохранён');
+      ctx.toast(status === 'published' ? 'На сайте' : 'Черновик сохранён — на сайт не отправлен');
       ctx.go('afisha');
     }).catch(function (e) {
-      ctx.toast(e.message || 'Не ушло на сайт — осталось в этом браузере', true);
+      ctx.toast(failText(e), true);
+    });
+  }
+
+  /* Честный текст при сбое: правка лежит в этом браузере и уйдёт со следующей публикацией. */
+  function failText(e) {
+    var msg = (e && e.message) || '';
+    if (e && e.readFailed) return msg;
+    return 'Не ушло на сайт' + (msg ? ': ' + msg : '') + '. Правка сохранена здесь — нажмите «Опубликовать» ещё раз.';
+  }
+
+  /* «Снять»: отметка сохраняется сразу, «Снято» — только после ответа сервера.
+     При сбое остаёмся в форме, чтобы можно было повторить. */
+  function hideAndPublish(ctx, mark, publish, back) {
+    mark();
+    ctx.toast('Снимаем с сайта…');
+    return publish().then(function () {
+      ctx.toast('Снято с публикации');
+      if (back) ctx.go(back);
+    }).catch(function (e) {
+      var msg = (e && e.message) || '';
+      ctx.toast(e && e.readFailed ? msg : ('Не снято с сайта' + (msg ? ': ' + msg : '') + '. Нажмите «Снять» ещё раз.'), true);
     });
   }
 
   function publishAudio() {
-    if (!window.AdminApi || !AdminApi.upsertArchive) {
-      return Promise.reject(new Error('нет соединения с сервером'));
-    }
-    var tracks = (read().audio || []).filter(function (t) {
-      return t && t.id && (!t.status || t.status === 'published');
-    }).map(function (t) {
-      var copy = Object.assign({}, t);
-      delete copy.source;
-      return copy;
-    });
-    return upsertJsonPack({
-      fallbackId: AUDIO_PAGE_ID,
+    return publishPackSafe({
       slug: AUDIO_PAGE_SLUG,
+      fallbackId: AUDIO_PAGE_ID,
       title: 'Аудио редакции',
       source: 'desk-audio',
-      body: { tracks: tracks },
+      build: function (remote, stamp) {
+        if (remote) remoteCache.audio = remote;
+        return { tracks: lwwMerge(listFromPack(remote, 'tracks'), read().audio || [], { stamp: stamp }) };
+      },
     });
   }
 
+  /* Партнёры на проде целиком из пакета: база — серверный список,
+     а пока его нет — вшитые в сайт карточки. */
   function publishVideo() {
-    if (!window.AdminApi || !AdminApi.upsertArchive) {
-      return Promise.reject(new Error('нет соединения с сервером'));
-    }
-    var byVid = {};
-    ((remoteCache.video && remoteCache.video.items) || []).forEach(function (v) {
-      if (v && v.id) byVid[String(v.id)] = v;
-    });
-    (read().video || []).forEach(function (v) {
-      if (v && v.id) byVid[String(v.id)] = Object.assign({}, byVid[String(v.id)] || {}, v);
-    });
-    var items = Object.keys(byVid).map(function (k) { return byVid[k]; }).filter(function (v) {
-      return v && v.id && (!v.status || v.status === 'published');
-    }).map(function (v) {
-      var copy = Object.assign({}, v);
-      delete copy.source;
-      return copy;
-    });
-    var channels = catalogVideoChannels().filter(function (c) {
-      return c && c.id && (!c.status || c.status === 'published');
-    });
-    return upsertJsonPack({
-      fallbackId: VIDEO_PAGE_ID,
+    return publishPackSafe({
       slug: VIDEO_PAGE_SLUG,
+      fallbackId: VIDEO_PAGE_ID,
       title: 'Видео редакции',
       source: 'desk-video',
-      body: { items: items, channels: channels },
+      build: function (remote, stamp) {
+        if (remote) remoteCache.video = remote;
+        var data = read();
+        var r = remote && !Array.isArray(remote) ? remote : {};
+        var baseChannels = Array.isArray(r.channels)
+          ? r.channels
+          : ((window.YakVideos && YakVideos.channels) || []).map(cleanPackItem);
+        return {
+          items: lwwMerge(r.items || [], data.video || [], { stamp: stamp }),
+          channels: lwwMerge(baseChannels, data.videoChannels || [], { stamp: stamp }),
+        };
+      },
     });
   }
 
@@ -2314,11 +2606,7 @@
       function () { saveAudio(ctx, item, 'published'); },
       isNew ? null : function () {
         if (!confirm('Снять аудио с публикации?')) return;
-        hideItem('audio', item.id);
-        publishAudio().then(function () {
-          ctx.toast('Снято с публикации');
-          ctx.go('audio');
-        }).catch(function (e) { ctx.toast(e.message || 'Не удалось снять', true); });
+        hideAndPublish(ctx, function () { hideItem('audio', item.id); }, publishAudio, 'audio');
       },
       'audio.html'
     );
@@ -2378,10 +2666,10 @@
       upsert('audio', next);
       if (status === 'published') return publishAudio();
     }).then(function () {
-      ctx.toast(status === 'published' ? 'На сайте' : 'Черновик сохранён');
+      ctx.toast(status === 'published' ? 'На сайте' : 'Черновик сохранён — на сайт не отправлен');
       ctx.go('audio');
     }).catch(function (e) {
-      ctx.toast(e.message || 'Не удалось сохранить', true);
+      ctx.toast(failText(e), true);
     });
   }
 
@@ -2422,11 +2710,7 @@
       function () { saveVideo(ctx, item, 'published'); },
       isNew ? null : function () {
         if (!confirm('Снять видео с публикации?')) return;
-        hideItem('video', item.id);
-        publishVideo().then(function () {
-          ctx.toast('Снято с публикации');
-          ctx.go('video');
-        }).catch(function (e) { ctx.toast(e.message || 'Не удалось снять', true); });
+        hideAndPublish(ctx, function () { hideItem('video', item.id); }, publishVideo, 'video');
       },
       'video.html'
     );
@@ -2491,39 +2775,22 @@
       upsert('video', next);
       if (status === 'published') return publishVideo();
     }).then(function () {
-      ctx.toast(status === 'published' ? 'На сайте' : 'Черновик сохранён');
+      ctx.toast(status === 'published' ? 'На сайте' : 'Черновик сохранён — на сайт не отправлен');
       ctx.go('video');
     }).catch(function (e) {
-      ctx.toast(e.message || 'Не удалось сохранить', true);
+      ctx.toast(failText(e), true);
     });
   }
 
   function catalogVideoChannels() {
-    var by = {};
-    (((window.YakVideos && YakVideos.channels) || [])).forEach(function (c) {
-      if (c && c.id) by[c.id] = Object.assign({ status: 'published', source: 'site' }, c);
-    });
-    ((remoteCache.video && remoteCache.video.channels) || []).forEach(function (c) {
-      if (c && c.id) by[c.id] = Object.assign({}, by[c.id] || {}, c);
-    });
-    (read().videoChannels || []).forEach(function (c) {
-      if (c && c.id) by[c.id] = Object.assign({}, by[c.id] || {}, c);
-    });
-    return Object.keys(by).map(function (k) { return by[k]; }).filter(function (c) {
-      return !c.status || c.status === 'published';
+    return mergedList('video-channel').filter(function (c) {
+      return c && c.id && c.status !== 'hidden';
     });
   }
 
   function catalogAllVideos() {
-    var by = {};
-    (((window.YakVideos && YakVideos.items) || [])).forEach(function (v) {
-      if (v && v.id) by[String(v.id)] = v;
-    });
-    (read().video || []).forEach(function (v) {
-      if (v && v.id) by[String(v.id)] = Object.assign({}, by[String(v.id)] || {}, v);
-    });
-    return Object.keys(by).map(function (k) { return by[k]; }).filter(function (v) {
-      return v && (!v.status || v.status === 'published');
+    return mergedList('video').filter(function (v) {
+      return v && v.id != null && v.status !== 'hidden';
     });
   }
 
@@ -2582,9 +2849,9 @@
       function () { saveVideoPartner(ctx, item, isNew, 'published'); },
       isNew ? null : function () {
         if (!confirm('Удалить карточку партнёра? Видео останутся в каталоге.')) return;
-        upsert('video-channel', Object.assign({}, item, { status: 'hidden' }));
-        publishVideo().then(function () { ctx.toast('Снято'); ctx.go('video-partners'); })
-          .catch(function (e) { ctx.toast(e.message || 'Снято локально', true); ctx.go('video-partners'); });
+        hideAndPublish(ctx, function () {
+          upsert('video-channel', Object.assign({}, item, { status: 'hidden' }));
+        }, publishVideo, 'video-partners');
       },
       item.id ? ('video-channel.html?id=' + encodeURIComponent(item.id)) : 'video.html'
     );
@@ -2672,10 +2939,10 @@
       });
       if (status === 'published') return publishVideo();
     }).then(function () {
-      ctx.toast(status === 'published' ? 'На сайте' : 'Черновик сохранён');
+      ctx.toast(status === 'published' ? 'На сайте' : 'Черновик сохранён — на сайт не отправлен');
       ctx.go('video-partners');
     }).catch(function (e) {
-      ctx.toast(e.message || 'Не удалось сохранить', true);
+      ctx.toast(failText(e), true);
     });
   }
 
@@ -2835,34 +3102,30 @@
     var delBtn = document.getElementById('desk-del');
     if (delBtn) delBtn.onclick = function () {
       if (!confirm('Снять день с публикации?')) return;
-      hideItem('church-day', item.id);
-      ctx.toast('Снимаем с сайта…');
-      publishChurchDays().then(function () {
-        ctx.toast('Снято с публикации');
-        ctx.go('church-day');
-      }).catch(function (err) {
-        ctx.toast((err && err.message) || 'Снято локально', true);
-        ctx.go('church-day');
-      });
+      hideAndPublish(ctx, function () { hideItem('church-day', item.date || item.id); }, publishChurchDays, 'church-day');
     };
   }
 
   var CALENDAR_PAGE_ID = 1900000007;
   var CALENDAR_PAGE_SLUG = 'yak-calendar-data';
 
+  function shapeDay(d) {
+    var copy = cleanPackItem(d);
+    if (!copy || !copy.date) return null;
+    copy.id = copy.date;
+    return copy;
+  }
+
   function publishChurchDays() {
-    if (!window.AdminApi || !AdminApi.upsertArchive) {
-      return Promise.reject(new Error('нет соединения с сервером'));
-    }
-    var items = (read().churchDays || []).filter(function (d) {
-      return d && d.date && (!d.status || d.status === 'published');
-    });
-    return upsertJsonPack({
-      fallbackId: CALENDAR_PAGE_ID,
+    return publishPackSafe({
       slug: CALENDAR_PAGE_SLUG,
+      fallbackId: CALENDAR_PAGE_ID,
       title: 'Дни Церкви',
       source: 'desk-calendar',
-      body: { days: items },
+      build: function (remote, stamp) {
+        if (remote) remoteCache.calendar = remote;
+        return { days: lwwMerge(listFromPack(remote, 'days'), read().churchDays || [], { stamp: stamp, key: dayKey, shape: shapeDay }) };
+      },
     });
   }
 
@@ -2874,6 +3137,7 @@
     var saintHtml = saintBox ? saintBox.innerHTML : '';
     var saintName = saintBox ? (saintBox.textContent || '').replace(/\s+/g, ' ').trim() : '';
     var nextDay = Object.assign({}, item, {
+      id: date,
       date: date,
       weekday: weekdayName(date),
       title: title,
@@ -2888,22 +3152,20 @@
         quote: val('d-quote'),
       },
     });
+    var movedFrom = item.date && item.date !== date && item.status !== 'draft' ? item.date : '';
+    if (movedFrom && status === 'published') hideItem('church-day', movedFrom);
     upsert('church-day', nextDay);
-    if (status !== 'published' && status !== 'draft') {
-      ctx.toast('Черновик сохранён');
+    if (status !== 'published') {
+      ctx.toast('Черновик сохранён — на сайт не отправлен');
       ctx.go('church-day');
       return;
     }
-    ctx.toast(status === 'published' ? 'Отправляем на сайт…' : 'Сохраняем…');
+    ctx.toast('Отправляем на сайт…');
     publishChurchDays().then(function () {
-      ctx.toast(status === 'published' ? 'День на сайте' : 'Черновик сохранён');
+      ctx.toast('День на сайте');
       ctx.go('church-day');
     }).catch(function (err) {
-      if (status === 'published') {
-        upsert('church-day', Object.assign({}, nextDay, { status: 'draft' }));
-      }
-      ctx.toast((err && err.message) || 'Не ушло на сайт — осталось в этом браузере', true);
-      ctx.go('church-day');
+      ctx.toast(failText(err), true);
     });
   }
 
@@ -3144,8 +3406,8 @@
       ctx.toast('Автор удалён, статьи на месте');
       ctx.go('authors');
     }).catch(function (e) {
-      ctx.toast(e.message || 'Удалено локально', true);
-      ctx.go('authors');
+      var msg = (e && e.message) || '';
+      ctx.toast(e && e.readFailed ? msg : ('Карточка ещё на сайте' + (msg ? ': ' + msg : '') + '. Нажмите «Удалить» ещё раз.'), true);
     });
   }
 
@@ -3169,7 +3431,7 @@
         status: status,
       }));
       if (status !== 'published') {
-        ctx.toast('Черновик сохранён');
+        ctx.toast('Черновик сохранён — на сайт не отправлен');
         ctx.go('authors');
         return;
       }
@@ -3178,7 +3440,7 @@
         ctx.go('authors');
       });
     }).catch(function (e) {
-      ctx.toast(e.message || 'Не удалось сохранить автора', true);
+      ctx.toast(failText(e), true);
     });
   }
 
@@ -3205,9 +3467,9 @@
     try { return JSON.parse(raw); } catch (e) { return null; }
   }
 
+  /* Мягкое чтение для показа: при сбое — null, кэш остаётся прежним. */
   function pullRemotePack(slug) {
-    if (!window.AdminApi || !AdminApi.getArticle) return Promise.resolve(null);
-    return AdminApi.getArticle(slug).then(parseArchivePack).catch(function () { return null; });
+    return readPackStrict(slug).then(function (cur) { return cur.pack; }, function () { return null; });
   }
 
   function pullRemoteArticle(idOrSlug) {
@@ -3221,20 +3483,174 @@
     return 1910000000 + (n % 100);
   }
 
-  function resolvePackTarget(slug, fallbackId) {
-    return pullRemoteArticle(slug).then(function (bySlug) {
-      if (bySlug && bySlug.id) {
-        return { id: bySlug.id, slug: slug, article: bySlug, pack: parseArchivePack(bySlug) };
-      }
-      return pullRemoteArticle(fallbackId).then(function (byId) {
-        if (byId && byId.slug && byId.slug !== slug) {
-          return { id: safePackId(fallbackId), slug: slug, article: null, pack: null };
-        }
-        if (byId && byId.id && (!byId.slug || byId.slug === slug)) {
-          return { id: byId.id, slug: slug, article: byId, pack: parseArchivePack(byId) };
-        }
-        return { id: safePackId(fallbackId), slug: slug, article: null, pack: null };
+  function wait(ms) {
+    return new Promise(function (resolve) { setTimeout(resolve, ms); });
+  }
+
+  /* Строгое чтение перед записью. 404 — пакета ещё нет; любой другой сбой — ошибка:
+     писать вслепую нельзя, иначе пакет перезапишется данными одного браузера. */
+  function readPackStrict(slug) {
+    if (!window.AdminApi || !AdminApi.getArticle) return Promise.reject(new Error('нет соединения с сервером'));
+    function attempt(left) {
+      return AdminApi.getArticle(slug).then(function (art) {
+        if (!art || art.slug !== slug) return { article: null, pack: null };
+        packStamp[slug] = String(art.modified || art.date || '');
+        var pack = parseArchivePack(art);
+        if (pack != null && slug !== PHOTO_PAGE_SLUG) rememberPack(slug, pack);
+        return { article: art, pack: pack };
+      }, function (err) {
+        if (err && err.status === 404) return { article: null, pack: null };
+        if (left > 0) return wait(800).then(function () { return attempt(left - 1); });
+        var e = new Error('Сайт не ответил — ничего не отправлено. Правка сохранена здесь, повторите через минуту.');
+        e.readFailed = true;
+        throw e;
       });
+    }
+    return attempt(2);
+  }
+
+  function resolvePackTarget(slug, fallbackId) {
+    return readPackStrict(slug).then(function (cur) {
+      return {
+        id: cur.article && cur.article.id ? cur.article.id : safePackId(fallbackId),
+        slug: slug,
+        article: cur.article,
+        pack: cur.pack,
+      };
+    });
+  }
+
+  /* Сколько записей в пакете — защита от записи, после которой на сайте станет меньше. */
+  function packSize(pack) {
+    if (!pack) return 0;
+    if (Array.isArray(pack)) return pack.length;
+    var n = 0;
+    ['items', 'events', 'organizers', 'tracks', 'days', 'authors', 'photos', 'photographers', 'shows', 'guides', 'channels', 'rubrics', 'themes'].forEach(function (k) {
+      if (Array.isArray(pack[k])) n += pack[k].length;
+    });
+    return n;
+  }
+
+  function cleanPackItem(rec) {
+    if (!rec || typeof rec !== 'object') return rec;
+    var copy = Object.assign({}, rec);
+    Object.keys(copy).forEach(function (k) {
+      if (k.charAt(0) === '_') delete copy[k];
+    });
+    delete copy.source;
+    ['cover', 'image', 'thumb', 'photo', 'logo'].forEach(function (f) {
+      if (typeof copy[f] === 'string' && copy[f].indexOf('data:') === 0) copy[f] = '';
+    });
+    return copy;
+  }
+
+  /* Слияние списка для пакета. База — серверный список; запись из стола заменяет
+     серверную, только если она новее. Черновики в пакет не идут вовсе.
+     Снятое остаётся записью со status:'hidden' — так оно не всплывёт ни из вшитых
+     данных сайта, ни из старой копии в другом браузере. */
+  function lwwMerge(remoteList, localList, opts) {
+    opts = opts || {};
+    var keyOf = opts.key || recKey;
+    var stamp = opts.stamp || '';
+    var shape = opts.shape || cleanPackItem;
+    var by = {};
+    var order = [];
+    (remoteList || []).forEach(function (r) {
+      if (!r || typeof r !== 'object') return;
+      var k = keyOf(r);
+      if (!k || by[k]) return;
+      by[k] = (stamp && !r.updatedAt) ? Object.assign({}, r, { updatedAt: stamp }) : r;
+      order.push(k);
+    });
+    (localList || []).forEach(function (l) {
+      if (!l || typeof l !== 'object') return;
+      var k = keyOf(l);
+      if (!k) return;
+      if ((l.status || 'published') === 'draft') return;
+      var r = by[k];
+      if (r && String(r.updatedAt || '') >= String(l.updatedAt || '')) return;
+      var next = shape(l, r || null);
+      if (!next) return;
+      if (!next.updatedAt) next.updatedAt = l.updatedAt || new Date().toISOString();
+      by[k] = next;
+      if (!r) order.push(k);
+    });
+    return order.map(function (k) { return by[k]; });
+  }
+
+  var packChain = {};
+
+  /* Публикация пакета: одна за раз на пакет, свежее чтение, сборка, запись.
+     opts.build(remotePack, stamp) возвращает новый пакет. */
+  function publishPackSafe(opts) {
+    if (!window.AdminApi || !AdminApi.upsertArchive || !AdminApi.getArticle) {
+      return Promise.reject(new Error('нет соединения с сервером'));
+    }
+    var slug = opts.slug;
+    /* 409 — между чтением и записью пакет успел записать другой браузер:
+       читаем заново и собираем ещё раз, его правки не теряются. */
+    function attempt(left) {
+      return readPackStrict(slug).then(function (cur) {
+        if (cur.pack != null) rememberPack(slug, cur.pack);
+        var body = opts.build ? opts.build(cur.pack, packStamp[slug] || '') : opts.body;
+        if (opts.shrinkGuard !== false && cur.pack && packSize(body) < packSize(cur.pack)) {
+          throw new Error('Публикация остановлена: на сайте стало бы меньше записей, чем сейчас. Ничего не изменилось.');
+        }
+        return writePack(slug, opts, body, cur);
+      }).catch(function (err) {
+        if (!err || err.status !== 409) throw err;
+        if (left > 0) return wait(250 + Math.floor(Math.random() * 500)).then(function () { return attempt(left - 1); });
+        var busy = new Error('Этот раздел сейчас публикуют с другого устройства — ничего не отправлено. Правка сохранена здесь, повторите.');
+        busy.readFailed = true;
+        throw busy;
+      });
+    }
+    function run() {
+      return attempt(3).then(function (body) {
+        try {
+          var data = read();
+          if (pruneRemoteCopies(data)) write(data);
+        } catch (e) {}
+        return body;
+      });
+    }
+    var prev = packChain[slug] || Promise.resolve();
+    var next = prev.then(run, run);
+    packChain[slug] = next.then(function () {}, function () {});
+    return next;
+  }
+
+  function writePack(slug, opts, body, cur) {
+    var modified = new Date().toISOString();
+    var prevStamp = packStamp[slug] || '';
+    if (prevStamp && prevStamp >= modified) {
+      var t = Date.parse(prevStamp);
+      if (!isNaN(t)) modified = new Date(t + 1).toISOString();
+    }
+    var contentText = opts.contentText != null ? opts.contentText : JSON.stringify(body == null ? {} : body);
+    return AdminApi.upsertArchive({
+      articles: [{
+        id: cur.article && cur.article.id ? cur.article.id : safePackId(opts.fallbackId),
+        slug: slug,
+        title: opts.title,
+        date: (cur.article && cur.article.date) || todayIso(),
+        modified: modified,
+        author: '',
+        categories: [],
+        categorySlugs: ['day-by-day'],
+        excerpt: '',
+        contentHtml: '<p></p>',
+        contentText: contentText,
+        source: opts.source,
+        expectModified: cur.article ? (cur.article.modified == null ? null : String(cur.article.modified)) : null,
+      }],
+    }).then(function (res) {
+      var n = res && res.articles && res.articles.upserted;
+      if (!res || res.ok === false || n === 0) throw new Error('Сервер не сохранил изменения — повторите.');
+      packStamp[slug] = modified;
+      var pack = body != null ? body : parseArchivePack({ contentText: contentText });
+      rememberPack(slug, pack);
+      return pack;
     });
   }
 
@@ -3252,74 +3668,37 @@
     else if (slug === 'yak-home-data') remoteCache.home = pack;
     else if (slug === 'yak-about-data') remoteCache.about = pack;
     else if (slug === 'yak-library-data') remoteCache.library = pack;
+    else if (slug === 'yak-podcasts-data') remoteCache.podcasts = pack;
   }
 
+  /* Общий вход для модулей (О проекте, Главная, Библиотека, Подкасты):
+     opts.build(remote) — слияние со свежим пакетом; opts.body — готовый объект целиком. */
   function upsertJsonPack(opts) {
-    if (!window.AdminApi || !AdminApi.upsertArchive) {
-      return Promise.reject(new Error('нет соединения с сервером'));
-    }
-    var slug = opts.slug;
-    var body = opts.body;
-    var contentText = opts.contentText != null ? opts.contentText : JSON.stringify(body == null ? {} : body);
-    return resolvePackTarget(slug, opts.fallbackId).then(function (target) {
-      return AdminApi.upsertArchive({
-        articles: [{
-          id: target.id,
-          slug: slug,
-          title: opts.title,
-          date: todayIso(),
-          modified: new Date().toISOString(),
-          author: '',
-          categories: [],
-          categorySlugs: ['day-by-day'],
-          excerpt: '',
-          contentHtml: '<p></p>',
-          contentText: contentText,
-          source: opts.source,
-        }],
-      }).then(function () {
-        var pack = body != null ? body : parseArchivePack({ contentText: contentText });
-        rememberPack(slug, pack);
-        return pack;
-      });
+    return publishPackSafe(opts);
+  }
+
+  /* Пакет-объект (Главная, О проекте) пишется целиком. Если с момента открытия формы
+     его обновили с другого устройства — ошибка conflict, а не молчаливая перезапись. */
+  function publishObjectPack(opts) {
+    return publishPackSafe({
+      slug: opts.slug,
+      fallbackId: opts.fallbackId,
+      title: opts.title,
+      source: opts.source,
+      shrinkGuard: false,
+      build: function (remote, stamp) {
+        if (!opts.force && opts.openedAt && stamp && stamp !== opts.openedAt) {
+          var e = new Error('Пока вы редактировали, эту страницу обновили с другого устройства.');
+          e.conflict = true;
+          throw e;
+        }
+        return opts.body;
+      },
     });
   }
 
   function recKey(rec) {
     return String((rec && (rec.id || rec.slug)) || '').toLowerCase();
-  }
-
-  function mergeRecordLists(local, remote, opts) {
-    opts = opts || {};
-    var by = {};
-    var order = [];
-    function put(rec) {
-      if (!rec) return;
-      var key = recKey(rec);
-      if (!key) return;
-      if (!by[key]) {
-        by[key] = rec;
-        order.push(key);
-        return;
-      }
-      var cur = by[key];
-      if (opts.preferRicherItems) {
-        var a = (cur.items || []).length;
-        var b = (rec.items || []).length;
-        if (b > a) by[key] = Object.assign({}, cur, rec);
-        else if (a > b) by[key] = Object.assign({}, rec, cur);
-        else {
-          var ct = String(cur.updatedAt || cur.modified || '');
-          var rt = String(rec.updatedAt || rec.modified || '');
-          by[key] = rt > ct ? Object.assign({}, cur, rec) : Object.assign({}, rec, cur);
-        }
-        return;
-      }
-      by[key] = Object.assign({}, cur, rec);
-    }
-    (remote || []).forEach(put);
-    (local || []).forEach(put);
-    return order.map(function (k) { return by[k]; });
   }
 
   function absorbCycles(list) {
@@ -3332,6 +3711,46 @@
 
   function absorbEventsPack(pack) {
     if (pack) remoteCache.events = pack;
+  }
+
+  var hydratedAt = 0;
+
+  function waitingFirstPacks() {
+    return !hydratedAt && !!hydrateRemote._p;
+  }
+
+  function packsLoading(ctx, title) {
+    var skel = window.AdminGod && AdminGod.skelGrid ? AdminGod.skelGrid(10) : '';
+    ctx.viewEl.innerHTML =
+      '<div class="topbar"><div><h1>' + esc(title) + '</h1><p>Загружаю актуальную версию с сайта…</p></div></div>' +
+      (skel || '<div class="yak-loading yak-loading--page" role="status"><span class="yak-spin" aria-hidden="true"></span><span>Загружаю…</span></div>');
+  }
+
+  /* Список из пакетов сайта. Первый показ — только по свежим данным (встроенные карточки могут быть
+     устаревшими); повторный заход тихо подтягивает правки других браузеров, не чаще раза в 30 с. */
+  function freshList(ctx, title, paint) {
+    var hash = location.hash;
+    var first = waitingFirstPacks();
+    if (first) packsLoading(ctx, title);
+    else paint();
+    if (!hydrateRemote._p && Date.now() - hydratedAt < 30000) return;
+    hydrateRemote(function () {
+      if (location.hash !== hash) return;
+      var a = document.activeElement;
+      if (!first && a && ctx.viewEl.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.value) return;
+      paint();
+    });
+  }
+
+  /* Форма по прямой ссылке сразу после входа: ждём пакеты, иначе откроется устаревшая версия
+     или «не найдено». Потом форму не перерисовываем — там правки редактора. */
+  function afterFirstPacks(ctx, title, paint) {
+    if (!waitingFirstPacks()) { paint(); return; }
+    var hash = location.hash;
+    packsLoading(ctx, title);
+    hydrateRemote(function () {
+      if (location.hash === hash) paint();
+    });
   }
 
   function hydrateRemote(done) {
@@ -3349,7 +3768,11 @@
       pullRemotePack('yak-about-data').then(function (p) { if (p) remoteCache.about = p; }),
       pullRemotePack(CALENDAR_PAGE_SLUG).then(function (p) { if (p) remoteCache.calendar = p; }),
       pullRemotePack('yak-library-data').then(function (p) { if (p) remoteCache.library = p; }),
+      pullRemotePack(AUDIO_PAGE_SLUG).then(function (p) { if (p) remoteCache.audio = p; }),
+      pullRemotePack(TOPICS_PAGE_SLUG).then(function (p) { if (p) remoteCache.topics = p; }),
+      pullRemotePack('yak-podcasts-data').then(function (p) { if (p) remoteCache.podcasts = p; }),
     ]).then(function () {
+      hydratedAt = Date.now();
       try {
         var data = read();
         if (pruneRemoteCopies(data)) write(data);
@@ -3364,77 +3787,123 @@
     return hydrateRemote._p;
   }
 
-  function publishedAuthorsPack() {
-    var by = {};
-    function put(a, replaceRecent) {
-      if (!a) return;
-      var slug = a.slug || a.id;
-      if (!slug) return;
-      var key = String(slug).toLowerCase();
-      if (a.status && a.status !== 'published') {
-        if (a.status === 'hidden') by[key] = { slug: slug, status: 'hidden' };
-        return;
+  function keptImage(value, prev) {
+    var s = String(value || '');
+    if (s && s.indexOf('data:') !== 0) return s;
+    return prev || '';
+  }
+
+  function shapeAuthor(a, prev) {
+    var slug = a && (a.slug || a.id);
+    if (!slug) return null;
+    prev = prev || {};
+    var out = {
+      slug: slug,
+      name: a.name || prev.name || '',
+      role: a.role != null ? a.role : (prev.role || ''),
+      bio: a.bio != null ? a.bio : (prev.bio || ''),
+      photo: keptImage(a.photo, prev.photo),
+      recent: Array.isArray(a.recent) ? a.recent : (prev.recent || []),
+      status: a.status === 'hidden' ? 'hidden' : 'published',
+      updatedAt: a.updatedAt || '',
+    };
+    if (a.socials || prev.socials) out.socials = a.socials || prev.socials;
+    return out;
+  }
+
+  /* Снятые публикации: журнал «снято/возвращено» со временем, чтобы последнее
+     действие побеждало в любом браузере. hiddenSlugs — для сайта. */
+  function mergeHiddenSlugs(remote, data) {
+    var log = {};
+    function put(slug, entry) {
+      slug = String(slug || '');
+      if (!slug || !entry) return;
+      var cur = log[slug];
+      if (!cur || String(entry.at || '') > String(cur.at || '')) {
+        log[slug] = { hidden: entry.hidden !== false, at: String(entry.at || '') };
       }
-      var prev = by[key] || {};
-      by[key] = {
-        slug: slug,
-        name: a.name || prev.name || '',
-        role: a.role != null && a.role !== '' ? a.role : (prev.role || ''),
-        bio: a.bio || prev.bio || '',
-        photo: httpUrl(a.photo) ? a.photo : (prev.photo || ''),
-        recent: replaceRecent && a.recent
-          ? a.recent
-          : ((a.recent && a.recent.length >= (prev.recent || []).length) ? a.recent : (prev.recent || a.recent || [])),
-      };
     }
-    (window.YakAuthors || []).forEach(function (a) { put(a, false); });
-    authorsFromPack(remoteCache.authors).forEach(function (a) { put(a, false); });
-    (read().authors || []).forEach(function (a) { put(a, true); });
-    return Object.keys(by).map(function (k) { return by[k]; });
+    var r = remote && !Array.isArray(remote) ? remote : {};
+    (r.hiddenSlugs || []).forEach(function (s) { put(s, { hidden: true, at: '' }); });
+    Object.keys(r.hiddenLog || {}).forEach(function (s) { put(s, r.hiddenLog[s]); });
+    (data.hiddenSlugs || []).forEach(function (s) { put(s, { hidden: true, at: '' }); });
+    Object.keys(data.hiddenLog || {}).forEach(function (s) { put(s, data.hiddenLog[s]); });
+    return { slugs: Object.keys(log).filter(function (s) { return log[s].hidden; }), log: log };
+  }
+
+  function markHiddenSlug(slug, hidden) {
+    slug = String(slug || '');
+    if (!slug) return;
+    var data = read();
+    data.hiddenLog = data.hiddenLog || {};
+    data.hiddenLog[slug] = { hidden: !!hidden, at: new Date().toISOString() };
+    data.hiddenSlugs = (data.hiddenSlugs || []).filter(function (s) { return String(s) !== slug; });
+    if (hidden) data.hiddenSlugs.push(slug);
+    write(data);
+  }
+
+  function isSlugHidden(slug) {
+    slug = String(slug || '');
+    if (!slug) return false;
+    return mergeHiddenSlugs(remoteCache.authors, read()).slugs.indexOf(slug) !== -1;
+  }
+
+  function publishedAuthorsPack() {
+    return lwwMerge(authorsFromPack(remoteCache.authors), read().authors || [], {
+      stamp: packStamp[AUTHORS_PAGE_SLUG] || '',
+      key: authorKey,
+      shape: shapeAuthor,
+    });
   }
 
   function publishAuthors() {
-    if (!window.AdminApi || !AdminApi.upsertArchive) {
-      return Promise.reject(new Error('нет соединения с сервером'));
-    }
-    return pullRemotePack(AUTHORS_PAGE_SLUG).then(function (remote) {
-      absorbAuthorsPack(remote);
-      var list = publishedAuthorsPack();
-      return upsertJsonPack({
-        fallbackId: AUTHORS_PAGE_ID,
-        slug: AUTHORS_PAGE_SLUG,
-        title: 'Авторы редакции',
-        source: 'desk-authors',
-        body: { authors: list, hiddenSlugs: read().hiddenSlugs || [] },
-      });
+    return publishPackSafe({
+      slug: AUTHORS_PAGE_SLUG,
+      fallbackId: AUTHORS_PAGE_ID,
+      title: 'Авторы редакции',
+      source: 'desk-authors',
+      build: function (remote, stamp) {
+        absorbAuthorsPack(remote);
+        var data = read();
+        var hid = mergeHiddenSlugs(remote, data);
+        return {
+          authors: lwwMerge(authorsFromPack(remote), data.authors || [], { stamp: stamp, key: authorKey, shape: shapeAuthor }),
+          hiddenSlugs: hid.slugs,
+          hiddenLog: hid.log,
+        };
+      },
     });
   }
 
+  function shapeOrganizer(o, prev) {
+    if (!o || !o.id) return null;
+    prev = prev || {};
+    return {
+      id: o.id,
+      name: o.name || prev.name || '',
+      short: o.short || o.name || prev.short || '',
+      city: o.city != null ? o.city : (prev.city || ''),
+      blurb: o.blurb || o.desc || '',
+      website: o.website || '',
+      email: o.email || '',
+      phone: o.phone || '',
+      socials: Array.isArray(o.socials) ? o.socials : [],
+      contactsFromDesk: true,
+      logo: keptImage(o.logo, prev.logo),
+      coverTone: o.coverTone || prev.coverTone || '#5c5346',
+      partnerTitle: o.partnerTitle || '',
+      status: o.status === 'hidden' ? 'hidden' : 'published',
+      updatedAt: o.updatedAt || '',
+    };
+  }
+
   function publishedOrganizers() {
-    var by = {};
-    mergedList('organizer').forEach(function (o) {
-      if (!o || !o.id) return;
-      if (o.status && o.status !== 'published') return;
-      by[o.id] = {
-        id: o.id,
-        name: o.name || '',
-        short: o.short || o.name || '',
-        city: o.city || '',
-        blurb: o.blurb || o.desc || '',
-        website: o.website || '',
-        email: o.email || '',
-        phone: o.phone || '',
-        socials: Array.isArray(o.socials) ? o.socials : [],
-        contactsFromDesk: true,
-        logo: httpUrl(o.logo) ? o.logo : '',
-        coverTone: o.coverTone || '#5c5346',
-        partnerTitle: o.partnerTitle || '',
-      };
+    var remote = remoteCache.events;
+    var base = remote ? orgsFromPack(remote) : siteItems('organizer').map(function (o) { return shapeOrganizer(o); });
+    return lwwMerge(base, read().organizers || [], {
+      stamp: packStamp[EVENTS_PAGE_SLUG] || '',
+      shape: shapeOrganizer,
     });
-    (read().organizers || []).forEach(function (o) {
-      if (o && o.status === 'hidden' && o.id) by[o.id] = { id: o.id, status: 'hidden' };
-    });
-    return Object.keys(by).map(function (k) { return by[k]; });
   }
 
   function uniqueOrganizerSlug(base, keepId) {
@@ -3506,15 +3975,7 @@
       function () { saveOrganizer(ctx, item, isNew, 'published'); },
       isNew ? null : function () {
         if (!confirm('Снять организатора с афиши?')) return;
-        hideItem('organizer', item.id);
-        ctx.toast('Снимаем…');
-        publishEvents().then(function () {
-          ctx.toast('Снято');
-          ctx.go('organizers');
-        }).catch(function (err) {
-          ctx.toast((err && err.message) || 'Снято локально', true);
-          ctx.go('organizers');
-        });
+        hideAndPublish(ctx, function () { hideItem('organizer', item.id); }, publishEvents, 'organizers');
       },
       item.id ? ('organizer.html?id=' + encodeURIComponent(item.id)) : 'events.html'
     );
@@ -3571,84 +4032,134 @@
       : Promise.resolve();
     ctx.toast(status === 'published' ? 'Публикуем…' : 'Сохраняем…');
     ready.then(function () {
-      if (item.id && item.id !== next.id) hideItem('organizer', item.id);
+      if (item.id && item.id !== next.id && status === 'published') hideItem('organizer', item.id);
       upsert('organizer', next);
       if (status === 'published') return publishEvents();
     }).then(function () {
-      ctx.toast(status === 'published' ? 'На сайте' : 'Черновик сохранён');
+      ctx.toast(status === 'published' ? 'На сайте' : 'Черновик сохранён — на сайт не отправлен');
       ctx.go('organizers');
     }).catch(function (e) {
-      ctx.toast(e.message || 'Не удалось сохранить', true);
+      ctx.toast(failText(e), true);
     });
   }
 
+  function topicKey(t) {
+    return String((t && (t.id || t.slug || t.q || t.title)) || '').toLowerCase();
+  }
+
+  function shapeTopic(t) {
+    if (!t || !t.title) return null;
+    return {
+      id: t.id || uid('topic'),
+      title: t.title,
+      slug: t.slug || '',
+      q: t.q || '',
+      note: t.note || '',
+      status: t.status === 'hidden' ? 'hidden' : 'published',
+      updatedAt: t.updatedAt || '',
+    };
+  }
+
+  /* Темы, которые сайт показывает, пока пакета нет (как в articles-page.js портала):
+     первая публикация из админки должна их сохранить, а не заменить одной новой. */
+  var DEFAULT_TOPICS = [
+    { id: 'искусственный интеллект', title: 'Искусственный интеллект', q: 'искусственный интеллект' },
+    { id: 'theology-of-the-body', title: 'Теология тела', slug: 'theology-of-the-body' },
+    { id: 'pravda', title: 'Мифы и правда о Католической Церкви', slug: 'pravda' },
+    { id: 'laudato', title: 'Забота об общем доме', q: 'Laudato' },
+    { id: 'экуменический', title: 'Экуменический диалог', q: 'экуменический' },
+  ];
+
+  function baseTopics(remote) {
+    if (Array.isArray(remote)) return remote;
+    return DEFAULT_TOPICS.map(function (t) { return Object.assign({ status: 'published' }, t); });
+  }
+
+  function allTopics() {
+    var remote = baseTopics(remoteCache.topics);
+    var stamp = packStamp[TOPICS_PAGE_SLUG] || '';
+    var by = {};
+    var order = [];
+    remote.forEach(function (r) {
+      var k = topicKey(r);
+      if (!k || by[k]) return;
+      by[k] = r.id ? r : Object.assign({}, r, { id: k });
+      order.push(k);
+    });
+    (read().topics || []).forEach(function (l) {
+      var k = topicKey(l);
+      if (!k) return;
+      var r = by[k];
+      if (r && String(r.updatedAt || stamp) >= String(l.updatedAt || '')) return;
+      by[k] = l;
+      if (!r) order.push(k);
+    });
+    return order.map(function (k) { return by[k]; });
+  }
+
   function listTopics() {
-    return (read().topics || []).filter(function (t) { return t && t.title; });
+    return allTopics().filter(function (t) { return t && t.title && t.status !== 'hidden'; });
   }
 
   function upsertTopic(topic) {
     var data = read();
     data.topics = data.topics || [];
-    var i = data.topics.findIndex(function (t) {
-      return t && (String(t.id) === String(topic.id) || (topic.slug && t.slug === topic.slug));
-    });
     topic.id = topic.id || uid('topic');
     topic.slug = topic.slug || (topic.q ? '' : slugify(topic.title));
-    if (i === -1) data.topics.unshift(topic);
+    topic.status = topic.status || 'published';
+    topic.updatedAt = new Date().toISOString();
+    var i = data.topics.findIndex(function (t) { return t && String(t.id) === String(topic.id); });
+    if (i === -1) data.topics.push(topic);
     else data.topics[i] = Object.assign({}, data.topics[i], topic);
     write(data);
     return topic;
   }
 
+  /* Удаление темы — отметка «снято»: иначе тема вернётся из пакета или другого браузера. */
   function deleteTopic(id) {
-    var data = read();
-    data.topics = (data.topics || []).filter(function (t) { return String(t.id) !== String(id); });
-    write(data);
+    var cur = allTopics().filter(function (t) { return String(t.id) === String(id); })[0];
+    if (!cur) return;
+    upsertTopic(Object.assign({}, cur, { status: 'hidden' }));
   }
 
   function publishTopics() {
-    if (!window.AdminApi || !AdminApi.upsertArchive) {
-      return Promise.reject(new Error('нет соединения с сервером'));
-    }
-    var list = listTopics().map(function (t) {
-      return {
-        title: t.title,
-        slug: t.slug || '',
-        q: t.q || '',
-        note: t.note || '',
-      };
-    });
-    return upsertJsonPack({
-      fallbackId: TOPICS_PAGE_ID,
+    return publishPackSafe({
       slug: TOPICS_PAGE_SLUG,
+      fallbackId: TOPICS_PAGE_ID,
       title: 'Темы раздела Статьи',
       source: 'desk-topics',
-      body: list,
+      build: function (remote, stamp) {
+        if (remote) remoteCache.topics = remote;
+        return lwwMerge(baseTopics(remote), read().topics || [], { stamp: stamp, key: topicKey, shape: shapeTopic });
+      },
     });
   }
 
-  function slimPhoto(p) {
+  /* В пакет идут и снимки на модерации — иначе редактор в другом браузере их не увидит.
+     Сайт показывает только status:'approved'. */
+  function packPhoto(p) {
     if (!p || !p.id) return null;
     var url = p.url || p.thumb || '';
     if (!url || String(url).indexOf('data:') === 0) return null;
-    if (p.status && p.status !== 'approved') return null;
+    var thumb = p.thumb && String(p.thumb).indexOf('data:') !== 0 ? p.thumb : url;
     return {
       id: p.id,
       url: url,
-      thumb: p.thumb || url,
+      thumb: thumb,
       title: p.title || '',
       tags: p.tags || [],
       photographerId: p.photographerId || '',
       photographerSlug: p.photographerSlug || '',
       photographerName: p.photographerName || p.ownerName || '',
       photographerTag: p.photographerTag || '',
-      status: 'approved',
+      status: p.status === 'pending' || p.status === 'rejected' ? p.status : 'approved',
       createdAt: p.createdAt || p.updatedAt || '',
+      updatedAt: p.updatedAt || '',
       license: p.license || 'CC BY 4.0',
     };
   }
 
-  function slimPhotographer(p) {
+  function packPhotographer(p) {
     if (!p || !(p.id || p.slug)) return null;
     var photo = httpUrl(p.photo) || (p.photo && String(p.photo).indexOf('data:') !== 0 ? p.photo : '');
     return {
@@ -3665,117 +4176,152 @@
     };
   }
 
-  function photostockKey(p) {
-    return String((p && (p.slug || p.id)) || '').toLowerCase();
+  function stockKey(p) {
+    return String((p && (p.id || p.slug)) || '').toLowerCase();
   }
 
-  function isSeedPhotographer(p) {
-    if (!p) return false;
-    return p.id === 'ph_test_1' || p.slug === 'olga-fotograf' || p.email === 'shooter@yakatolik.local';
+  /* Демо-карточка первого запуска админки: на сайт не уходит и уступает серверной. */
+  function isDemoPhotographer(p) {
+    return !!p && (p.slug === 'olga-fotograf' || String(p.email || '').toLowerCase() === 'shooter@yakatolik.local');
   }
 
-  function isSeedOnlyPhotographers(list) {
-    if (!list || !list.length) return true;
-    return list.every(isSeedPhotographer);
+  function goneOf(kind) {
+    return (window.AdminStore && AdminStore.goneLog && AdminStore.goneLog(kind)) || {};
   }
 
+  /* Местные записи, к которым добавлены отметки удаления, если удаление новее записи. */
+  function withTombstones(list, gone) {
+    var by = {};
+    list.forEach(function (p) { by[p.id] = p; });
+    Object.keys(gone).forEach(function (id) {
+      if (by[id] && String(by[id].updatedAt || '') > String(gone[id])) return;
+      by[id] = { id: id, status: 'hidden', updatedAt: gone[id] };
+    });
+    return Object.keys(by).map(function (k) { return by[k]; });
+  }
+
+  /* Свежий пакет → хранилище фотостока этого браузера: серверная запись заменяет
+     местную, только если она новее; снятое на сервере убирается и здесь. */
   function absorbPhotostock(pack) {
     if (!pack || typeof pack !== 'object') return;
     remoteCache.photostock = pack;
-    var remotePh = pack.photographers || [];
-    if (window.AdminStore && remotePh.length && AdminStore.savePhotographers) {
-      var local = AdminStore.listPhotographers() || [];
-      var by = {};
-      function put(p, overwrite) {
-        if (!p || !(p.id || p.slug)) return;
-        var key = photostockKey(p);
-        if (!key) return;
-        if (!by[key] || overwrite) by[key] = Object.assign({}, by[key] || {}, p);
-      }
-      if (isSeedOnlyPhotographers(local)) {
-        remotePh.forEach(function (p) { put(p, true); });
-      } else {
-        remotePh.forEach(function (p) { put(p, false); });
-        local.forEach(function (p) { put(p, true); });
-      }
-      AdminStore.savePhotographers(Object.keys(by).map(function (k) { return by[k]; }));
-    }
-    (pack.photos || []).forEach(function (p) {
-      if (!p || !p.id || !p.url || !window.AdminStore || !AdminStore.getMedia) return;
-      if (AdminStore.getMedia(p.id)) return;
-      AdminStore.upsertMedia({
-        id: p.id,
-        kind: 'image',
-        url: p.url,
-        thumb: p.thumb || p.url,
-        title: p.title || '',
-        tags: p.tags || [],
-        photographerId: p.photographerId || '',
-        photographerSlug: p.photographerSlug || '',
-        photographerName: p.photographerName || '',
-        photographerTag: p.photographerTag || '',
-        status: 'approved',
-        license: p.license || 'CC BY 4.0',
-        createdAt: p.createdAt || '',
+    if (!window.AdminStore) return;
+    var stamp = packStamp[PHOTO_PAGE_SLUG] || '';
+    if (Array.isArray(pack.photographers) && AdminStore.listPhotographers && AdminStore.savePhotographers) {
+      var phGone = goneOf('photographers');
+      var phs = (AdminStore.listPhotographers() || []).slice();
+      var phChanged = false;
+      pack.photographers.forEach(function (r) {
+        if (!r || !(r.id || r.slug)) return;
+        var rt = String(r.updatedAt || stamp);
+        var i = phs.findIndex(function (p) { return p && ((r.id && p.id === r.id) || (r.slug && p.slug === r.slug)); });
+        if (i === -1) {
+          if (r.status === 'hidden' || (phGone[r.id] && String(phGone[r.id]) >= rt)) return;
+          phs.push(Object.assign({}, r, { updatedAt: rt }));
+          phChanged = true;
+          return;
+        }
+        if (!isDemoPhotographer(phs[i]) && String(phs[i].updatedAt || '') >= rt) return;
+        if (r.status === 'hidden') phs.splice(i, 1);
+        else phs[i] = Object.assign({}, phs[i], r, { updatedAt: rt });
+        phChanged = true;
       });
-    });
+      if (phChanged) AdminStore.savePhotographers(phs);
+    }
+    if (Array.isArray(pack.photos) && AdminStore.listMedia && AdminStore.saveMedia) {
+      var gone = goneOf('photos');
+      var media = (AdminStore.listMedia() || []).slice();
+      var at = {};
+      media.forEach(function (m, i) { if (m && m.id) at[m.id] = i; });
+      var drop = {};
+      var changed = false;
+      pack.photos.forEach(function (r) {
+        if (!r || !r.id) return;
+        var rt = String(r.updatedAt || stamp);
+        var i = at[r.id];
+        if (i == null) {
+          if (r.status === 'hidden' || !r.url || (gone[r.id] && String(gone[r.id]) >= rt)) return;
+          at[r.id] = media.length;
+          media.push(Object.assign({ kind: 'image', license: 'CC BY 4.0' }, r, { updatedAt: rt }));
+          changed = true;
+          return;
+        }
+        if (String(media[i].updatedAt || '') >= rt) return;
+        if (r.status === 'hidden') drop[r.id] = 1;
+        else media[i] = Object.assign({}, media[i], r, { kind: 'image', updatedAt: rt });
+        changed = true;
+      });
+      if (changed) AdminStore.saveMedia(media.filter(function (m) { return !(m && drop[m.id]); }));
+    }
   }
 
   function publishPhotostock() {
-    if (!window.AdminApi || !AdminApi.upsertArchive) {
-      return Promise.reject(new Error('нет соединения с сервером'));
-    }
-    return pullRemotePack(PHOTO_PAGE_SLUG).then(function (remote) {
-      if (remote) absorbPhotostock(remote);
-      var remotePh = ((remote && remote.photographers) || []).map(slimPhotographer).filter(Boolean);
-      var remotePhotos = ((remote && remote.photos) || []).map(slimPhoto).filter(Boolean);
-      var localPh = ((window.AdminStore && AdminStore.listPhotographers()) || []).map(slimPhotographer).filter(Boolean);
-      var localPhotos = ((window.AdminStore && AdminStore.listPhotos()) || []).map(slimPhoto).filter(Boolean);
-      var photographers = (isSeedOnlyPhotographers(localPh) && remotePh.length > localPh.length)
-        ? remotePh
-        : mergeRecordLists(localPh, remotePh);
-      var photos = mergeRecordLists(localPhotos, remotePhotos);
-      if (remotePh.length > 1 && photographers.length <= 1) photographers = remotePh;
-      if (remotePhotos.length > photos.length) photos = mergeRecordLists(localPhotos, remotePhotos);
-      return upsertJsonPack({
-        fallbackId: PHOTO_PAGE_ID,
-        slug: PHOTO_PAGE_SLUG,
-        title: 'Фотосток редакции',
-        source: 'desk-photostock',
-        body: { photographers: photographers, photos: photos },
-      });
+    return publishPackSafe({
+      slug: PHOTO_PAGE_SLUG,
+      fallbackId: PHOTO_PAGE_ID,
+      title: 'Фотосток редакции',
+      source: 'desk-photostock',
+      build: function (remote, stamp) {
+        if (remote) absorbPhotostock(remote);
+        var r = remote && typeof remote === 'object' ? remote : {};
+        var store = window.AdminStore;
+        var photos = withTombstones(
+          store ? (store.listPhotos() || []).map(packPhoto).filter(Boolean) : [],
+          goneOf('photos')
+        );
+        var phs = withTombstones(
+          store ? (store.listPhotographers() || []).filter(function (p) { return !isDemoPhotographer(p); }).map(packPhotographer).filter(Boolean) : [],
+          goneOf('photographers')
+        );
+        return {
+          photographers: lwwMerge(r.photographers || [], phs, { stamp: stamp, key: stockKey }),
+          photos: lwwMerge(r.photos || [], photos, { stamp: stamp, key: stockKey }),
+        };
+      },
     });
   }
 
-  function syncArticleToCycle(article) {
-    if (!article || !article.slug) return;
-    var want = String(article.cycleSlug || '').trim();
+  /* Состав циклов под статью: убрать из чужих, поставить в свой (на прежнее место,
+     если номер не задан). prevSlug — прежний адрес при переименовании. true — что-то поменялось. */
+  function syncArticleToCycle(article, prevSlug) {
+    if (!article || !article.slug) return false;
+    var mine = {};
+    mine[String(article.slug)] = 1;
+    if (prevSlug) mine[String(prevSlug)] = 1;
+    var want = article.status === 'hidden' ? '' : String(article.cycleSlug || '').trim();
     var order = parseInt(article.cycleOrder, 10) || 0;
+    var changed = false;
     catalogCycles().forEach(function (c) {
-      var items = (c.items || []).filter(function (it) { return it && String(it.slug) !== String(article.slug); });
+      var before = c.items || [];
+      var prev = before.filter(function (it) { return it && mine[String(it.slug)]; })[0];
+      var items = before.filter(function (it) { return it && !mine[String(it.slug)]; });
       if (want && (String(c.id) === want || String(c.slug || '') === want)) {
-        items.push({ slug: article.slug, title: article.title, order: order || items.length + 1 });
+        items.push({ slug: article.slug, title: article.title, order: order || (prev && Number(prev.order)) || items.length + 1 });
         items.sort(function (a, b) { return (Number(a.order) || 0) - (Number(b.order) || 0); });
       }
-      var changed = items.length !== (c.items || []).length ||
-        (want && (String(c.id) === want || String(c.slug || '') === want));
-      if (changed) upsert('cycle', Object.assign({}, c, { items: items, status: c.status || 'published' }));
+      if (JSON.stringify(items) === JSON.stringify(before)) return;
+      changed = true;
+      upsert('cycle', Object.assign({}, c, { items: items, status: c.status || 'published' }));
     });
+    return changed;
   }
 
   function publishCycles() {
-    if (!window.AdminApi || !AdminApi.upsertArchive) {
-      return Promise.reject(new Error('нет соединения с сервером'));
-    }
-    return pullRemotePack(CYCLES_PAGE_SLUG).then(function (remote) {
-      if (Array.isArray(remote)) absorbCycles(remote);
-      return upsertJsonPack({
-        fallbackId: CYCLES_PAGE_ID,
-        slug: CYCLES_PAGE_SLUG,
-        title: 'Циклы редакции',
-        source: 'desk-cycles',
-        body: catalogCycles(),
-      });
+    return publishPackSafe({
+      slug: CYCLES_PAGE_SLUG,
+      fallbackId: CYCLES_PAGE_ID,
+      title: 'Циклы редакции',
+      source: 'desk-cycles',
+      build: function (remote, stamp) {
+        if (Array.isArray(remote)) absorbCycles(remote);
+        var base = Array.isArray(remote)
+          ? remote
+          : ((window.YakCycles && YakCycles.ALL) || []).map(function (c) { return Object.assign({ status: 'published' }, c); });
+        return lwwMerge(base, read().cycles || [], {
+          stamp: stamp,
+          key: function (c) { return String((c && c.id) || '').toLowerCase(); },
+        });
+      },
     });
   }
 
@@ -3983,7 +4529,7 @@
     document.getElementById('desk-draft').onclick = function () {
       var next = collect('draft');
       if (!next) return;
-      try { upsert('cycle', next); ctx.toast('Черновик сохранён'); ctx.go('cycles'); }
+      try { upsert('cycle', next); ctx.toast('Черновик сохранён — на сайт не отправлен'); ctx.go('cycles'); }
       catch (e) { ctx.toast(e.message || 'Не удалось сохранить', true); }
     };
     document.getElementById('desk-pub').onclick = function () {
@@ -3995,6 +4541,7 @@
       afterCover.then(function (url) {
         next.cover = url;
         next.image = url;
+        if (item.id && item.id !== next.id) upsert('cycle', Object.assign({}, item, { status: 'hidden' }));
         upsert('cycle', next);
         next.items.forEach(function (it, i) {
           var art = getItem('article', it.slug);
@@ -4010,21 +4557,15 @@
         ctx.toast('Цикл опубликован');
         ctx.go('cycles');
       }).catch(function (e) {
-        ctx.toast(e.message || 'Не удалось сохранить', true);
+        ctx.toast(failText(e), true);
       });
     };
     var delBtn = document.getElementById('desk-del');
     if (delBtn) delBtn.onclick = function () {
       if (!confirm('Снять цикл с публикации? Статьи останутся.')) return;
-      upsert('cycle', Object.assign({}, item, { status: 'hidden', id: item.id || item.slug }));
-      ctx.toast('Снимаем…');
-      publishCycles().then(function () {
-        ctx.toast('Снято');
-        ctx.go('cycles');
-      }).catch(function (err) {
-        ctx.toast((err && err.message) || 'Снято локально', true);
-        ctx.go('cycles');
-      });
+      hideAndPublish(ctx, function () {
+        upsert('cycle', Object.assign({}, item, { status: 'hidden', id: item.id || item.slug }));
+      }, publishCycles, 'cycles');
     };
   }
 
@@ -4070,56 +4611,40 @@
     return g;
   }
 
-  function publishedGuidesPack(extra) {
-    var by = {};
-    function weakImage(u) {
-      u = String(u || '').trim();
-      return !u || /assets\/cards/i.test(u);
-    }
-    function put(g, fromLocal) {
-      if (!g) return;
-      g = sanitizeGuideRecord(g);
-      if (!g) return;
-      var key = String(g.id || (g.section + ':' + g.nodeId) || '');
-      if (!key) return;
-      if (g.status && g.status !== 'published') {
-        if (g.status === 'hidden') delete by[key];
-        return;
-      }
-      var prev = by[key];
-      if (fromLocal && prev && String(g.updatedAt || '') <= String(prev.updatedAt || '')) return;
-      var next = Object.assign({}, prev || {}, g, { status: 'published' });
-      if (prev && String(prev.contentHtml || '').length > String(g.contentHtml || '').length) {
-        next.contentHtml = prev.contentHtml;
-        if (prev.lead) next.lead = prev.lead;
-      }
-      if (prev && weakImage(g.image) && !weakImage(prev.image)) next.image = prev.image;
-      if (!String(next.image || '').trim() && prev && prev.image) next.image = prev.image;
-      if (!String(next.sub || '').trim() && prev && prev.sub) next.sub = prev.sub;
-      by[key] = next;
-    }
-    var remote = remoteCache.guides;
-    var remoteList = !remote ? [] : (Array.isArray(remote) ? remote : (remote.guides || []));
-    remoteList.forEach(function (g) { put(g, false); });
-    (read().guides || []).forEach(function (g) { put(g, true); });
-    if (extra) put(extra, true);
-    return { guides: Object.keys(by).map(function (k) { return by[k]; }) };
+  function guideKey(g) {
+    if (!g) return '';
+    var node = guideNodeId(g);
+    var section = g.section || (String(g.id || '').indexOf(':') !== -1 ? String(g.id).split(':')[0] : '');
+    return section && node ? (section + ':' + node).toLowerCase() : '';
   }
 
-  function publishGuides(pending) {
-    if (!window.AdminApi || !AdminApi.upsertArchive) {
-      return Promise.reject(new Error('нет соединения с сервером'));
-    }
-    return pullRemotePack(GUIDES_PAGE_SLUG).then(function (remote) {
-      if (remote) remoteCache.guides = remote;
-      var pack = publishedGuidesPack(pending);
-      return upsertJsonPack({
-        fallbackId: GUIDES_PAGE_ID,
-        slug: GUIDES_PAGE_SLUG,
-        title: 'Разделы О Церкви и Духовная жизнь',
-        source: 'desk-guides',
-        body: pack,
-      });
+  function guideList(pack) {
+    return !pack ? [] : (Array.isArray(pack) ? pack : (pack.guides || []));
+  }
+
+  function shapeGuide(l, r) {
+    var g = sanitizeGuideRecord(l);
+    if (!g || !guideKey(g)) return null;
+    var next = cleanPackItem(g);
+    next.status = next.status === 'hidden' ? 'hidden' : 'published';
+    if (!String(next.image || '').trim() && r && r.image) next.image = r.image;
+    return next;
+  }
+
+  /* Публикация гидов: свежий пакет — основа, правка отсюда заменяет страницу,
+     только если она новее серверной. Черновики остаются здесь. */
+  function publishGuides() {
+    return publishPackSafe({
+      slug: GUIDES_PAGE_SLUG,
+      fallbackId: GUIDES_PAGE_ID,
+      title: 'Разделы О Церкви и Духовная жизнь',
+      source: 'desk-guides',
+      shrinkGuard: false,
+      build: function (remote, stamp) {
+        if (remote) remoteCache.guides = remote;
+        var base = guideList(remote).map(sanitizeGuideRecord).filter(Boolean);
+        return { guides: lwwMerge(base, read().guides || [], { stamp: stamp, key: guideKey, shape: shapeGuide }) };
+      },
     });
   }
 
@@ -4132,6 +4657,12 @@
     var data = read();
     var list = data.guides || [];
     item.updatedAt = new Date().toISOString();
+    var remote = guideList(remoteCache.guides).filter(function (g) { return guideKey(g) === guideKey(item); })[0];
+    var remoteAt = String((remote && remote.updatedAt) || packStamp[GUIDES_PAGE_SLUG] || '');
+    if (remote && remoteAt >= item.updatedAt) {
+      var t = Date.parse(remoteAt);
+      if (!isNaN(t)) item.updatedAt = new Date(t + 1).toISOString();
+    }
     if (!item.createdAt) item.createdAt = item.updatedAt;
     var i = list.findIndex(function (x) {
       if (String(x.id) === String(item.id)) return true;
@@ -4220,7 +4751,7 @@
 
   function renderRoute(name, id, ctx) {
     if (name === 'publish' || name === 'dashboard') {
-      renderHub(ctx);
+      freshList(ctx, 'Обзор', function () { renderHub(ctx); });
       return true;
     }
     if (name === 'media' || name === 'photostock') {
@@ -4237,31 +4768,42 @@
       return true;
     }
     if (name === 'authors') {
-      if (!id && window.AdminGod) AdminGod.paintSection(ctx, 'authors', 'Авторы', '#authors/new');
-      else renderAuthors(ctx, id);
+      if (!id && window.AdminGod) freshList(ctx, 'Авторы', function () { AdminGod.paintSection(ctx, 'authors', 'Авторы', '#authors/new'); });
+      else afterFirstPacks(ctx, 'Авторы', function () { renderAuthors(ctx, id); });
       return true;
     }
     if (name === 'organizers') {
-      renderOrganizers(ctx, id);
+      if (id) afterFirstPacks(ctx, 'Организаторы', function () { renderOrganizers(ctx, id); });
+      else freshList(ctx, 'Организаторы', function () { renderOrganizers(ctx, id); });
       return true;
     }
     if (name === 'video-partners') {
-      renderVideoPartners(ctx, id);
+      if (id) afterFirstPacks(ctx, 'Видео-партнёры', function () { renderVideoPartners(ctx, id); });
+      else freshList(ctx, 'Видео-партнёры', function () { renderVideoPartners(ctx, id); });
       return true;
     }
     if (name === 'cycles') {
       if (!id && window.AdminGod) {
-        loadPortalCycles(function () { AdminGod.paintSection(ctx, 'cycle', 'Циклы', '#cycles/new'); });
-      } else renderCycleForm(ctx, id);
+        freshList(ctx, 'Циклы', function () {
+          loadPortalCycles(function () { AdminGod.paintSection(ctx, 'cycle', 'Циклы', '#cycles/new'); });
+        });
+      } else afterFirstPacks(ctx, 'Циклы', function () { renderCycleForm(ctx, id); });
       return true;
     }
     if (LIST_MAP[name]) {
-      if (id) FORM_MAP[name](ctx, id);
-      else renderList(LIST_MAP[name], ctx);
+      var title = (NAV_TITLES[name] || name);
+      var fromArchive = name === 'news' || name === 'articles';
+      if (id) {
+        if (fromArchive) FORM_MAP[name](ctx, id);
+        else afterFirstPacks(ctx, title, function () { FORM_MAP[name](ctx, id); });
+      } else if (fromArchive) renderList(LIST_MAP[name], ctx);
+      else freshList(ctx, title, function () { renderList(LIST_MAP[name], ctx); });
       return true;
     }
     return false;
   }
+
+  var NAV_TITLES = { afisha: 'Афиша', audio: 'Аудио', video: 'Видео', 'church-day': 'День Церкви' };
 
   global.AdminDesk = {
     BLOCKS: BLOCKS,
@@ -4293,10 +4835,17 @@
     upsertGuide: upsertGuide,
     publishGuides: publishGuides,
     upsertJsonPack: upsertJsonPack,
+    publishPackSafe: publishPackSafe,
+    publishObjectPack: publishObjectPack,
+    readPackStrict: readPackStrict,
+    lwwMerge: lwwMerge,
+    packTime: function (slug) { return packStamp[slug] || ''; },
+    failText: failText,
     remoteGuides: function () {
-      var remote = remoteCache.guides;
-      if (!remote) return [];
-      return Array.isArray(remote) ? remote : (remote.guides || []);
+      var stamp = packStamp[GUIDES_PAGE_SLUG] || '';
+      return guideList(remoteCache.guides).map(function (g) {
+        return g && !g.updatedAt && stamp ? Object.assign({}, g, { updatedAt: stamp }) : g;
+      });
     },
     remoteHome: function () { return remoteCache.home; },
     remoteAbout: function () { return remoteCache.about; },

@@ -49,16 +49,98 @@
     return fromSite.map(function (s) { return JSON.parse(JSON.stringify(s)); });
   }
 
+  /* Последний свежий пакет с сервера и время его записи. */
+  var remotePack = null;
+  var remoteStamp = '';
+  var hydrated = false;
+
+  function remoteShows() {
+    return remotePack && Array.isArray(remotePack.shows) ? remotePack.shows : [];
+  }
+
+  function localShows() {
+    return (readAll().podcasts || []).filter(function (s) { return s && s.id; });
+  }
+
+  function timeOf(rec) {
+    return String((rec && rec.updatedAt) || remoteStamp || '');
+  }
+
+  function remoteShow(id) {
+    return remoteShows().filter(function (s) { return s && String(s.id) === String(id); })[0] || null;
+  }
+
+  function remoteEpisode(showId, epId) {
+    var s = remoteShow(showId);
+    return s ? ((s.episodes || []).filter(function (e) { return e && String(e.id) === String(epId); })[0] || null) : null;
+  }
+
+  function freshTime(remoteRec) {
+    var now = new Date().toISOString();
+    var rt = remoteRec ? timeOf(remoteRec) : '';
+    if (rt && rt >= now) {
+      var t = Date.parse(rt);
+      if (!isNaN(t)) now = new Date(t + 1).toISOString();
+    }
+    return now;
+  }
+
+  function syncOf(rec) {
+    if (rec.status === 'draft') return 'draft';
+    if (rec.status === 'hidden') return 'hidden';
+    return 'pending';
+  }
+
+  /* Местная правка видна поверх серверной, только если она новее. */
+  function viewEpisodes(base, local) {
+    var by = {};
+    var order = [];
+    (base || []).forEach(function (e) {
+      if (!e || !e.id || by[e.id]) return;
+      by[e.id] = e;
+      order.push(e.id);
+    });
+    (local || []).forEach(function (e) {
+      if (!e || !e.id) return;
+      var cur = by[e.id];
+      if (cur && timeOf(cur) >= String(e.updatedAt || '')) return;
+      by[e.id] = Object.assign({}, e, { _sync: syncOf(e) });
+      if (!cur) order.push(e.id);
+    });
+    return order.map(function (k) { return by[k]; }).filter(function (e) {
+      return e.status !== 'hidden' || e._sync === 'hidden';
+    });
+  }
+
   function allShows() {
-    var seed = seedShows();
-    var saved = readAll().podcasts;
-    if (!saved || !saved.length) return seed;
-    return saved.map(function (s) {
-      var fromSeed = seed.filter(function (x) { return x && x.id === s.id; })[0];
-      if (fromSeed && fromSeed.episodes && (!s.episodes || s.episodes.length < fromSeed.episodes.length)) {
-        return Object.assign({}, s, { episodes: fromSeed.episodes.slice() });
-      }
-      return s;
+    var by = {};
+    var order = [];
+    var onServer = {};
+    seedShows().forEach(function (s) {
+      if (!s || !s.id || by[s.id]) return;
+      by[s.id] = s;
+      order.push(s.id);
+    });
+    remoteShows().forEach(function (r) {
+      if (!r || !r.id) return;
+      onServer[r.id] = 1;
+      if (!by[r.id]) order.push(r.id);
+      var prev = by[r.id] || {};
+      by[r.id] = Object.assign({}, prev, r, { episodes: Array.isArray(r.episodes) ? r.episodes : (prev.episodes || []) });
+    });
+    localShows().forEach(function (l) {
+      var cur = by[l.id];
+      var newer = !!l.updatedAt && (!cur || !onServer[l.id] || String(l.updatedAt) > timeOf(cur));
+      var eps = viewEpisodes(cur ? cur.episodes : [], l.episodes);
+      var row = Object.assign({}, newer ? l : cur, { episodes: eps });
+      if (newer) row._sync = syncOf(l);
+      else if (eps.some(function (e) { return e._sync; })) row._sync = 'pending';
+      else delete row._sync;
+      by[l.id] = row;
+      if (!cur) order.push(l.id);
+    });
+    return order.map(function (k) { return by[k]; }).filter(function (s) {
+      return s && (s.status !== 'hidden' || s._sync === 'hidden');
     });
   }
 
@@ -71,13 +153,113 @@
     return null;
   }
 
-  function upsertShow(show) {
-    var list = allShows();
+  function showFields(show) {
+    var copy = Object.assign({}, show);
+    delete copy.episodes;
+    delete copy._sync;
+    delete copy.source;
+    return copy;
+  }
+
+  /* Поля шоу — своя запись со своим временем; выпуски внутри не трогаются. */
+  function saveShowLocal(show) {
+    var list = localShows();
     var i = list.findIndex(function (s) { return String(s.id) === String(show.id); });
-    if (i === -1) list.unshift(show);
-    else list[i] = Object.assign({}, list[i], show);
+    var prev = i === -1 ? null : list[i];
+    var rec = Object.assign({}, prev || {}, showFields(show), {
+      episodes: prev ? (prev.episodes || []) : [],
+      updatedAt: freshTime(remoteShow(show.id)),
+    });
+    if (i === -1) list.unshift(rec);
+    else list[i] = rec;
     writeShows(list);
-    return show;
+    return rec;
+  }
+
+  /* Выпуск — отдельная запись со своим временем; поля шоу не меняются. */
+  function saveEpisodeLocal(show, ep) {
+    var list = localShows();
+    var i = list.findIndex(function (s) { return String(s.id) === String(show.id); });
+    var rec = i === -1
+      ? Object.assign(showFields(show), { episodes: [], updatedAt: '' })
+      : list[i];
+    var stamped = Object.assign({}, ep, { updatedAt: freshTime(remoteEpisode(show.id, ep.id)) });
+    delete stamped._sync;
+    var eps = (rec.episodes || []).filter(function (e) { return e && String(e.id) !== String(ep.id); });
+    eps.unshift(stamped);
+    rec = Object.assign({}, rec, { episodes: eps });
+    if (i === -1) list.unshift(rec);
+    else list[i] = rec;
+    writeShows(list);
+    return stamped;
+  }
+
+  /* Свежий пакет → основа. Местные записи, которые не новее серверных, убираются. */
+  function absorb(pack, stamp) {
+    if (!pack || typeof pack !== 'object') return;
+    remotePack = pack;
+    if (stamp) remoteStamp = String(stamp);
+    var changed = false;
+    var next = localShows().map(function (l) {
+      var r = remoteShow(l.id);
+      var eps = (l.episodes || []).filter(function (e) {
+        if (!e || !e.id || !e.updatedAt) return false;
+        var re = r && (r.episodes || []).filter(function (x) { return x && String(x.id) === String(e.id); })[0];
+        return !re || String(e.updatedAt) > timeOf(re);
+      });
+      var showNewer = !!l.updatedAt && (!r || String(l.updatedAt) > timeOf(r));
+      if (eps.length !== (l.episodes || []).length) changed = true;
+      if (!showNewer && !eps.length) {
+        changed = true;
+        return null;
+      }
+      return Object.assign({}, l, { episodes: eps });
+    }).filter(Boolean);
+    if (changed) writeShows(next);
+  }
+
+  function hydrate(done) {
+    if (hydrated || !window.AdminDesk || !AdminDesk.readPackStrict) { done(); return; }
+    AdminDesk.readPackStrict(PAGE_SLUG).then(function (cur) {
+      if (cur.pack) absorb(cur.pack, AdminDesk.packTime ? AdminDesk.packTime(PAGE_SLUG) : '');
+      hydrated = true;
+    }, function () {}).then(done);
+  }
+
+  function cleanShow(l) {
+    var copy = showFields(l);
+    Object.keys(copy).forEach(function (k) { if (k.charAt(0) === '_') delete copy[k]; });
+    copy.status = copy.status === 'hidden' ? 'hidden' : 'published';
+    return copy;
+  }
+
+  function buildPack(remote, stamp) {
+    if (remote) absorb(remote, stamp);
+    var base = remote && Array.isArray(remote.shows)
+      ? remote.shows
+      : seedShows().map(function (s) { return Object.assign({ status: 'published' }, s); });
+    var by = {};
+    var order = [];
+    base.forEach(function (r) {
+      if (!r || !r.id || by[r.id]) return;
+      var s = Object.assign({}, r);
+      if (!s.updatedAt && stamp) s.updatedAt = stamp;
+      by[r.id] = s;
+      order.push(r.id);
+    });
+    localShows().forEach(function (l) {
+      var r = by[l.id];
+      if (!r && l.status === 'draft') return;
+      var showNewer = !r || String(l.updatedAt || '') > String(r.updatedAt || '');
+      var fields = showNewer && l.status !== 'draft' ? cleanShow(l) : r;
+      var eps = AdminDesk.lwwMerge(r ? (r.episodes || []) : [], l.episodes || [], {
+        stamp: stamp,
+        key: function (e) { return String((e && e.id) || ''); },
+      });
+      by[l.id] = Object.assign({}, fields, { episodes: eps });
+      if (!r) order.push(l.id);
+    });
+    return { shows: order.map(function (k) { return by[k]; }) };
   }
 
   function findEp(show, epId) {
@@ -112,44 +294,32 @@
   }
 
   function publishPack() {
-    if (!window.AdminApi || !AdminApi.upsertArchive) {
+    if (!window.AdminDesk || !AdminDesk.publishPackSafe || !AdminDesk.lwwMerge) {
       return Promise.reject(new Error('нет соединения с сервером'));
     }
-    var shows = allShows().filter(function (s) {
-      return s && s.id && (!s.status || s.status === 'published');
-    }).map(function (s) {
-      var copy = Object.assign({}, s);
-      delete copy.source;
-      copy.episodes = (s.episodes || []).filter(function (ep) {
-        return ep && (!ep.status || ep.status === 'published');
-      });
-      return copy;
+    return AdminDesk.publishPackSafe({
+      fallbackId: PAGE_ID,
+      slug: PAGE_SLUG,
+      title: 'Подкасты редакции',
+      source: 'desk-podcasts',
+      build: buildPack,
+    }).then(function (pack) {
+      absorb(pack, (AdminDesk.packTime && AdminDesk.packTime(PAGE_SLUG)) || new Date().toISOString());
+      return pack;
     });
-    if (window.AdminDesk && AdminDesk.upsertJsonPack) {
-      return AdminDesk.upsertJsonPack({
-        fallbackId: PAGE_ID,
-        slug: PAGE_SLUG,
-        title: 'Подкасты редакции',
-        source: 'desk-podcasts',
-        body: { shows: shows },
-      });
-    }
-    return AdminApi.upsertArchive({
-      articles: [{
-        id: PAGE_ID,
-        slug: PAGE_SLUG,
-        title: 'Подкасты редакции',
-        date: todayIso(),
-        modified: new Date().toISOString(),
-        author: '',
-        categories: [],
-        categorySlugs: ['day-by-day'],
-        excerpt: '',
-        contentHtml: '<p></p>',
-        contentText: JSON.stringify({ shows: shows }),
-        source: 'desk-podcasts',
-      }],
-    });
+  }
+
+  function failText(e, again) {
+    var msg = (e && e.message) || 'нет связи';
+    if (e && e.readFailed) return msg;
+    return 'Не ушло на сайт: ' + msg + '. Правка сохранена здесь — нажмите «' + (again || 'Опубликовать') + '» ещё раз.';
+  }
+
+  function syncChip(sync) {
+    if (sync === 'draft') return ' <span class="badge warn">Черновик</span>';
+    if (sync === 'pending') return ' <span class="badge rose" title="Правка есть только в этом браузере">Не отправлено</span>';
+    if (sync === 'hidden') return ' <span class="badge rose" title="Снято здесь, на сайте ещё видно">Не снято с сайта</span>';
+    return '';
   }
 
   function parseId(raw) {
@@ -168,9 +338,14 @@
 
   function render(id, ctx) {
     var parsed = parseId(id);
-    if (parsed.kind === 'show') return renderShow(ctx, parsed.id);
-    if (parsed.kind === 'episode') return renderEpisode(ctx, parsed.showId, parsed.epId);
-    return renderList(ctx);
+    if (!hydrated) {
+      ctx.viewEl.innerHTML = '<div class="yak-loading yak-loading--page" role="status"><span class="yak-spin" aria-hidden="true"></span><span>Открываю подкасты…</span></div>';
+    }
+    hydrate(function () {
+      if (parsed.kind === 'show') return renderShow(ctx, parsed.id);
+      if (parsed.kind === 'episode') return renderEpisode(ctx, parsed.showId, parsed.epId);
+      return renderList(ctx);
+    });
   }
 
   function renderList(ctx) {
@@ -183,12 +358,12 @@
       '</div></div>' +
       '<div class="panel">' +
       (shows.length ? shows.map(function (s) {
-        var n = (s.episodes || []).length;
+        var n = (s.episodes || []).filter(function (e) { return e.status !== 'hidden'; }).length;
         return (
           '<a class="god-card" href="#podcasts/' + encodeURIComponent(s.id) + '">' +
           '<span class="god-thumb" style="background-image:url(\'' + esc(s.cover || '') + '\')"></span>' +
           '<span class="god-copy"><strong>' + esc(s.title) + '</strong>' +
-          '<small>' + esc(s.host || '') + ' · ' + n + ' вып.</small></span></a>'
+          '<small>' + esc(s.host || '') + ' · ' + n + ' вып.</small>' + syncChip(s._sync) + '</span></a>'
         );
       }).join('') : '<p class="hint-note">Пока нет подкастов. Добавьте шоу — потом выпуски с файлами.</p>') +
       '</div>';
@@ -228,7 +403,7 @@
           }).map(function (ep) {
             return (
               '<a class="cycle-row" href="#podcasts/ep:' + encodeURIComponent(item.id) + ':' + encodeURIComponent(ep.id) + '">' +
-              '<span>S' + esc(String(ep.season || 0)) + 'E' + esc(String(ep.episode || 0)) + ' · ' + esc(ep.title) + '</span>' +
+              '<span>S' + esc(String(ep.season || 0)) + 'E' + esc(String(ep.episode || 0)) + ' · ' + esc(ep.title) + syncChip(ep._sync) + '</span>' +
               '<small>' + esc(ep.date || '') + '</small></a>'
             );
           }).join('')
@@ -250,30 +425,34 @@
       reader.readAsDataURL(f);
     };
 
-    function collect() {
+    function collect(publish) {
       var next = Object.assign({}, item, {
         title: val('d-title'),
         host: val('d-host'),
         authorSlug: val('d-author'),
         blurb: val('d-blurb'),
         cover: val('d-cover'),
-        episodes: item.episodes || [],
-        status: 'published',
+        status: publish ? 'published' : 'draft',
       });
       if (!next.id) next.id = uid('cast');
       return next;
     }
 
     function save(publish) {
-      var next = collect();
+      var next = collect(publish);
       if (!next.title) { ctx.toast('Укажите название', true); return; }
-      upsertShow(next);
-      var done = publish ? publishPack() : Promise.resolve();
-      ctx.toast(publish ? 'Публикуем…' : 'Сохраняем…');
-      done.then(function () {
-        ctx.toast(publish ? 'На сайте' : 'Сохранено');
+      if (String(next.cover || '').indexOf('data:') === 0) { ctx.toast('Дождитесь загрузки обложки', true); return; }
+      saveShowLocal(next);
+      if (!publish) {
+        ctx.toast('Черновик сохранён — на сайт не отправлен');
         ctx.go('podcasts', next.id);
-      }).catch(function (e) { ctx.toast(e.message || 'Не удалось сохранить', true); });
+        return;
+      }
+      ctx.toast('Публикуем…');
+      publishPack().then(function () {
+        ctx.toast('На сайте');
+        ctx.go('podcasts', next.id);
+      }).catch(function (e) { ctx.toast(failText(e), true); });
     }
 
     document.getElementById('cast-draft').onclick = function () { save(false); };
@@ -345,7 +524,7 @@
       });
     }
 
-    function collect() {
+    function collect(publish) {
       return Object.assign({}, item, {
         season: Number(val('d-season')) || 0,
         episode: Number(val('d-episode')) || 0,
@@ -354,26 +533,26 @@
         duration: val('d-dur'),
         audioUrl: val('d-url'),
         description: val('d-desc'),
-        status: 'published',
+        status: publish ? 'published' : 'draft',
       });
     }
 
     function save(publish) {
-      var next = collect();
+      var next = collect(publish);
       if (!next.title) { ctx.toast('Укажите название', true); return; }
       if (!next.audioUrl) { ctx.toast('Прикрепите файл', true); return; }
       if (next.audioUrl.indexOf('data:') === 0) { ctx.toast('Дождитесь загрузки в бакет', true); return; }
-      show.episodes = show.episodes || [];
-      var i = show.episodes.findIndex(function (ep) { return String(ep.id) === String(next.id); });
-      if (i === -1) show.episodes.unshift(next);
-      else show.episodes[i] = next;
-      upsertShow(show);
-      var done = publish ? publishPack() : Promise.resolve();
-      ctx.toast(publish ? 'Публикуем…' : 'Сохраняем…');
-      done.then(function () {
-        ctx.toast(publish ? 'На сайте' : 'Сохранено');
+      saveEpisodeLocal(show, next);
+      if (!publish) {
+        ctx.toast('Черновик сохранён — на сайт не отправлен');
         ctx.go('podcasts', show.id);
-      }).catch(function (e) { ctx.toast(e.message || 'Не удалось сохранить', true); });
+        return;
+      }
+      ctx.toast('Публикуем…');
+      publishPack().then(function () {
+        ctx.toast('На сайте');
+        ctx.go('podcasts', show.id);
+      }).catch(function (e) { ctx.toast(failText(e), true); });
     }
 
     document.getElementById('ep-draft').onclick = function () { save(false); };
@@ -381,12 +560,12 @@
     var del = document.getElementById('ep-del');
     if (del) del.onclick = function () {
       if (!confirm('Снять выпуск?')) return;
-      show.episodes = (show.episodes || []).filter(function (ep) { return String(ep.id) !== String(item.id); });
-      upsertShow(show);
+      saveEpisodeLocal(show, Object.assign({}, item, { status: 'hidden' }));
+      ctx.toast('Снимаем с сайта…');
       publishPack().then(function () {
-        ctx.toast('Снято');
+        ctx.toast('Снято с публикации');
         ctx.go('podcasts', show.id);
-      }).catch(function (e) { ctx.toast(e.message || 'Не удалось снять', true); });
+      }).catch(function (e) { ctx.toast(failText(e, 'Снять'), true); });
     };
   }
 

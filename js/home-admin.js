@@ -12,16 +12,13 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
-  function todayIso() {
-    return new Date().toISOString().slice(0, 10);
-  }
-
   function readDesk() {
     if (window.AdminDesk && AdminDesk.read) return AdminDesk.read();
     try { return JSON.parse(localStorage.getItem('yak_desk') || '{}') || {}; } catch (e) { return {}; }
   }
 
   function writeHome(home) {
+    home = Object.assign({}, home, { updatedAt: new Date().toISOString() });
     if (window.AdminDesk && AdminDesk.read && AdminDesk.write) {
       var all = AdminDesk.read();
       all.home = home;
@@ -43,6 +40,34 @@
     { slug: 'guide:church', title: 'О Церкви', href: 'church.html', image: 'assets/cards/church-first-time.webp', kind: 'page', kicker: 'Страница · О Церкви' },
   ];
 
+  /* Все разделы «О Церкви» и «Духовная жизнь» как guide:id — со ссылкой и обложкой, иначе сайт не поймёт слот. */
+  function guidePages() {
+    var G = window.YakGuides;
+    if (!G) return [];
+    var out = [];
+    [['church.html', G.church, 'О Церкви'], ['spiritual-life.html', G.spirit, 'Духовный путь']].forEach(function (t) {
+      var tree = t[1];
+      if (!tree || !tree.nodes) return;
+      var images = {};
+      var cards = (tree.cards || []).slice();
+      Object.keys(tree.nodes).forEach(function (k) { cards = cards.concat((tree.nodes[k] && tree.nodes[k].cards) || []); });
+      cards.forEach(function (c) { if (c && c.id && c.image && !images[c.id]) images[c.id] = c.image; });
+      Object.keys(tree.nodes).forEach(function (id) {
+        var n = tree.nodes[id];
+        if (!n || !n.title || n.type === 'external') return;
+        out.push({
+          slug: 'guide:' + id,
+          title: n.title,
+          href: t[0] + '?path=' + encodeURIComponent(id),
+          image: images[id] || '',
+          kind: 'page',
+          kicker: 'Страница · ' + t[2],
+        });
+      });
+    });
+    return out;
+  }
+
   function emptySlot() {
     return { slug: '', title: '', href: '', image: '', kind: '' };
   }
@@ -54,9 +79,24 @@
     };
   }
 
+  /* Время версии на сайте, с которой открыта форма. */
+  var openedAt = '';
+
+  function packTime() {
+    return (window.AdminDesk && AdminDesk.packTime && AdminDesk.packTime(PAGE_SLUG)) || '';
+  }
+
+  /* Неотправленная правка этого браузера новее сайта — показываем её. */
+  function unsentHome() {
+    var local = readDesk().home;
+    var remote = window.AdminDesk && AdminDesk.remoteHome && AdminDesk.remoteHome();
+    if (!local || !local.updatedAt) return null;
+    return !remote || String(local.updatedAt) > packTime() ? local : null;
+  }
+
   function currentHome() {
     var remote = window.AdminDesk && AdminDesk.remoteHome && AdminDesk.remoteHome();
-    var saved = remote || readDesk().home || {};
+    var saved = unsentHome() || remote || readDesk().home || {};
     function fill(arr, n) {
       var out = [];
       for (var i = 0; i < n; i++) {
@@ -78,6 +118,8 @@
   }
 
   var catalogCache = [];
+  /* Слоты, как они открылись: если слаг не трогали, а в каталоге его нет — ссылку и обложку не теряем. */
+  var slotOnOpen = {};
 
   function catalogPosts(extraPages) {
     var out = [];
@@ -100,6 +142,7 @@
       });
     }
     STATIC_PAGES.forEach(add);
+    guidePages().forEach(add);
     (extraPages || []).forEach(add);
     if (window.AdminStore && AdminStore.listPages) {
       AdminStore.listPages().forEach(function (p) {
@@ -133,12 +176,13 @@
     var slug = (document.getElementById(slugId) || {}).value || '';
     var title = (document.getElementById(titleId) || {}).value || '';
     var hit = catalogCache.filter(function (p) { return p.slug === slug; })[0];
+    var was = slotOnOpen[slugId] && slotOnOpen[slugId].slug === slug ? slotOnOpen[slugId] : null;
     return {
       slug: slug,
       title: title || (hit && hit.title) || '',
-      href: (hit && hit.href) || '',
-      image: (hit && hit.image) || '',
-      kind: (hit && hit.kind) || '',
+      href: (hit && hit.href) || (was && was.href) || '',
+      image: (hit && hit.image) || (was && was.image) || '',
+      kind: (hit && hit.kind) || (was && was.kind) || '',
     };
   }
 
@@ -153,38 +197,25 @@
     return home;
   }
 
-  function publish(home) {
+  function publish(home, force) {
     var clean = {
       slides: (home.slides || []).filter(function (x) { return x && x.slug; }),
       side: (home.side || []).filter(function (x) { return x && x.slug; }),
     };
-    if (window.AdminDesk && AdminDesk.upsertJsonPack) {
-      return AdminDesk.upsertJsonPack({
-        fallbackId: PAGE_ID,
-        slug: PAGE_SLUG,
-        title: 'Главное на витрине',
-        source: 'desk-home',
-        body: clean,
-      });
-    }
-    if (!window.AdminApi || !AdminApi.upsertArchive) {
+    if (!window.AdminDesk || !AdminDesk.publishObjectPack) {
       return Promise.reject(new Error('нет соединения с сервером'));
     }
-    return AdminApi.upsertArchive({
-      articles: [{
-        id: PAGE_ID,
-        slug: PAGE_SLUG,
-        title: 'Главное на витрине',
-        date: todayIso(),
-        modified: new Date().toISOString(),
-        author: '',
-        categories: [],
-        categorySlugs: ['day-by-day'],
-        excerpt: '',
-        contentHtml: '<p></p>',
-        contentText: JSON.stringify(clean),
-        source: 'desk-home',
-      }],
+    return AdminDesk.publishObjectPack({
+      fallbackId: PAGE_ID,
+      slug: PAGE_SLUG,
+      title: 'Главное на витрине',
+      source: 'desk-home',
+      body: clean,
+      openedAt: openedAt,
+      force: !!force,
+    }).then(function (pack) {
+      openedAt = packTime();
+      return pack;
     });
   }
 
@@ -199,11 +230,18 @@
   }
 
   function render(ctx) {
-    if (window.AdminDesk && AdminDesk.hydrateRemote && !render._hydrated) {
-      render._hydrated = true;
-      AdminDesk.hydrateRemote(function () { render(ctx); });
-      return;
-    }
+    var D = window.AdminDesk;
+    if (!D || !D.readPackStrict) { draw(ctx); return; }
+    ctx.viewEl.innerHTML = '<div class="yak-loading yak-loading--page" role="status"><span class="yak-spin" aria-hidden="true"></span><span>Открываю главную…</span></div>';
+    D.readPackStrict(PAGE_SLUG).then(function () { draw(ctx); }, function () {
+      draw(ctx);
+      ctx.toast('Сайт не ответил — показана последняя известная версия', true);
+    });
+  }
+
+  function draw(ctx) {
+    openedAt = packTime();
+    var unsent = !!unsentHome();
     var home = currentHome();
     if (!home.slides[0].slug) {
       home.slides = [
@@ -212,6 +250,9 @@
         Object.assign({}, STATIC_PAGES[3]),
       ];
     }
+    slotOnOpen = {};
+    home.slides.forEach(function (s, i) { slotOnOpen['home-s-' + i] = s; });
+    home.side.forEach(function (s, i) { slotOnOpen['home-c-' + i] = s; });
     var posts = catalogPosts();
     var listId = 'home-post-list';
     function optionHtml(p) {
@@ -225,6 +266,7 @@
       '<a class="btn btn-ghost" href="' + ((window.AdminConfig && AdminConfig.PORTAL_URL) || '../Ave_Maria/') + 'index.html" target="_blank" rel="noopener">На сайте</a>' +
       '<button type="button" class="btn btn-primary" id="home-pub">Опубликовать</button>' +
       '</div></div>' +
+      (unsent ? '<p class="hint-note sync-note">Здесь правка, которая ещё не ушла на сайт. Нажмите «Опубликовать».</p>' : '') +
       '<datalist id="' + listId + '">' +
       posts.map(optionHtml).join('') +
       '</datalist>' +
@@ -257,12 +299,22 @@
     document.getElementById('home-pub').onclick = function () {
       var next = collect();
       writeHome(next);
-      ctx.toast('Отправляем на сайт…');
-      publish(next).then(function () {
-        ctx.toast('Главная обновлена');
-      }).catch(function (e) {
-        ctx.toast(e.message || 'Не удалось опубликовать', true);
-      });
+      send(false);
+      function send(force) {
+        ctx.toast('Отправляем на сайт…');
+        publish(next, force).then(function () {
+          ctx.toast('Главная обновлена');
+          var note = ctx.viewEl.querySelector('.sync-note');
+          if (note) note.remove();
+        }).catch(function (e) {
+          if (e && e.conflict) {
+            if (confirm(e.message + '\n\nЗаменить ту версию вашей?')) { send(true); return; }
+            ctx.toast('Ничего не отправлено. Ваша правка сохранена здесь — откройте раздел заново, чтобы сравнить.', true);
+            return;
+          }
+          ctx.toast(AdminDesk.failText ? AdminDesk.failText(e) : ((e && e.message) || 'Не удалось опубликовать'), true);
+        });
+      }
     };
 
     if (window.AdminApi && AdminApi.getPages) {

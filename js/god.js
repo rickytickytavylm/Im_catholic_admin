@@ -25,6 +25,23 @@
     return 'background-image:url(\'' + u.replace(/'/g, '%27') + '\')';
   }
 
+  /* Превью грузится лениво и проявляется, когда готово; битая ссылка — спокойная заглушка. */
+  function thumb(url) {
+    var u = src(url);
+    if (!u) return '<span class="god-thumb is-empty"></span>';
+    return '<span class="god-thumb"><img src="' + esc(u) + '" alt="" loading="lazy" decoding="async" ' +
+      'onload="this.classList.add(\'is-in\')" onerror="this.parentNode.classList.add(\'is-empty\');this.remove()" /></span>';
+  }
+
+  /* Состояние записи относительно сайта. */
+  function syncChip(it) {
+    var s = it && it._sync;
+    if (s === 'draft') return '<span class="badge warn god-chip">' + (it._live ? 'Черновик правки' : 'Черновик') + '</span>';
+    if (s === 'pending') return '<span class="badge rose god-chip">Не отправлено</span>';
+    if (s === 'hidden') return '<span class="badge muted god-chip">Снято</span>';
+    return '';
+  }
+
   function loadingBox(text) {
     return (
       '<div class="yak-loading" role="status">' +
@@ -46,10 +63,11 @@
     return '<div class="god-grid" aria-hidden="true">' + skelCards(n) + '</div>';
   }
 
-  function card(href, img, title, meta, wide) {
+  function card(href, img, title, meta, wide, it) {
+    var hidden = it && it._sync === 'hidden';
     return (
-      '<a class="god-card' + (wide ? ' god-card--wide' : '') + '" href="' + href + '">' +
-      '<span class="god-thumb' + (img ? '' : ' is-empty') + '" style="' + thumbStyle(img) + '"></span>' +
+      '<a class="god-card' + (wide ? ' god-card--wide' : '') + (hidden ? ' is-off' : '') + '" href="' + href + '">' +
+      thumb(img) + syncChip(it) +
       '<span class="god-copy"><strong>' + esc(title || 'Без названия') + '</strong>' +
       (meta ? '<small>' + esc(meta) + '</small>' : '') +
       '</span></a>'
@@ -162,10 +180,10 @@
         '<div class="topbar"><div><h1>Обзор</h1>' +
         '<p>Все разделы портала.</p></div></div>' +
         band('Новости', '#news', newsBusy ? skelCards(4) : news.slice(0, 8).map(function (it) {
-          return card('#news/' + encodeURIComponent(it.id), it.image || it.cover || 'assets/cards/articles-spirituality.webp', it.title, it.date || it.excerpt);
+          return card('#news/' + encodeURIComponent(it.id), it.image || it.cover || 'assets/cards/articles-spirituality.webp', it.title, it.date || it.excerpt, false, it);
         }).join(''), newsBusy ? null : news.length) +
         band('Статьи', '#articles', artsBusy ? skelCards(4) : arts.slice(0, 8).map(function (it) {
-          return card('#articles/' + encodeURIComponent(it.id), it.image || it.cover || 'assets/cards/articles-spirituality.webp', it.title, it.excerpt || it.date);
+          return card('#articles/' + encodeURIComponent(it.id), it.image || it.cover || 'assets/cards/articles-spirituality.webp', it.title, it.excerpt || it.date, false, it);
         }).join(''), artsBusy ? null : arts.length) +
         band('О Церкви', '#church', church.slice(0, 8).map(function (it) {
           return card('#church/' + encodeURIComponent(it.id), it.image, it.title, it.sub);
@@ -174,29 +192,29 @@
           return card('#spirit/' + encodeURIComponent(it.id), it.image, it.title, it.sub);
         }).join(''), spirit.length) +
         band('Видео', '#video', vids.slice(0, 8).map(function (it) {
-          return card('#video/' + encodeURIComponent(it.id), it.thumb, it.title, (it.type === 'short' ? 'Shorts · ' : '') + (it.speaker || ''));
+          return card('#video/' + encodeURIComponent(it.id), it.thumb, it.title, (it.type === 'short' ? 'Shorts · ' : '') + (it.speaker || ''), false, it);
         }).join(''), vids.length) +
         band('Аудио', '#audio', auds.slice(0, 8).map(function (it) {
-          return card('#audio/' + encodeURIComponent(it.id), it.cover || 'assets/cards/articles-sermons.webp', it.title, (it.artist || '') + (it.duration ? ' · ' + it.duration : ''));
+          return card('#audio/' + encodeURIComponent(it.id), it.cover || 'assets/cards/articles-sermons.webp', it.title, (it.artist || '') + (it.duration ? ' · ' + it.duration : ''), false, it);
         }).join(''), auds.length) +
         band('Подкасты', '#podcasts', ((window.YakPodcasts && YakPodcasts.shows) || []).slice(0, 8).map(function (it) {
           var n = window.YakPodcasts && YakPodcasts.countOf ? YakPodcasts.countOf(it) : (it.episodes || []).length;
           return card('#podcasts/' + encodeURIComponent(it.id), it.cover || 'assets/cards/articles-spirituality.webp', it.title, (it.host || '') + (n ? ' · ' + n + ' вып.' : ''));
         }).join(''), (window.YakPodcasts && YakPodcasts.shows && YakPodcasts.shows.length) || 0) +
         band('Афиша', '#afisha', evs.slice(0, 8).map(function (it) {
-          return card('#afisha/' + encodeURIComponent(it.id), eventCover(it), it.title, (it.date || '') + (it.city ? ' · ' + it.city : ''));
+          return card('#afisha/' + encodeURIComponent(it.id), eventCover(it), it.title, (it.date || '') + (it.city ? ' · ' + it.city : ''), false, it);
         }).join(''), evs.length) +
         band('Фотосток', '#media', ph.slice(0, 12).map(function (it) {
           return card('#media', it.url || it.thumb, it.title || (it.tags || []).slice(0, 2).join(', ') || 'Фото', (it.tags || []).slice(0, 3).join(' · '));
         }).join(''), ph.length) +
         band('Циклы', '#cycles', ((window.AdminDesk && AdminDesk.mergedList) ? AdminDesk.mergedList('cycle') : []).slice(0, 8).map(function (it) {
-          return card('#cycles/' + encodeURIComponent(it.id || it.slug), it.cover || it.image || 'assets/cards/articles-spirituality.webp', it.title, ((it.items || []).length ? it.items.length + ' материалов' : it.subtitle || ''));
+          return card('#cycles/' + encodeURIComponent(it.id || it.slug), it.cover || it.image || 'assets/cards/articles-spirituality.webp', it.title, ((it.items || []).length ? it.items.length + ' материалов' : it.subtitle || ''), false, it);
         }).join('')) +
         band('Авторы', '#authors', authors.slice(0, 8).map(function (it) {
-          return card('#authors/' + encodeURIComponent(it.slug || it.id), it.photo, it.name, it.role || '');
+          return card('#authors/' + encodeURIComponent(it.slug || it.id), it.photo, it.name, it.role || '', false, it);
         }).join(''), authors.length) +
         band('День Церкви', '#church-day', days.slice(0, 8).map(function (it) {
-          return card('#church-day/' + encodeURIComponent(it.id || it.date), 'assets/cards/spirit-liturgy.webp', it.title || (it.liturgical && it.liturgical.title), it.date);
+          return card('#church-day/' + encodeURIComponent(it.id || it.date), 'assets/cards/spirit-liturgy.webp', it.title || (it.liturgical && it.liturgical.title), it.date, false, it);
         }).join(''), days.length);
     }
 
@@ -318,7 +336,7 @@
         archiveBar(list) +
         (list.length
           ? '<div class="god-grid">' + list.map(function (it) {
-            return card(hrefOf(it), imgOf(it), titleOf(it), metaOf(it));
+            return card(hrefOf(it), imgOf(it), titleOf(it), metaOf(it), false, it);
           }).join('') + '</div>'
           : (info && !info.error && (info.loading || !info.loaded)
             ? loadingBox('Загружаю материалы…') + skelGrid(6)
@@ -404,5 +422,6 @@
     paintSection: paintSection,
     paintGuideEdit: paintGuideEdit,
     guideCards: guideCards,
+    skelGrid: skelGrid,
   };
 })(window);
