@@ -669,7 +669,7 @@
               { title: 'Крещение: начало новой жизни', href: 'church.html?path=nav-baptism' },
               { title: 'Миропомазание: сила Святого Духа', href: 'church.html?path=nav-confirmation' },
               { title: 'Евхаристия — сердце жизни Церкви', href: 'church.html?path=nav-eucharist' },
-              { title: 'Исповедь: как подготовиться и не бояться', href: 'church.html?path=return-confession' },
+              { title: 'Исповедь и как к ней подготовиться', href: 'church.html?path=nav-confession' },
               { title: 'Что происходит на Мессе', href: 'church.html?path=nav-mass' },
               { title: 'Елеопомазание: Таинство исцеления', href: 'church.html?path=nav-anointing' },
               { title: 'Священство и Брак: призвание к служению и любви', href: 'church.html?path=nav-orders-marriage' },
@@ -704,7 +704,7 @@
             title: 'Община и призвание',
             items: [
               { title: 'Что такое приход и как найти свой', href: 'church.html?path=nav-parish' },
-              { title: 'Кто такие монахи, монахини, настоятель', href: 'church.html?path=structure-religious' },
+              { title: 'Кто такие монахи, монахини, настоятель', href: 'church.html?path=nav-religious' },
               { title: 'Церковные движения', href: 'church.html?path=nav-movements' },
               { title: 'Молодёжка', href: 'church.html?path=nav-youth' },
               { title: 'Семейная жизнь как призвание', href: 'church.html?path=nav-family' },
@@ -961,6 +961,7 @@
       'nav-sacraments-christ': Object.assign(page('Таинства: как Христос действует в Церкви'), { siblingsOf: 'navigator' }),
       'nav-baptism': Object.assign(page('Крещение: начало новой жизни'), { siblingsOf: 'navigator' }),
       'nav-confirmation': Object.assign(page('Миропомазание: сила Святого Духа'), { siblingsOf: 'navigator' }),
+      'nav-confession': Object.assign(page('Исповедь и как к ней подготовиться'), { siblingsOf: 'navigator' }),
       'nav-anointing': Object.assign(page('Елеопомазание: Таинство исцеления'), { siblingsOf: 'navigator' }),
       'nav-orders-marriage': Object.assign(page('Священство и Брак: призвание к служению и любви'), { siblingsOf: 'navigator' }),
       'nav-prepare-sacraments': Object.assign(page('Как подготовиться к Таинствам и кто может их принимать'), { siblingsOf: 'navigator' }),
@@ -1020,13 +1021,12 @@
           { title: 'Основные молитвы', href: 'spiritual-life.html?path=basic-prayers' },
         ],
       }),
-      'nav-favorite-prayers': Object.assign(page('Любимые молитвы католиков'), {
+      'nav-favorite-prayers': {
+        type: 'prayers',
+        title: 'Любимые молитвы католиков',
         siblingsOf: 'navigator',
-        also: [
-          { title: 'Основные молитвы', href: 'spiritual-life.html?path=basic-prayers' },
-          { title: 'Розарий', href: 'church.html?path=nav-rosary' },
-        ],
-      }),
+        mirrorOf: 'spirit:basic-prayers',
+      },
       'nav-lectio': Object.assign(page('Lectio Divina: молитвенное чтение Библии'), {
         siblingsOf: 'navigator',
         also: [
@@ -1062,6 +1062,7 @@
           { title: 'Как найти приход', href: 'church.html?path=become-parish' },
         ],
       }),
+      'nav-religious': Object.assign(page('Кто такие монахи, монахини, настоятель'), { siblingsOf: 'navigator' }),
       'nav-movements': Object.assign(page('Церковные движения'), {
         siblingsOf: 'navigator',
         also: [
@@ -1843,6 +1844,12 @@
       }),
     },
   };
+
+  var favorite = CHURCH.nodes['nav-favorite-prayers'];
+  var basics = SPIRIT.nodes['basic-prayers'];
+  favorite.prayers = basics.prayers;
+  favorite.feedCategory = basics.feedCategory;
+  favorite.feedLabel = basics.feedLabel;
 
   global.YakGuides = { church: CHURCH, spirit: SPIRIT };
 })(typeof window !== 'undefined' ? window : this);

@@ -41,6 +41,8 @@
     { id: 'liturgy', title: 'Литургика' },
     { id: 'music', title: 'Музыка' },
     { id: 'puteshestviya', title: 'Путешествия' },
+    { id: 'ask-priest', title: 'Вопросы священнику' },
+    { id: 'psiholog', title: 'Вопросы психологу' },
   ];
 
   var VOICE_CATS = [
@@ -72,6 +74,8 @@
     { id: 'pilgrimage', title: 'Паломничество' },
     { id: 'retreat', title: 'Реколлекции' },
     { id: 'charity', title: 'Благотворительность' },
+    { id: 'theatre', title: 'Спектакль' },
+    { id: 'service', title: 'Богослужение' },
   ];
 
   function emptyState() {
@@ -1040,11 +1044,14 @@
       .replace(/\uFEFF/g, '');
   }
 
-  function sanitizeLead(html) {
+  var LIST_TAGS = { ul: 1, ol: 1, li: 1 };
+
+  function sanitizeLead(html, extra) {
     var box = document.createElement('div');
     box.innerHTML = stripOfficeJunk(html || '');
     box.querySelectorAll('script,style,iframe,object,img,video,figure,svg').forEach(function (n) { n.remove(); });
     var allow = { a: 1, em: 1, i: 1, strong: 1, b: 1, u: 1, br: 1, p: 1, span: 1 };
+    if (extra) Object.keys(extra).forEach(function (k) { allow[k] = 1; });
     [].slice.call(box.querySelectorAll('*')).forEach(function (n) {
       var tag = n.tagName.toLowerCase();
       if (!allow[tag]) {
@@ -1113,6 +1120,65 @@
       d.parentNode.replaceChild(p, d);
     });
     return sanitizeLead(box.innerHTML);
+  }
+
+  function eventDescHtml() {
+    var el = document.getElementById('d-desc');
+    if (!el) return '';
+    var box = document.createElement('div');
+    box.innerHTML = el.innerHTML || '';
+    box.querySelectorAll('div').forEach(function (d) {
+      var p = document.createElement('p');
+      while (d.firstChild) p.appendChild(d.firstChild);
+      d.parentNode.replaceChild(p, d);
+    });
+    var html = flatBlocks(sanitizeLead(box.innerHTML, LIST_TAGS));
+    return htmlToText(html) ? html : '';
+  }
+
+  /* Chrome оставляет первую строку голым текстом, а список кладёт внутрь абзаца —
+     раскладываем в ровный ряд абзацев и списков, пустые убираем. */
+  function flatBlocks(html) {
+    var src = document.createElement('div');
+    src.innerHTML = html;
+    var out = document.createElement('div');
+    var para = null;
+    function hasText(n) { return !!String(n.textContent || '').replace(/\u00a0/g, ' ').trim(); }
+    function flush() {
+      if (para) {
+        while (para.firstChild && para.firstChild.nodeName === 'BR') para.removeChild(para.firstChild);
+        while (para.lastChild && para.lastChild.nodeName === 'BR') para.removeChild(para.lastChild);
+        if (hasText(para)) out.appendChild(para);
+      }
+      para = null;
+    }
+    function walk(parent) {
+      [].slice.call(parent.childNodes).forEach(function (n) {
+        var tag = n.nodeType === 1 ? n.tagName : '';
+        if (tag === 'P') { flush(); walk(n); flush(); return; }
+        if (tag === 'UL' || tag === 'OL') {
+          flush();
+          [].slice.call(n.querySelectorAll('li')).forEach(function (li) { if (!hasText(li)) li.parentNode.removeChild(li); });
+          if (hasText(n)) out.appendChild(n);
+          return;
+        }
+        if (!para) para = document.createElement('p');
+        para.appendChild(n);
+      });
+    }
+    walk(src);
+    flush();
+    return out.innerHTML;
+  }
+
+  /* Простой текст описания читает ИИ-чат на сервере: абзацы и пункты — с новой строки. */
+  function richToPlain(html) {
+    var box = document.createElement('div');
+    box.innerHTML = String(html || '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<li\b[^>]*>/gi, '\n— ')
+      .replace(/<\/?(p|ul|ol|li|div)\b[^>]*>/gi, '\n');
+    return (box.textContent || '').replace(/[ \t\u00a0]+\n/g, '\n').replace(/\n[ \t\u00a0]+/g, '\n').replace(/\n{2,}/g, '\n').trim();
   }
 
   function openArchiveForm(ctx, type, id, renderFn) {
@@ -2031,7 +2097,7 @@
       '<div class="guide-body">' + ((body && body.innerHTML) || '') + '</div>';
   }
 
-  function mountLeadRTE(el, onChange, barId) {
+  function mountLeadRTE(el, onChange, barId, extra) {
     if (!el) return;
     try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (e) {}
     el.addEventListener('paste', function (e) {
@@ -2041,7 +2107,7 @@
       if (hasMarkup(html)) box.innerHTML = html;
       else box.innerHTML = linkifyPlain(html);
       box.querySelectorAll('script,style,img,figure,iframe,video').forEach(function (n) { n.remove(); });
-      document.execCommand('insertHTML', false, sanitizeLead(box.innerHTML));
+      document.execCommand('insertHTML', false, sanitizeLead(box.innerHTML, extra));
       if (onChange) onChange();
     });
     el.addEventListener('input', function () { if (onChange) onChange(); });
@@ -2458,7 +2524,18 @@
         [{ id: 'none', title: 'Не требуется' }, { id: 'required', title: 'Требуется' }],
         item.registration || 'none'
       )) +
-      field('Описание', 'd-desc', item.desc, 'textarea') +
+      '<div class="field"><label>Описание</label>' +
+      '<div class="rte lead-rte">' +
+      '<div class="rte-bar" id="d-desc-bar">' +
+      '<button type="button" data-cmd="bold" title="Жирный">Ж</button>' +
+      '<button type="button" data-cmd="italic" title="Курсив">К</button>' +
+      '<button type="button" data-cmd="insertUnorderedList" title="Список">•</button>' +
+      '<button type="button" data-cmd="insertOrderedList" title="Нумерованный список">1.</button>' +
+      '<button type="button" data-act="link" title="Ссылка">Ссылка</button>' +
+      '</div>' +
+      '<div class="rte-body excerpt-input" id="d-desc" contenteditable="true" data-placeholder="Абзацы, списки и ссылки сохранятся"></div>' +
+      '</div>' +
+      '<p class="hint-note">Enter — новый абзац. Для перечня участников или вопросов — кнопка «•».</p></div>' +
       field('Ссылка на сайт организатора', 'd-href', item.href, 'text', 'placeholder="https://"') +
       '<div class="field"><label>Фото</label>' +
       '<div class="cover-frame' + (cover ? '' : ' is-empty') + '" id="d-cover-frame">' +
@@ -2476,6 +2553,11 @@
       slug ? ('event.html?id=' + encodeURIComponent(slug)) : 'events.html'
     );
     bindSlugField(!isNew && !!slug);
+    var descEl = document.getElementById('d-desc');
+    if (descEl) {
+      descEl.innerHTML = item.descHtml ? sanitizeLead(item.descHtml, LIST_TAGS) : bioToEditorHtml(item.desc || '');
+      mountLeadRTE(descEl, null, 'd-desc-bar', LIST_TAGS);
+    }
     var coverInp = document.getElementById('d-cover');
     var frame = document.getElementById('d-cover-frame');
     if (coverInp && frame) {
@@ -2523,6 +2605,7 @@
       if (picked) organizer = picked.name;
     }
     var coverNow = val('d-cover');
+    var descHtml = eventDescHtml();
     var next = Object.assign({}, item, {
       id: nextId,
       slug: nextId,
@@ -2538,7 +2621,8 @@
       place: val('d-place'),
       cost: val('d-cost') || 'free',
       registration: val('d-reg') || 'none',
-      desc: val('d-desc'),
+      desc: richToPlain(descHtml),
+      descHtml: descHtml,
       href: val('d-href'),
       cover: coverNow,
       status: status,

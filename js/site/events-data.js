@@ -11,7 +11,9 @@
     { id: 'lecture', label: 'Лекции' },
     { id: 'pilgrimage', label: 'Паломничества' },
     { id: 'retreat', label: 'Реколлекции' },
-    { id: 'charity', label: 'Благотворительные акции' }
+    { id: 'charity', label: 'Благотворительные акции' },
+    { id: 'theatre', label: 'Спектакли' },
+    { id: 'service', label: 'Богослужения' }
   ];
 
   var COST = [
@@ -486,7 +488,8 @@
     lecture: 'assets/cards/event-lecture.webp',
     pilgrimage: 'assets/cards/pil-places.webp',
     retreat: 'assets/cards/retreat-what.webp',
-    charity: 'assets/cards/event-charity.webp'
+    charity: 'assets/cards/event-charity.webp',
+    service: 'assets/cards/spirit-liturgy.webp'
   };
 
   global.YakAfisha = {

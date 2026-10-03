@@ -178,6 +178,7 @@
           return { title: p.title || '', lead: p.lead || '', text: p.text || '' };
         }),
         siblingsOf: n.siblingsOf || '',
+        mirrorOf: n.mirrorOf || '',
         image: (cardHit && cardHit.card.image) || n.image || '',
         sub: (cardHit && cardHit.card.sub) || n.sub || '',
         href: (cardHit && cardHit.card.href) || n.href || '',
@@ -363,8 +364,15 @@
       ? '<p class="hint-note">В «' + esc(parent.title || 'разделе') + '» подразделы идут нумерованным списком, без картинок. Обложка видна на главной, если поставить эту страницу в слайдер.</p>'
       : '';
     var portal = fileFor(section) + (item.kind === 'hub' ? '' : '?path=' + encodeURIComponent(item.id));
+    var ref = String(item.mirrorOf || '').split(':');
+    var source = ref.length === 2 ? getItem(ref[0], ref[1]) : null;
+    if (source) item.prayers = source.prayers;
+    var mirrorNote = source
+      ? '<div class="field"><label>Молитвы</label><p class="hint-note">Здесь те же молитвы, что на странице «' + esc(source.title) + '» (' + esc(sectionTitle(ref[0])) + '). ' +
+        'Правьте их там — эта страница повторит их сама. <a href="#' + ref[0] + '/' + encodeURIComponent(ref[1]) + '">Открыть «' + esc(source.title) + '»</a></p></div>'
+      : '';
     var isPage = item.kind === 'page' || item.kind === 'category';
-    var isPrayers = item.kind === 'prayers';
+    var isPrayers = item.kind === 'prayers' && !source;
     var isHub = item.kind === 'hub' || item.kind === 'cards' || item.kind === 'navigator';
 
     ctx.viewEl.innerHTML =
@@ -397,6 +405,7 @@
       ) : '') +
       (isPage ? rteBlock() : '') +
       (isPrayers ? prayersBlock(item.prayers) : '') +
+      mirrorNote +
       '</div>' +
       '<aside class="day-preview-wrap"><div class="day-preview-sticky">' +
       '<p class="day-preview-label">Предпросмотр — как на сайте</p>' +
@@ -564,7 +573,7 @@
       siblingsOf: item.siblingsOf || '',
       added: !!item.added,
       contentHtml: body ? body.innerHTML : (item.contentHtml || ''),
-      prayers: item.prayers || [],
+      prayers: item.mirrorOf ? [] : (item.prayers || []),
     };
     if (item._prayersLive) next.prayers = item._prayersLive();
     return next;
