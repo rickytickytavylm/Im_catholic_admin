@@ -219,11 +219,14 @@
   }
 
   function hydrate(done) {
-    if (hydrated || !window.AdminDesk || !AdminDesk.readPackStrict) { done(); return; }
-    AdminDesk.readPackStrict(PAGE_SLUG).then(function (cur) {
-      if (cur.pack) absorb(cur.pack, AdminDesk.packTime ? AdminDesk.packTime(PAGE_SLUG) : '');
-      hydrated = true;
-    }, function () {}).then(done);
+    var ready = (window.AdminDesk && AdminDesk.hydrateRemote) ? AdminDesk.hydrateRemote() : Promise.resolve();
+    Promise.resolve(ready).then(function () {
+      if (hydrated || !window.AdminDesk || !AdminDesk.readPackStrict) { done(); return; }
+      return AdminDesk.readPackStrict(PAGE_SLUG).then(function (cur) {
+        if (cur.pack) absorb(cur.pack, AdminDesk.packTime ? AdminDesk.packTime(PAGE_SLUG) : '');
+        hydrated = true;
+      }, function () {});
+    }).then(done);
   }
 
   function cleanShow(l) {
@@ -271,9 +274,7 @@
   }
 
   function authors() {
-    if (window.AdminDesk && AdminDesk.read) {
-      /* catalog lives on YakAuthors + desk */
-    }
+    if (window.AdminDesk && AdminDesk.catalogAuthors) return AdminDesk.catalogAuthors();
     var out = [];
     var seen = {};
     function add(a) {

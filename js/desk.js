@@ -4975,6 +4975,7 @@
     remoteHome: function () { return remoteCache.home; },
     remoteAbout: function () { return remoteCache.about; },
     remoteLibrary: function () { return remoteCache.library; },
+    catalogAuthors: catalogAuthors,
     linkAuthor: linkAuthor,
     exportDesk: exportDesk,
     importDesk: importDesk,
