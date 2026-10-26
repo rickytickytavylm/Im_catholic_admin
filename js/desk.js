@@ -1049,6 +1049,11 @@
   function sanitizeLead(html, extra) {
     var box = document.createElement('div');
     box.innerHTML = stripOfficeJunk(html || '');
+    box.querySelectorAll('div').forEach(function (d) {
+      var p = document.createElement('p');
+      while (d.firstChild) p.appendChild(d.firstChild);
+      if (d.parentNode) d.parentNode.replaceChild(p, d);
+    });
     box.querySelectorAll('script,style,iframe,object,img,video,figure,svg').forEach(function (n) { n.remove(); });
     var allow = { a: 1, em: 1, i: 1, strong: 1, b: 1, u: 1, br: 1, p: 1, span: 1 };
     if (extra) Object.keys(extra).forEach(function (k) { allow[k] = 1; });
@@ -1792,7 +1797,7 @@
     bindCoverFile(function () { drawPubPreview(); });
     bindSlugField(!!slug);
     if (!isNews) {
-      bindAuthorChip(currentAuthor);
+      bindAuthorChip(authorsFromItem(item));
       bindCycleChip(item.cycleSlug || item.cycleId || '');
     }
     ['d-title', 'd-date'].forEach(function (fid) {
@@ -1892,41 +1897,62 @@
     return '<span class="author-chip-ava is-empty">' + esc(String((author && author.name) || '?').charAt(0)) + '</span>';
   }
 
-  function paintAuthorChip(author) {
+  var pickedAuthors = [];
+
+  function authorSlugList() {
+    return pickedAuthors.map(function (a) { return a && a.slug; }).filter(Boolean);
+  }
+
+  function authorsFromItem(item) {
+    var slugs = (item && item.authorSlugs && item.authorSlugs.length)
+      ? item.authorSlugs.slice()
+      : ((item && item.authorSlug) ? [item.authorSlug] : []);
+    var list = slugs.map(findAuthor).filter(Boolean);
+    if (!list.length && item && item.author) {
+      String(item.author).split(/\s*,\s*/).forEach(function (part) {
+        var one = findAuthor(part.trim());
+        if (one && !list.some(function (a) { return a.slug === one.slug; })) list.push(one);
+      });
+    }
+    return list;
+  }
+
+  function paintAuthorChips() {
     var box = document.getElementById('d-author-chip');
     var hidden = document.getElementById('d-author-slug');
     var search = document.getElementById('d-author-search');
     var suggest = document.getElementById('d-author-suggest');
     if (!box) return;
-    if (hidden) hidden.value = author ? (author.slug || '') : '';
+    if (hidden) hidden.value = pickedAuthors[0] ? (pickedAuthors[0].slug || '') : '';
     if (suggest) { suggest.hidden = true; suggest.innerHTML = ''; }
-    if (!author) {
-      box.innerHTML = '';
-      if (search) search.hidden = false;
-      drawPubPreview();
-      return;
-    }
-    if (search) search.hidden = true;
-    box.innerHTML =
-      '<div class="author-chip">' +
-      authorAvaHtml(author) +
-      '<span class="author-chip-name"><strong>' + esc(author.name) + '</strong>' +
-      (author.role ? '<small>' + esc(author.role) + '</small>' : '') + '</span>' +
-      '<button type="button" class="author-chip-x" id="d-author-clear" aria-label="Сменить автора">Сменить</button></div>';
-    var clear = document.getElementById('d-author-clear');
-    if (clear) clear.onclick = function () {
-      var q = document.getElementById('d-author-q');
-      if (q) { q.value = ''; q.focus(); }
-      paintAuthorChip(null);
-    };
+    if (search) search.hidden = false;
+    box.innerHTML = pickedAuthors.map(function (author, i) {
+      return '<div class="author-chip">' +
+        authorAvaHtml(author) +
+        '<span class="author-chip-name"><strong>' + esc(author.name) + '</strong>' +
+        (author.role ? '<small>' + esc(author.role) + '</small>' : '') + '</span>' +
+        '<button type="button" class="author-chip-x" data-i="' + i + '" aria-label="Убрать автора">Убрать</button></div>';
+    }).join('');
+    box.querySelectorAll('.author-chip-x').forEach(function (btn) {
+      btn.onclick = function () {
+        pickedAuthors.splice(parseInt(btn.getAttribute('data-i'), 10), 1);
+        paintAuthorChips();
+      };
+    });
     drawPubPreview();
   }
 
   function bindAuthorChip(initial) {
+    pickedAuthors = Array.isArray(initial) ? initial.filter(Boolean) : (initial ? [initial] : []);
     var q = document.getElementById('d-author-q');
     var suggest = document.getElementById('d-author-suggest');
+    paintAuthorChips();
     if (!q || !suggest) return;
-    if (initial) paintAuthorChip(initial);
+    function pool() {
+      var have = {};
+      pickedAuthors.forEach(function (a) { if (a && a.slug) have[a.slug] = true; });
+      return catalogAuthors().filter(function (a) { return a && a.slug && !have[a.slug]; });
+    }
     function show(list) {
       if (!list.length) {
         suggest.hidden = true;
@@ -1940,20 +1966,22 @@
       }).join('');
       suggest.querySelectorAll('[data-slug]').forEach(function (btn) {
         btn.onclick = function () {
-          paintAuthorChip(findAuthor(btn.getAttribute('data-slug')));
-          drawPubPreview();
+          var a = findAuthor(btn.getAttribute('data-slug'));
+          if (a && !pickedAuthors.some(function (x) { return x.slug === a.slug; })) pickedAuthors.push(a);
+          q.value = '';
+          paintAuthorChips();
         };
       });
     }
     q.addEventListener('input', function () {
       var t = q.value.trim().toLowerCase();
-      if (!t) { show(catalogAuthors().slice(0, 8)); return; }
-      show(catalogAuthors().filter(function (a) {
+      if (!t) { show(pool().slice(0, 8)); return; }
+      show(pool().filter(function (a) {
         return (a.name || '').toLowerCase().indexOf(t) !== -1 || (a.slug || '').toLowerCase().indexOf(t) !== -1;
       }).slice(0, 8));
     });
     q.addEventListener('focus', function () {
-      if (!val('d-author-slug')) show(catalogAuthors().slice(0, 8));
+      show(pool().slice(0, 8));
     });
   }
 
@@ -2073,19 +2101,17 @@
     if (!el) return;
     var cover = val('d-cover');
     var body = document.getElementById('d-body');
-    var author = findAuthor(val('d-author-slug'));
+    var authorsPicked = authorSlugList().map(findAuthor).filter(Boolean);
     var rubs = selectedRubrics().map(function (id) {
       var all = NEWS_CATS.concat(articleCats()).concat(VOICE_CATS);
       for (var i = 0; i < all.length; i++) if (all[i].id === id) return all[i].title;
       return id;
     }).filter(Boolean);
-    var authorHtml = '';
-    if (author) {
-      authorHtml =
-        '<a class="author-chip preview-author" href="' + portalHref('author.html?slug=' + encodeURIComponent(author.slug)) + '" target="_blank" rel="noopener">' +
+    var authorHtml = authorsPicked.map(function (author) {
+      return '<a class="author-chip preview-author" href="' + portalHref('author.html?slug=' + encodeURIComponent(author.slug)) + '" target="_blank" rel="noopener">' +
         authorAvaHtml(author) +
         '<span>' + esc(author.name) + '</span></a>';
-    }
+    }).join('');
     var lead = leadHtml();
     el.innerHTML =
       (cover ? '<img src="' + esc(mediaSrc(cover)) + '" alt="" />' : '') +
@@ -2284,7 +2310,8 @@
     var bodyEl = document.getElementById('d-body');
     var html = bodyEl ? bodyEl.innerHTML : '';
     var lead = leadHtml();
-    var author = type === 'article' ? findAuthor(val('d-author-slug') || val('d-author-q')) : null;
+    var authorsPicked = type === 'article' ? authorSlugList().map(findAuthor).filter(Boolean) : [];
+    var author = authorsPicked[0] || null;
     var slug = val('d-slug') || slugify(title);
     var coverNow = val('d-cover');
     if (savingArticle) { ctx.toast('Уже отправляем — подождите', true); return; }
@@ -2325,9 +2352,9 @@
         cover: pack.cover,
         image: pack.cover,
         imageOriginal: httpUrl(pack.cover) || item.imageOriginal || '',
-        author: author ? author.name : (val('d-author') || (ctx.session && ctx.session.name) || ''),
+        author: authorsPicked.length ? authorsPicked.map(function (a) { return a.name; }).join(', ') : (val('d-author') || (ctx.session && ctx.session.name) || ''),
         authorSlug: author ? author.slug : '',
-        authorSlugs: author ? [author.slug] : [],
+        authorSlugs: authorsPicked.map(function (a) { return a.slug; }),
         cycleSlug: type === 'article' ? (val('d-cycle-slug') || '') : '',
         cycleOrder: type === 'article' ? (parseInt(val('d-cycle-order'), 10) || 0) : 0,
         tags: collectedTags(),
@@ -2400,7 +2427,12 @@
      обновляем авторов и циклы. Сбой этих шагов показываем, а не глотаем. */
   function afterArticlePublished(ctx, item, next, type, author, modified) {
     var prevSlug = item._serverSlug || item.slug || '';
-    var prevAuthor = item.authorSlug || (item.authorSlugs && item.authorSlugs[0]) || '';
+    var prevSlugs = (item.authorSlugs && item.authorSlugs.length)
+      ? item.authorSlugs.slice()
+      : ((item.authorSlug || (author && author.slug) || '') ? [item.authorSlug || author.slug] : []);
+    var nextSlugs = (next.authorSlugs && next.authorSlugs.length)
+      ? next.authorSlugs.slice()
+      : (author && author.slug ? [author.slug] : []);
     item._serverModified = modified;
     item._serverSlug = next.slug;
     settleArchive(type, next, modified);
@@ -2409,14 +2441,18 @@
       markHiddenSlug(next.slug, false);
       authorsDirty = true;
     }
-    if (prevAuthor && (!author || prevAuthor !== author.slug || (prevSlug && prevSlug !== next.slug))) {
-      unlinkAuthor(prevAuthor, prevSlug || next.slug);
+    prevSlugs.forEach(function (s) {
+      if (!s) return;
+      if (nextSlugs.indexOf(s) === -1 || (prevSlug && prevSlug !== next.slug)) {
+        unlinkAuthor(s, prevSlug || next.slug);
+        authorsDirty = true;
+      }
+    });
+    nextSlugs.forEach(function (s) {
+      if (!s) return;
+      linkAuthor(s, { slug: next.slug, title: next.title, date: next.date, excerpt: next.excerpt });
       authorsDirty = true;
-    }
-    if (author) {
-      linkAuthor(author.slug, { slug: next.slug, title: next.title, date: next.date, excerpt: next.excerpt });
-      authorsDirty = true;
-    }
+    });
     function note(what) {
       return function (e) { return what + ' (' + ((e && e.message) || 'нет связи') + ')'; };
     }
@@ -4531,7 +4567,7 @@
     mountDeskRTE(bodyEl, function () {});
     bindCoverFile(function () {});
     bindSlugField(!!(item.id || item.slug));
-    bindAuthorChip(currentAuthor);
+    bindAuthorChip(authorsFromItem(item));
 
     function drawItems() {
       var box = document.getElementById('d-art-list');
@@ -4628,17 +4664,21 @@
       var title = val('d-title');
       if (!title) { ctx.toast('Укажите название цикла', true); return null; }
       var slug = val('d-slug') || slugify(title);
-      var author = findAuthor(val('d-author-slug') || val('d-author-q'));
+      var authorsPicked = authorSlugList().map(findAuthor).filter(Boolean);
+      var author = authorsPicked[0] || null;
       var html = bodyEl ? bodyEl.innerHTML : '';
       items.forEach(function (it, i) { it.order = it.order || (i + 1); });
       items.sort(function (a, b) { return (Number(a.order) || 0) - (Number(b.order) || 0); });
+      var kicker = item.subtitle || 'Авторский цикл';
+      if (authorsPicked.length === 1) kicker = 'Авторский цикл ' + genitiveName(authorsPicked[0].name);
+      else if (authorsPicked.length > 1) kicker = 'Авторский цикл ' + authorsPicked.map(function (a) { return genitiveName(a.name); }).join(' и ');
       return {
         id: slug,
         slug: slug,
         title: title,
-        subtitle: author ? ('Авторский цикл ' + genitiveName(author.name)) : (item.subtitle || 'Авторский цикл'),
-        authorSlug: author ? author.slug : (item.authorSlug || ''),
-        authorSlugs: author ? [author.slug] : (item.authorSlugs || []),
+        subtitle: kicker,
+        authorSlug: author ? author.slug : '',
+        authorSlugs: authorsPicked.map(function (a) { return a.slug; }),
         cover: val('d-cover'),
         image: val('d-cover'),
         intro: htmlToText(html).slice(0, 400),
