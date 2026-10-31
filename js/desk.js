@@ -43,6 +43,7 @@
     { id: 'puteshestviya', title: 'Путешествия' },
     { id: 'ask-priest', title: 'Вопросы священнику' },
     { id: 'psiholog', title: 'Вопросы психологу' },
+    { id: 'Laudato', title: 'Забота об общем доме' },
   ];
 
   var VOICE_CATS = [
@@ -4224,11 +4225,11 @@
   /* Темы, которые сайт показывает, пока пакета нет (как в articles-page.js портала):
      первая публикация из админки должна их сохранить, а не заменить одной новой. */
   var DEFAULT_TOPICS = [
-    { id: 'искусственный интеллект', title: 'Искусственный интеллект', q: 'искусственный интеллект' },
+    { id: 'искусственный интеллект', title: 'Искусственный интеллект', slug: 'ai' },
     { id: 'theology-of-the-body', title: 'Теология тела', slug: 'theology-of-the-body' },
     { id: 'pravda', title: 'Мифы и правда о Католической Церкви', slug: 'pravda' },
-    { id: 'laudato', title: 'Забота об общем доме', q: 'Laudato' },
-    { id: 'экуменический', title: 'Экуменический диалог', q: 'экуменический' },
+    { id: 'laudato', title: 'Забота об общем доме', slug: 'Laudato' },
+    { id: 'экуменический', title: 'Экуменический диалог', slug: 'ecumenism' },
   ];
 
   function baseTopics(remote) {
