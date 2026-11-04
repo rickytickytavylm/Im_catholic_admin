@@ -1036,13 +1036,25 @@
   }
 
   function stripOfficeJunk(s) {
-    return String(s == null ? '' : s)
+    var out = String(s == null ? '' : s)
       .replace(/<!--\[if[\s\S]*?<!\[endif\]-->/gi, '')
       .replace(/<!-+\s*StartFragment\s*-*>/gi, '')
       .replace(/<!-+\s*EndFragment\s*-*>/gi, '')
       .replace(/&lt;!-+\s*StartFragment\s*-*&gt;/gi, '')
       .replace(/&lt;!-+\s*EndFragment\s*-*&gt;/gi, '')
       .replace(/\uFEFF/g, '');
+    var i;
+    for (i = 0; i < 3; i++) {
+      var next = out
+        .replace(/&amp;nbsp;/gi, ' ')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&#160;/g, ' ')
+        .replace(/&#x0*a0;/gi, ' ')
+        .replace(/\u00a0/g, ' ');
+      if (next === out) break;
+      out = next;
+    }
+    return out;
   }
 
   var LIST_TAGS = { ul: 1, ol: 1, li: 1 };
@@ -1710,7 +1722,9 @@
     var isNews = type === 'news';
     var cats = isNews ? NEWS_CATS : articleCats();
     var back = isNews ? 'news' : 'articles';
-    var portal = isNews ? 'archive.html?category=news' : 'articles.html';
+    var portal = item.slug
+      ? 'article.html?id=' + encodeURIComponent(item.slug)
+      : (isNews ? 'archive.html?category=news' : 'articles.html');
     var cover = item.cover || item.image || '';
     var picked = (item.rubrics && item.rubrics.length) ? item.rubrics.slice()
       : (item.category ? [item.category] : []);
