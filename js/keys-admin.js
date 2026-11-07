@@ -156,7 +156,7 @@
             return (
               '<article class="panel live-req" data-id="' + esc(it.id) + '">' +
               '<div class="live-req-head"><div><strong>' + esc(it.title) + '</strong>' +
-              '<div class="cell-meta">' + esc(it.parishName || it.parishId) + '</div></div>' + liveBadge(it) + '</div>' +
+              '<div class="cell-meta">' + (it.parishId === 'other' ? 'Приход не из списка: ' : '') + esc(it.parishName || it.parishId) + '</div></div>' + liveBadge(it) + '</div>' +
               (canPlay ? '<video class="live-req-video" controls preload="metadata" playsinline src="' + esc(it.videoUrl) + '"></video>' : '') +
               '<p class="live-req-text">' + esc(it.description) + '</p>' +
               '<p class="cell-meta">Прислал: ' + esc(it.senderName) + ' · ' + esc(it.contact) + '<br>' +
@@ -199,8 +199,12 @@
           var act = btn.getAttribute('data-live');
           var run;
           if (act === 'approve') {
-            if (!confirm('Одобрить ролик? Он появится на сайте в Католик.LIVE.')) return;
-            run = AdminApi.decideLiveRequest(id, 'approve').then(function () { ctx.toast('Ролик на сайте'); });
+            var item = all.filter(function (x) { return String(x.id) === String(id); })[0];
+            var offList = item && item.parishId === 'other';
+            if (!confirm(offList
+              ? 'Этого прихода нет в каталоге Католик.LIVE, поэтому ролик на сайте пока не появится: сначала приход нужно добавить. Всё равно одобрить?'
+              : 'Одобрить ролик? Он появится на сайте в Католик.LIVE.')) return;
+            run = AdminApi.decideLiveRequest(id, 'approve').then(function () { ctx.toast(offList ? 'Одобрено. На сайте появится, когда приход добавят в каталог' : 'Ролик на сайте'); });
           } else if (act === 'reject') {
             var reason = prompt('Причина отказа (по желанию). Файл останется в хранилище с пометкой «к удалению».', '');
             if (reason == null) return;
