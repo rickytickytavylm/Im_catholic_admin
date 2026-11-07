@@ -5,6 +5,11 @@
 (function (global) {
   'use strict';
 
+  /* Ключи 2 и 3: без «Снять», новости только черновиком. Настоящий запрет — на сервере. */
+  function isLimited() {
+    return !!(window.AdminAuth && AdminAuth.limited && AdminAuth.limited());
+  }
+
   var KEY = 'yak_desk';
   var PORTAL = (window.AdminConfig && AdminConfig.PORTAL_URL) || '../Ave_Maria/';
   if (PORTAL.slice(-1) !== '/') PORTAL += '/';
@@ -670,7 +675,8 @@
   }
 
   function mapArchive(a, type) {
-    var slugs = (a.categorySlugs || []).slice();
+    var isDraft = a.source === 'desk-draft';
+    var slugs = ((isDraft && a.draftSlugs && a.draftSlugs.length) ? a.draftSlugs : (a.categorySlugs || [])).slice();
     if (!slugs.length && a.categories && a.categories[0]) {
       var first = a.categories[0];
       slugs = [typeof first === 'string' ? first : (first.slug || '')];
@@ -699,8 +705,9 @@
       cycleSlug: a.cycleSlug || a.cycle_slug || '',
       cycleOrder: a.cycleOrder || a.cycle_order || 0,
       modified: a.modified || '',
-      status: slugs.length === 1 && slugs[0] === 'hidden' ? 'hidden' : 'published',
+      status: isDraft ? 'draft' : (slugs.length === 1 && slugs[0] === 'hidden' ? 'hidden' : 'published'),
       source: 'site',
+      _draft: isDraft,
     };
   }
 
@@ -996,6 +1003,7 @@
 
   function composeShell(ctx, title, back, body, onSave, onPublish, onDelete, portal) {
     var viewEl = ctx.viewEl;
+    if (isLimited()) onDelete = null;
     viewEl.innerHTML =
       '<div class="topbar"><div><h1>' + esc(title) + '</h1></div>' +
       '<div class="topbar-actions">' +
@@ -1737,10 +1745,15 @@
       '<a class="btn btn-ghost btn-back" href="#' + back + '">← Список</a>' +
       '<div class="post-editor-bar-actions">' +
       '<a class="btn btn-ghost" href="' + portalHref(portal) + '" target="_blank" rel="noopener">На сайте</a>' +
-      (isNew ? '' : '<button type="button" class="btn btn-ghost" id="desk-del">Снять</button>') +
-      '<button type="button" class="btn btn-ghost" id="desk-draft">Черновик</button>' +
-      '<button type="button" class="btn btn-primary" id="desk-pub">Опубликовать</button>' +
+      (isNew || isLimited() ? '' : '<button type="button" class="btn btn-ghost" id="desk-del">Снять</button>') +
+      (isLimited()
+        ? '<button type="button" class="btn btn-primary" id="desk-draft">Сохранить черновик</button>'
+        : '<button type="button" class="btn btn-ghost" id="desk-draft">Черновик</button>' +
+          '<button type="button" class="btn btn-primary" id="desk-pub">Опубликовать</button>') +
       '</div></div>' +
+      (isLimited()
+        ? '<p class="hint-note" style="margin:0 0 10px">Новость сохраняется черновиком на сервере. Опубликует её администратор.</p>'
+        : '') +
       '<div class="pub-layout">' +
       '<div class="post-main panel">' +
       '<input class="editor-title" id="d-title" value="' + esc(item.title || '') + '" placeholder="' + (isNews ? 'Заголовок новости' : 'Заголовок статьи') + '" />' +
@@ -1827,7 +1840,8 @@
     document.getElementById('desk-draft').onclick = function () {
       try { saveArticle(ctx, item, type, 'draft'); } catch (e) { ctx.toast(e.message || 'Не удалось сохранить', true); }
     };
-    document.getElementById('desk-pub').onclick = function () {
+    var pubBtn = document.getElementById('desk-pub');
+    if (pubBtn) pubBtn.onclick = function () {
       try { saveArticle(ctx, item, type, 'published'); } catch (e) { ctx.toast(e.message || 'Не удалось опубликовать', true); }
     };
     var delBtn = document.getElementById('desk-del');
@@ -2317,6 +2331,25 @@
     };
   }
 
+  /* Ключи 2 и 3: черновик ложится на сервер скрытым, администратор видит его в «Черновиках редакторов». */
+  function sendDeskDraft(ctx, item, next, type) {
+    if (item._serverModified !== undefined && !item._draft) {
+      throw new Error('Опубликованный материал меняет только администратор. Создайте новую новость.');
+    }
+    ensureNumericId(next);
+    item.id = next.id;
+    item.archiveId = next.archiveId;
+    ctx.toast('Сохраняем черновик на сервере…');
+    return publishToArchive(next, type, {}).then(function (modified) {
+      item._serverModified = modified;
+      item._draft = true;
+      remove(type, next.id);
+      if (next._prevDeskId) remove(type, next._prevDeskId);
+      ctx.toast('Черновик сохранён. Администратор увидит его в «Черновиках».');
+      ctx.go('drafts');
+    });
+  }
+
   function saveArticle(ctx, item, type, status) {
     var title = val('d-title');
     if (!title) { ctx.toast('Укажите заголовок', true); return; }
@@ -2330,10 +2363,14 @@
     var slug = val('d-slug') || slugify(title);
     var coverNow = val('d-cover');
     if (savingArticle) { ctx.toast('Уже отправляем — подождите', true); return; }
+    if (status === 'published' && isLimited()) {
+      ctx.toast('Этим ключом новости публикуются только черновиком', true);
+      return;
+    }
     savingArticle = true;
 
     var ready = Promise.resolve({ cover: coverNow, html: html, lead: lead });
-    if (status === 'published' && (String(coverNow).indexOf('data:') === 0 || /src="data:image/.test(html + lead))) {
+    if ((status === 'published' || isLimited()) && (String(coverNow).indexOf('data:') === 0 || /src="data:image/.test(html + lead))) {
       ctx.toast('Сохраняем фото на сервер…');
       ready = Promise.resolve().then(function () {
         return uploadDataUrl(coverNow, 'covers');
@@ -2384,6 +2421,9 @@
         item.id = next.id;
         item.archiveId = next.archiveId;
         if (next._prevDeskId) item._prevDeskId = next._prevDeskId;
+      }
+      if (status !== 'published' && isLimited()) {
+        return sendDeskDraft(ctx, item, next, type);
       }
       upsert(type, next);
       stored = true;
@@ -2644,7 +2684,7 @@
     if (!title) { ctx.toast('Укажите название', true); return; }
     var rawSlug = val('d-slug');
     var nextId;
-    if (!isNew && item.id && (!rawSlug || rawSlug === item.id || rawSlug === item.slug)) {
+    if (!isNew && item.id && (isLimited() || !rawSlug || rawSlug === item.id || rawSlug === item.slug)) {
       nextId = item.id;
     } else {
       nextId = uniqueEventSlug(rawSlug || title, item.id);
@@ -4183,7 +4223,7 @@
   function saveOrganizer(ctx, item, isNew, status) {
     var name = val('d-title');
     if (!name) { ctx.toast('Укажите название', true); return; }
-    var nextId = (!isNew && item.id && (!val('d-slug') || val('d-slug') === item.id))
+    var nextId = (!isNew && item.id && (isLimited() || !val('d-slug') || val('d-slug') === item.id))
       ? item.id
       : uniqueOrganizerSlug(val('d-slug') || name, item.id);
     var logoNow = val('d-cover');
@@ -5036,6 +5076,7 @@
     importDesk: importDesk,
     hydrateRemote: hydrateRemote,
     healPublishedCopies: healPublishedCopies,
+    isLimited: isLimited,
   };
 
   try {

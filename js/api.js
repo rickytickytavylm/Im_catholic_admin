@@ -1,7 +1,7 @@
 /**
  * HTTP-клиент к основному серверу Fides.
  * CORS: сервер отдаёт Access-Control-Allow-Origin: * — браузерные запросы с file:// /
- * localhost работают. На время тестов сервер принимает запись без ключа.
+ * localhost работают. Ключ доступа уходит в заголовке x-admin-token; уровень проверяет сервер.
  */
 (function (global) {
   'use strict';
@@ -124,8 +124,16 @@
       } catch (e) {
         data = { raw: text };
       }
+      /* Ключ перестал подходить (сменили на сервере): выходим на экран входа, а не пишем вслепую. */
+      if (res.status === 401 && data && (data.code === 'key_required' || data.code === 'wrong_key') &&
+          global.AdminAuth && AdminAuth.getSession && AdminAuth.getSession() && !parse._leaving) {
+        parse._leaving = true;
+        try { AdminAuth.logout(); } catch (e) {}
+        setTimeout(function () { location.reload(); }, 300);
+      }
       if (!res.ok) {
         var err = new Error((data && (data.error || data.message)) || 'HTTP ' + res.status);
+        err.code = data && data.code;
         err.status = res.status;
         err.data = data;
         throw err;
@@ -270,6 +278,32 @@
     return send('DELETE', '/api/admin/news/' + encodeURIComponent(id));
   }
 
+  /* Черновики редакторов на сервере (ключи 2 и 3 сохраняют, ключ 1 публикует) */
+  function getDeskDrafts() {
+    return get('/api/admin/desk-drafts');
+  }
+
+  function deleteDeskDraft(id) {
+    return send('DELETE', '/api/admin/desk-drafts/' + encodeURIComponent(id));
+  }
+
+  /* Заявки на ролики Католик.LIVE */
+  function getLiveRequests(status) {
+    return get('/api/admin/live-submissions' + (status ? '?status=' + encodeURIComponent(status) : ''));
+  }
+
+  function decideLiveRequest(id, verdict, reason) {
+    return send('POST', '/api/admin/live-submissions/' + encodeURIComponent(id) + '/' + verdict, { reason: reason || '' });
+  }
+
+  function deleteLiveFile(id) {
+    return send('DELETE', '/api/admin/live-submissions/' + encodeURIComponent(id) + '/file');
+  }
+
+  function purgeRejectedLive() {
+    return send('POST', '/api/admin/live-submissions/purge-rejected', {});
+  }
+
   function health() {
     return get('/health').catch(function () {
       return get('/');
@@ -304,6 +338,12 @@
     createNews: createNews,
     updateNews: updateNews,
     deleteNews: deleteNews,
+    getDeskDrafts: getDeskDrafts,
+    deleteDeskDraft: deleteDeskDraft,
+    getLiveRequests: getLiveRequests,
+    decideLiveRequest: decideLiveRequest,
+    deleteLiveFile: deleteLiveFile,
+    purgeRejectedLive: purgeRejectedLive,
     health: health,
   };
 })(window);

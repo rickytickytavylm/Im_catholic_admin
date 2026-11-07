@@ -1,9 +1,9 @@
 /**
- * Авторизация (упрощённая по ТЗ заказчика на этом этапе).
- * - Демо-пользователи по ролям (email + пароль demo)
- * - Счётчик неудачных попыток + локальная блокировка (без реальной отправки супер-админу)
- * - Роли и права для UI
- * Сложную серверную auth/RBAC намеренно пропускаем. На тестах запись на сервер без ключа.
+ * Вход по ключу. Ключ проверяет сервер (GET /api/admin/whoami), он же определяет уровень:
+ *   1 — полный доступ; 2 — новости черновиком, библиотека и афиша без удаления;
+ *   3 — то же, что 2, плюс присылать ролики в Католик.LIVE.
+ * Пока на сервере не заданы ключи, он отвечает «открытый режим» и вход идёт без ключа, как раньше.
+ * Кнопки скрываем для удобства, но настоящий запрет — на сервере.
  */
 (function (global) {
   'use strict';
@@ -11,11 +11,36 @@
   var SESSION_KEY = 'yak_admin_session';
   var ATTEMPTS_KEY = 'yak_admin_login_attempts';
 
+  var KEY_NAV = ['dashboard', 'news', 'library', 'afisha', 'organizers', 'drafts'];
+  function keyRole(id, title, extraNav) {
+    return {
+      id: id,
+      title: title,
+      nav: KEY_NAV.concat(extraNav || []),
+      canPublish: false,
+      canModerate: false,
+      canManageUsers: false,
+      canDeleteForever: false,
+      canSeeAllMaterials: false,
+      canEditSystem: false,
+      canEditPages: false,
+      canModerateMedia: false,
+      canManagePhotographers: false,
+      canManageDocs: true,
+      canManageTaxonomy: false,
+      rubrics: ['news'],
+      /* Без «Снять»/«Удалить», новости только черновиком — этим управляет deskLimited(). */
+      limited: true,
+    };
+  }
+
   var ROLES = {
+    key2: keyRole('key2', 'Ключ 2 · новости, библиотека, афиша'),
+    key3: keyRole('key3', 'Ключ 3 · то же и Католик.LIVE', ['live-requests']),
     super: {
       id: 'super',
       title: 'Супер-администратор',
-      nav: ['dashboard', 'home', 'about', 'publish', 'news', 'articles', 'cycles', 'church', 'spirit', 'afisha', 'organizers', 'audio', 'podcasts', 'video', 'video-partners', 'church-day', 'materials', 'pages', 'taxonomy', 'authors', 'library', 'media', 'photographers', 'photo-moderation', 'users', 'logs', 'settings'],
+      nav: ['dashboard', 'home', 'about', 'publish', 'news', 'articles', 'cycles', 'church', 'spirit', 'afisha', 'organizers', 'audio', 'podcasts', 'video', 'video-partners', 'church-day', 'materials', 'pages', 'taxonomy', 'authors', 'library', 'media', 'photographers', 'photo-moderation', 'users', 'logs', 'settings', 'drafts', 'live-requests'],
       canPublish: true,
       canModerate: true,
       canManageUsers: true,
@@ -188,14 +213,87 @@
     if (token) saveAdminToken(token);
   }
 
-  /** Режим без паролей: сразу супер-админ */
-  function ensureDevSession() {
-    var s = getSession();
-    if (s && s.email) return s;
-    var user = DEMO_USERS[0]; // super@yakatolik.local
-    setSession(user);
-    audit(user.email, 'auth.dev_enter', 'Вход без пароля (режим разработки)');
+  var LEVELS = {
+    1: { role: 'super', name: 'Супер-админ', email: 'key1@desk' },
+    2: { role: 'key2', name: 'Редактор', email: 'key2@desk' },
+    3: { role: 'key3', name: 'Редактор', email: 'key3@desk' },
+  };
+
+  function startSession(level, token, open) {
+    var L = LEVELS[level] || LEVELS[2];
+    writeJson(SESSION_KEY, {
+      email: L.email,
+      name: L.name,
+      role: L.role,
+      level: level,
+      open: !!open,
+      rubrics: null,
+      token: token || '',
+      at: Date.now(),
+    });
+    saveAdminToken(open ? '' : token);
+    audit(L.email, 'auth.login', open ? 'Вход без ключа (на сервере ключи ещё не заданы)' : 'Вход по ключу, уровень ' + level);
     return getSession();
+  }
+
+  function whoamiUrl() {
+    var base = (global.AdminApi && AdminApi.base && AdminApi.base()) || (global.AdminConfig && AdminConfig.API_BASE) || '';
+    return base + '/api/admin/whoami';
+  }
+
+  /** Спрашиваем сервер, какой уровень открывает ключ (пустой ключ — проверка «открытого режима»). */
+  function checkKey(key) {
+    key = String(key || '').trim();
+    var ready = global.AdminApi && AdminApi.connect ? AdminApi.connect() : Promise.resolve();
+    return ready.then(function () {
+      var headers = { Accept: 'application/json' };
+      if (key) headers['x-admin-token'] = key;
+      return fetch(whoamiUrl(), { method: 'GET', headers: headers, mode: 'cors', credentials: 'omit', cache: 'no-store' });
+    }).then(function (res) {
+      return res.text().then(function (text) {
+        var data = null;
+        try { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }
+        return { status: res.status, data: data || {} };
+      });
+    }, function () {
+      return { status: 0, data: { error: 'Нет связи с сервером. Если включён VPN — выключите его.' } };
+    });
+  }
+
+  /** Вход по ключу: { ok, level } или { ok:false, message } */
+  function loginWithKey(key) {
+    key = String(key || '').trim();
+    if (!key) return Promise.resolve({ ok: false, message: 'Вставьте ключ' });
+    if (/[^\x21-\x7e]/.test(key)) return Promise.resolve({ ok: false, message: 'Ключ не подошёл: в нём только латинские буквы и цифры — проверьте раскладку и пробелы' });
+    return checkKey(key).then(function (r) {
+      if (r.status === 200 && r.data.ok && r.data.level) {
+        startSession(r.data.level, key, r.data.open);
+        return { ok: true, level: r.data.level };
+      }
+      return { ok: false, message: r.data.error || (r.status === 0 ? 'Нет связи с сервером' : 'Ключ не подошёл') };
+    });
+  }
+
+  /** Если сервер в открытом режиме — входим сами. Иначе false. */
+  function tryOpenMode() {
+    return checkKey('').then(function (r) {
+      if (r.status === 200 && r.data.ok && r.data.open) {
+        startSession(1, '', true);
+        return true;
+      }
+      return false;
+    });
+  }
+
+  function level() {
+    var s = getSession();
+    return (s && s.level) || 0;
+  }
+
+  /** Ключи 2 и 3: без «Снять», без «Опубликовать» для новостей. */
+  function limited() {
+    var s = getSession();
+    return !!(s && roleOf(s).limited);
   }
 
   function clearSession() {
@@ -203,6 +301,7 @@
     try {
       localStorage.removeItem(SESSION_KEY);
     } catch (e) {}
+    saveAdminToken('');
   }
 
   function getAttempts() {
@@ -278,8 +377,10 @@
     clearSession();
   }
 
+  /** Вошедший по ключу — или null: тогда app.js показывает экран входа. */
   function requireAuth() {
-    return ensureDevSession();
+    var s = getSession();
+    return s && s.level && ROLES[s.role] ? s : null;
   }
 
   function can(user, flag) {
@@ -337,7 +438,10 @@
     login: login,
     logout: logout,
     getSession: getSession,
-    ensureDevSession: ensureDevSession,
+    loginWithKey: loginWithKey,
+    tryOpenMode: tryOpenMode,
+    level: level,
+    limited: limited,
     requireAuth: requireAuth,
     roleOf: roleOf,
     can: can,

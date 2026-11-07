@@ -523,7 +523,7 @@
         '<a class="btn btn-ghost btn-back" href="#library">← Список</a>' +
         '<div class="post-editor-bar-actions">' +
         '<a class="btn btn-ghost" href="' + PORTAL + 'book.html?id=' + encodeURIComponent(item.id || 'new') + '" target="_blank" rel="noopener">На сайте</a>' +
-        (isNew ? '' : '<button type="button" class="btn btn-ghost" id="lib-del">Снять</button>') +
+        (isNew || (window.AdminAuth && AdminAuth.limited && AdminAuth.limited()) ? '' : '<button type="button" class="btn btn-ghost" id="lib-del">Снять</button>') +
         '<button type="button" class="btn btn-ghost" id="lib-draft">Черновик</button>' +
         '<button type="button" class="btn btn-primary" id="lib-pub">Опубликовать</button>' +
         '</div></div>' +
@@ -709,7 +709,8 @@
       status: status,
     });
     var rawSlug = val('lib-slug');
-    if (!isNew && item.id && (!rawSlug || rawSlug === item.id)) {
+    var keyLimited = !!(window.AdminAuth && AdminAuth.limited && AdminAuth.limited());
+    if (!isNew && item.id && (keyLimited || !rawSlug || rawSlug === item.id)) {
       next.id = item.id;
     } else {
       next.id = uniqueSlug(rawSlug || next.titleOriginal || next.titleRu, item.id);

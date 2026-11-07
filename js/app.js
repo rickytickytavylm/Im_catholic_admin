@@ -5,7 +5,10 @@
   'use strict';
 
   var session = AdminAuth.requireAuth();
-  if (!session) return;
+  if (!session) {
+    if (window.AdminLogin) AdminLogin.show();
+    return;
+  }
   if (session.token && window.AdminConfig && !AdminConfig.ADMIN_TOKEN) {
     AdminAuth.saveAdminToken(session.token);
   }
@@ -40,6 +43,8 @@
     { id: 'library', title: 'Библиотека', group: 'Сайт' },
     { id: 'media', title: 'Фотосток', group: 'Сайт' },
     { id: 'church-day', title: 'День Церкви', group: 'Сайт' },
+    { id: 'drafts', title: 'Черновики редакторов', group: 'Сайт' },
+    { id: 'live-requests', title: 'Заявки Католик.LIVE', group: 'Сайт' },
     { id: 'about', title: 'О проекте', group: 'Сайт' },
     { id: 'authors', title: 'Авторы', group: 'Люди' },
     { id: 'taxonomy', title: 'Рубрики и темы', group: 'Сайт' },
@@ -180,16 +185,9 @@
     userEl.innerHTML =
       '<div class="name">' + esc(session.name) + '</div>' +
       '<div class="role">' + esc(role.title) + '</div>' +
-      '<button type="button" class="btn btn-ghost btn-block" id="logout-btn">Сменить пользователя</button>';
+      '<button type="button" class="btn btn-ghost btn-block" id="logout-btn">' + (session.open ? 'Перезайти' : 'Выйти') + '</button>';
     document.getElementById('logout-btn').onclick = function () {
-      var emails = AdminAuth.DEMO_USERS.map(function (u) { return u.email + ' — ' + AdminAuth.ROLES[u.role].title; }).join('\n');
-      var email = prompt('Email пользователя:\n' + emails, session.email);
-      if (!email) return;
-      var user = AdminAuth.DEMO_USERS.filter(function (u) { return u.email === email.trim().toLowerCase(); })[0];
-      if (!user) { toast('Пользователь не найден'); return; }
-      localStorage.setItem('yak_admin_session', JSON.stringify({
-        email: user.email, name: user.name, role: user.role, rubrics: user.rubrics || null, at: Date.now(),
-      }));
+      AdminAuth.logout();
       location.reload();
     };
   }
@@ -1939,7 +1937,7 @@
 
   function renderSettings() {
     viewEl.innerHTML =
-      '<div class="topbar"><div><h1>Настройки</h1><p>На тестах ключ не нужен: «Опубликовать» сразу идёт на сервер.</p></div></div>' +
+      '<div class="topbar"><div><h1>Настройки</h1><p>' + (session.open ? 'На сервере ключи ещё не заданы — вход без ключа.' : 'Вы вошли по ключу уровня ' + (session.level || '?') + '.') + '</p></div></div>' +
       '<div class="panel form-grid">' +
       '<label>Адрес сервера архива<input class="input" id="set-api" value="' + esc(AdminConfig.API_BASE || '') + '" /></label>' +
       '<button type="button" class="btn btn-primary" id="set-save">Сохранить</button>' +
@@ -1992,6 +1990,9 @@
     }
 
     var deskCtx = { viewEl: viewEl, session: session, role: role, toast: toast, go: go };
+    if (window.AdminKeys && AdminKeys.renderRoute(r.name, r.id, deskCtx)) {
+      return;
+    }
     if (window.AdminDesk && AdminDesk.renderRoute(r.name, r.id, deskCtx)) {
       return;
     }
