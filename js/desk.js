@@ -1746,6 +1746,7 @@
       '<div class="post-editor-bar-actions">' +
       '<a class="btn btn-ghost" href="' + portalHref(portal) + '" target="_blank" rel="noopener">На сайте</a>' +
       (isNew || isLimited() ? '' : '<button type="button" class="btn btn-ghost" id="desk-del">Снять</button>') +
+      (isNew || isNews || isLimited() ? '' : '<a class="btn btn-ghost" href="#news/' + encodeURIComponent(item.id) + '" title="Откроется как новость: отметьте рубрику и опубликуйте">В новости</a>') +
       (isLimited()
         ? '<button type="button" class="btn btn-primary" id="desk-draft">Сохранить черновик</button>'
         : '<button type="button" class="btn btn-ghost" id="desk-draft">Черновик</button>' +

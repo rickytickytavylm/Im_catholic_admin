@@ -66,7 +66,7 @@
   var NEWS_LIKE = { news: 1, digest: 1, 'church-rus': 1, sng: 1, 'santa-sede': 1, pope: 1 };
 
   function draftKind(d) {
-    var slugs = d.draftSlugs || [];
+    var slugs = (d.draftSlugs && d.draftSlugs.length) ? d.draftSlugs : (d.categorySlugs || []);
     for (var i = 0; i < slugs.length; i++) if (NEWS_LIKE[slugs[i]]) return 'news';
     return 'articles';
   }
