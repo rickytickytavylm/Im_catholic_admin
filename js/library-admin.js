@@ -186,7 +186,8 @@
   function allItems() {
     var by = {};
     var lib = L();
-    ((lib && lib.ITEMS) || []).forEach(function (it) {
+    var base = (lib && lib.ITEMS && lib.ITEMS.length) ? lib.ITEMS : remoteList('items');
+    base.forEach(function (it) {
       if (it && it.id) by[it.id] = Object.assign({ status: 'published' }, it);
     });
     (readAll().libraryItems || []).forEach(function (it) {

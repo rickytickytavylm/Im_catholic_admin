@@ -35,7 +35,7 @@
     ADMIN_TOKEN: override.ADMIN_TOKEN || params.token || storedToken || '',
     PORTAL_URL: override.PORTAL_URL || (
       /github\.io/i.test(location.host)
-        ? 'https://rickytickytavylm.github.io/fides_web/'
+        ? 'https://ruscatholic.org/'
         : '../Ave_Maria/'
     ),
     AUTOSAVE_MS: 30000,
