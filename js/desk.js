@@ -3369,7 +3369,10 @@
         quote: val('d-quote'),
       },
     });
-    var movedFrom = item.date && item.date !== date && item.status !== 'draft' ? item.date : '';
+    /* Новая запись тоже открывается с сегодняшней датой. Это не перенос дня:
+       иначе публикация другого числа снимала с сайта сегодняшний. */
+    var editingThisDay = item.date && String(item.id) === String(item.date);
+    var movedFrom = editingThisDay && item.date !== date && item.status !== 'draft' ? item.date : '';
     if (movedFrom && status === 'published') hideItem('church-day', movedFrom);
     upsert('church-day', nextDay);
     if (status !== 'published') {
